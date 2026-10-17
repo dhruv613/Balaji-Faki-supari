@@ -1,0 +1,23 @@
+# Dependencies & build output
+node_modules/
+dist/
+*.tsbuildinfo
+coverage/
+
+# Environment variables (keep .env.example templates tracked)
+.env
+.env.*
+!.env.example
+!backend/.env.example
+*.local
+
+# Python / FastAPI virtual environments & caches
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# Supabase CLI temporary state & local verification captures
+supabase/.temp/
+verification/

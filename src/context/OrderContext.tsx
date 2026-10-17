@@ -1,0 +1,212 @@
+import { createContext, useContext, useEffect, useReducer, type ReactNode, type Dispatch } from 'react';
+import type { User } from '@supabase/supabase-js';
+import type { ProductType, PackSize, OrderFormData, OrderSummary, Order, PaymentStatus, Product, CheckoutQuote } from '../types/orders';
+import { PRODUCTS, getErrorMessage } from '../lib/api';
+import { fetchProducts } from '../features/catalog/api/catalogApi';
+import { getCheckoutQuote, getOrder } from '../features/orders/api/ordersApi';
+import { normalizeIndianMobile, readCustomerDetails, validateCustomerDetails } from '../lib/customer';
+
+export interface OrderState extends OrderFormData {
+  checkoutKey: string;
+  orderLoadStatus: string;
+  orderLoadAttempt: number;
+  orderId: string;
+  orderNumber: string;
+  serverOrder: Order | null;
+  utrNumber: string;
+  screenshotFile: File | null;
+  screenshotPreview: string;
+  paymentStatus: PaymentStatus | null;
+  products: Product[];
+  catalogStatus: string;
+  quote: CheckoutQuote | null;
+  quoteStatus: string;
+}
+
+export const initialState: OrderState = {
+  product: 'faki', packSize: '250g', quantity: 1,
+  fullName: '', phone: '', address: '', pinCode: '',
+  checkoutKey: '', orderLoadStatus: '', orderLoadAttempt: 0,
+  orderId: '', orderNumber: '', serverOrder: null,
+  utrNumber: '', screenshotFile: null, screenshotPreview: '', paymentStatus: null,
+  products: PRODUCTS, catalogStatus: 'Loading current prices…', quote: null, quoteStatus: '',
+};
+
+const orderReset = {
+  checkoutKey: '', orderLoadStatus: '',
+  orderId: '', orderNumber: '', serverOrder: null, paymentStatus: null,
+  utrNumber: '', screenshotFile: null, screenshotPreview: '',
+};
+
+export type Action =
+  | { type: 'SET_PRODUCT'; payload: ProductType }
+  | { type: 'SET_PACK_SIZE'; payload: PackSize }
+  | { type: 'SET_QUANTITY'; payload: number }
+  | { type: 'SET_FIELD'; payload: { field: 'fullName' | 'phone' | 'address' | 'pinCode'; value: string } }
+  | { type: 'SET_SERVER_ORDER'; payload: Order }
+  | { type: 'SET_PAYMENT_STATUS'; payload: PaymentStatus }
+  | { type: 'SET_UTR'; payload: string }
+  | { type: 'SET_SCREENSHOT'; payload: { file: File | null; preview: string } }
+  | { type: 'SET_CATALOG'; payload: { products: Product[]; status: string } }
+  | { type: 'SET_QUOTE'; payload: { quote: CheckoutQuote | null; status: string } }
+  | { type: 'SET_CHECKOUT_KEY'; payload: string }
+  | { type: 'SET_ORDER_LOAD_STATUS'; payload: string }
+  | { type: 'RETRY_ORDER' }
+  | { type: 'RESET_SERVER' }
+  | { type: 'RESET' };
+
+export const MAX_QUANTITY = 20;
+
+export function reducer(state: OrderState, action: Action): OrderState {
+  switch (action.type) {
+    case 'SET_PRODUCT':
+      if (state.product === action.payload) return state;
+      return { ...state, ...orderReset, product: action.payload, packSize: '250g', quote: null };
+    case 'SET_PACK_SIZE':
+      return { ...state, ...orderReset, packSize: action.payload, quote: null };
+    case 'SET_QUANTITY':
+      if (!Number.isFinite(action.payload)) return state;
+      return { ...state, ...orderReset, quantity: Math.min(MAX_QUANTITY, Math.max(1, Math.trunc(action.payload))), quote: null };
+    case 'SET_FIELD':
+      return { ...state, ...orderReset, [action.payload.field]: action.payload.value, quote: action.payload.field === 'pinCode' ? null : state.quote };
+    case 'SET_SERVER_ORDER':
+      return { ...state, orderLoadStatus: '', orderId: action.payload.id, orderNumber: action.payload.orderNumber, serverOrder: action.payload, paymentStatus: action.payload.paymentStatus };
+    case 'SET_PAYMENT_STATUS':
+      return { ...state, paymentStatus: action.payload };
+    case 'SET_UTR':
+      return { ...state, utrNumber: action.payload };
+    case 'SET_SCREENSHOT':
+      return { ...state, screenshotFile: action.payload.file, screenshotPreview: action.payload.preview };
+    case 'SET_CATALOG':
+      return { ...state, products: action.payload.products, catalogStatus: action.payload.status };
+    case 'SET_QUOTE':
+      return { ...state, quote: action.payload.quote, quoteStatus: action.payload.status };
+    case 'SET_CHECKOUT_KEY':
+      return { ...state, checkoutKey: action.payload };
+    case 'SET_ORDER_LOAD_STATUS':
+      return { ...state, orderLoadStatus: action.payload };
+    case 'RETRY_ORDER':
+      return { ...state, orderLoadAttempt: state.orderLoadAttempt + 1 };
+    case 'RESET_SERVER':
+      return { ...state, ...orderReset };
+    case 'RESET':
+      return { ...initialState, fullName: state.fullName, phone: state.phone, products: state.products, catalogStatus: state.catalogStatus };
+  }
+}
+
+export function buildSummary(state: OrderState): OrderSummary {
+  const product = state.products.find(p => p.type === state.product) ?? PRODUCTS[0];
+  const server = state.serverOrder;
+  const quote = server ?? state.quote;
+  const price = product.prices[state.packSize];
+  return {
+    product: server?.product ?? state.product,
+    productName: server?.productName ?? product.name,
+    packSize: server?.packSize ?? state.packSize,
+    quantity: server?.quantity ?? state.quantity,
+    subtotal: quote?.subtotal ?? (price != null ? price * state.quantity : null),
+    deliveryFee: quote?.deliveryFee ?? null,
+    total: quote?.total ?? null,
+  };
+}
+
+export type FormErrors = Partial<Record<keyof OrderFormData, string>>;
+
+export function validateForm(state: OrderFormData): FormErrors {
+  const errors: FormErrors = { ...validateCustomerDetails(state) };
+  if (!['faki', 'supari'].includes(state.product)) errors.product = 'Choose Faki or Supari';
+  if (!['250g', '500g', '1kg'].includes(state.packSize)) errors.packSize = 'Choose an available pack size';
+  if (!Number.isInteger(state.quantity) || state.quantity < 1 || state.quantity > MAX_QUANTITY) errors.quantity = `Choose a quantity between 1 and ${MAX_QUANTITY}`;
+  const address = state.address.trim();
+  if (!address) errors.address = 'Delivery address is required';
+  else if (address.length < 10) errors.address = 'Add house no., society and area';
+  if (!/^[1-9][0-9]{5}$/.test(state.pinCode)) errors.pinCode = 'Enter a valid 6-digit PIN code';
+  return errors;
+}
+
+export function toOrderFormData(state: OrderFormData): OrderFormData {
+  return { product: state.product, packSize: state.packSize, quantity: state.quantity,
+    fullName: state.fullName.trim(), phone: `+91${normalizeIndianMobile(state.phone)}`,
+    address: state.address.trim(), pinCode: state.pinCode };
+}
+
+const STORAGE_KEY = 'bfp-order-session';
+
+// Only the draft and an opaque order reference survive refresh; status must be fetched again.
+export function restoreDraft(raw: string | null): OrderState {
+  if (!raw) return { ...initialState };
+  try {
+    const saved: unknown = JSON.parse(raw);
+    if (!saved || typeof saved !== 'object') return { ...initialState };
+    const data = saved as Record<string, unknown>;
+    const draft = { ...initialState };
+    if (data.product === 'faki' || data.product === 'supari') draft.product = data.product;
+    if (data.packSize === '250g' || data.packSize === '500g' || data.packSize === '1kg') draft.packSize = data.packSize;
+    if (typeof data.quantity === 'number' && Number.isInteger(data.quantity) && data.quantity >= 1 && data.quantity <= MAX_QUANTITY) draft.quantity = data.quantity;
+    for (const field of ['fullName', 'phone', 'address', 'pinCode', 'orderId', 'checkoutKey'] as const) {
+      if (typeof data[field] === 'string') draft[field] = data[field].slice(0, 2000);
+    }
+    draft.phone = normalizeIndianMobile(draft.phone);
+    return draft;
+  } catch { return { ...initialState }; }
+}
+
+export function persistDraft(state: OrderState, userId: string) {
+  try {
+    sessionStorage.removeItem(STORAGE_KEY);
+    sessionStorage.setItem(`${STORAGE_KEY}:${userId}`, JSON.stringify({ ...toOrderFormData(state), orderId: state.orderId, checkoutKey: state.checkoutKey }));
+  }
+  catch { /* Unavailable storage still permits in-memory checkout. */ }
+}
+
+export function loadState(user: User) {
+  const profile = readCustomerDetails(user.user_metadata);
+  let draft = { ...initialState };
+  try { draft = restoreDraft(sessionStorage.getItem(`${STORAGE_KEY}:${user.id}`)); }
+  catch { /* Unavailable storage still permits in-memory checkout. */ }
+  return { ...draft, fullName: draft.fullName || profile.fullName, phone: draft.phone || profile.phone };
+}
+
+const OrderContext = createContext<OrderState>(initialState);
+const DispatchContext = createContext<Dispatch<Action>>(() => {});
+
+export function OrderProvider({ children, user }: { children: ReactNode; user: User }) {
+  const [state, dispatch] = useReducer(reducer, user, loadState);
+  useEffect(() => { persistDraft(state, user.id); }, [state, user.id]);
+  useEffect(() => () => {
+    if (state.screenshotPreview) URL.revokeObjectURL(state.screenshotPreview);
+  }, [state.screenshotPreview]);
+  useEffect(() => {
+    let active = true;
+    fetchProducts().then(products => {
+      if (active) dispatch({ type: 'SET_CATALOG', payload: { products, status: products.length ? '' : 'No products are currently available. Please contact the store.' } });
+    }).catch(() => {
+      if (active) dispatch({ type: 'SET_CATALOG', payload: { products: PRODUCTS, status: 'Development preview · Live prices and online ordering are not connected yet.' } });
+    });
+    return () => { active = false; };
+  }, []);
+  useEffect(() => {
+    let active = true;
+    dispatch({ type: 'SET_QUOTE', payload: { quote: null, status: '' } });
+    if (!/^[1-9]\d{5}$/.test(state.pinCode)) return;
+    dispatch({ type: 'SET_QUOTE', payload: { quote: null, status: 'Checking current totals…' } });
+    getCheckoutQuote({ product: state.product, packSize: state.packSize, quantity: state.quantity, pinCode: state.pinCode })
+      .then(quote => { if (active) dispatch({ type: 'SET_QUOTE', payload: { quote, status: '' } }); })
+      .catch(error => { if (active) dispatch({ type: 'SET_QUOTE', payload: { quote: null, status: getErrorMessage(error) } }); });
+    return () => { active = false; };
+  }, [state.product, state.packSize, state.quantity, state.pinCode]);
+  useEffect(() => {
+    let active = true;
+    if (state.orderId && !state.serverOrder) {
+      dispatch({ type: 'SET_ORDER_LOAD_STATUS', payload: 'Loading your existing order…' });
+      getOrder(state.orderId).then(order => {
+        if (active) dispatch({ type: 'SET_SERVER_ORDER', payload: order });
+      }).catch(error => { if (active) dispatch({ type: 'SET_ORDER_LOAD_STATUS', payload: getErrorMessage(error) }); });
+    }
+    return () => { active = false; };
+  }, [user.id, state.orderId, Boolean(state.serverOrder), state.orderLoadAttempt]);
+  return <OrderContext.Provider value={state}><DispatchContext.Provider value={dispatch}>{children}</DispatchContext.Provider></OrderContext.Provider>;
+}
+
+export function useOrder() { return useContext(OrderContext); }
+export function useOrderDispatch() { return useContext(DispatchContext); }
