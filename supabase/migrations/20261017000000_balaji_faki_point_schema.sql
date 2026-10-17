@@ -167,7 +167,9 @@ create table if not exists public.product_variants (
   product_id uuid not null references public.products(id) on delete cascade,
   pack_size text not null check (pack_size in ('250g', '500g', '1kg')),
   sku text not null unique,
-  -- NULL means awaiting admin price configuration (never fabricate prices)
+  -- Purchase/cost price stored separately from selling price (NULL means not configured)
+  cost_price_paise bigint check (cost_price_paise is null or cost_price_paise >= 0),
+  -- Selling price: NULL means awaiting admin price configuration (never fabricate prices)
   price_paise bigint check (price_paise is null or price_paise >= 0),
   is_available boolean not null default true,
   total_stock integer not null default 0 check (total_stock >= 0),
@@ -278,6 +280,7 @@ create table if not exists public.order_items (
   product_name text not null,
   pack_size text not null check (pack_size in ('250g', '500g', '1kg')),
   quantity integer not null check (quantity between 1 and 20),
+  unit_cost_paise bigint check (unit_cost_paise is null or unit_cost_paise >= 0),
   unit_price_paise bigint not null check (unit_price_paise >= 0),
   line_total_paise bigint not null check (line_total_paise = unit_price_paise * quantity),
   created_at timestamptz not null default now()

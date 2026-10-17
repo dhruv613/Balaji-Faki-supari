@@ -18,10 +18,11 @@ import { SAMPLE_ADMIN_ORDERS } from '../lib/referenceData';
 import {
   ORDER_STATUS_LABELS,
   PAYMENT_STATUS_LABELS,
+  getAllowedOrderActions,
+  notifyAdminDataChanged,
   validateOrderTransition,
 } from '../lib/orderStateMachine';
 import {
-  StatCard,
   StatusBadge,
   DetailDrawer,
   ConfirmDialog,
@@ -83,6 +84,19 @@ export function filterAdminOrders(
     const haystack = `${order.orderNumber} ${order.customerName} ${order.phone} ${order.area} ${order.pinCode}`.toLowerCase();
     return haystack.includes(q);
   });
+}
+
+function getOrderProductLabel(order: AdminOrderDetail): string {
+  if (order.items.length > 0) {
+    return order.items
+      .map((item) => `${item.productName} (${item.packSize})`)
+      .join(', ');
+  }
+  return order.itemsSummary;
+}
+
+function getOrderTotalQuantity(order: AdminOrderDetail): number {
+  return order.items.reduce((sum, item) => sum + item.quantity, 0);
 }
 
 export default function AdminOrdersPage() {
@@ -182,7 +196,6 @@ export default function AdminOrdersPage() {
     if (!pendingAction) return;
     const { order, nextStatus } = pendingAction;
 
-    // Double-check state machine rules before calling API
     const check = validateOrderTransition({
       currentStatus: order.orderStatus,
       nextStatus,
@@ -220,6 +233,7 @@ export default function AdminOrdersPage() {
             });
       setOrders((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
       setSelectedOrder(updated);
+      notifyAdminDataChanged();
       showToast(
         `Order ${updated.orderNumber} updated to ${ORDER_STATUS_LABELS[updated.orderStatus]}.`,
         'success',
@@ -238,53 +252,21 @@ export default function AdminOrdersPage() {
         <div>
           <h1 className="page__header">Order Management</h1>
           <p className="page__subtitle">
-            Track, confirm, pack, and manage customer Faki &amp; Supari orders.
+            Manage customer orders through the verified fulfillment lifecycle.
           </p>
-        </div>
-        <div className="admin-action-group">
-          <Link to="/admin/payments" className="btn btn--outline btn--sm">
-            Payment Verification Queue
-          </Link>
-          <Link to="/admin/delivery" className="btn btn--dark btn--sm">
-            Delivery Lifecycle
-          </Link>
         </div>
       </div>
 
       {!isLive && (
         <Notice title="Development reference examples — State machine active">
-          FastAPI (<code>GET /api/admin/orders</code>) is not connected yet. The orders below are reference examples demonstrating the strict separation between payment verification and order confirmation. No fake order confirmations are persisted without the backend.
+          FastAPI (<code>GET /api/admin/orders</code>) is not connected yet. Only actions valid for each order’s current status are displayed.
         </Notice>
       )}
       {error && <Notice tone="error" title="Orders request failed">{error}</Notice>}
 
-      <div className="stats-grid">
-        <StatCard label="Total Orders" value={orders.length} />
-        <StatCard
-          label="Awaiting Confirmation"
-          value={orders.filter((o) => o.orderStatus === 'AWAITING_CONFIRMATION').length}
-          subtitle="Payment verified"
-        />
-        <StatCard
-          label="In Fulfillment"
-          value={
-            orders.filter((o) =>
-              ['CONFIRMED', 'PACKING', 'PACKED', 'PICKED_UP', 'SHIPPED', 'OUT_FOR_DELIVERY'].includes(
-                o.orderStatus,
-              ),
-            ).length
-          }
-          subtitle="Confirmed → Out for delivery"
-        />
-        <StatCard
-          label="Delivered"
-          value={orders.filter((o) => o.orderStatus === 'DELIVERED').length}
-        />
-      </div>
-
       {/* Search & Filters */}
       <div className="card card--tinted customer-filters">
-        <div style={{ flex: '2 1 260px' }}>
+        <div style={{ flex: '2 1 240px' }}>
           <label htmlFor="order-search">Search by Order ID, Customer, or Phone</label>
           <input
             id="order-search"
@@ -328,7 +310,7 @@ export default function AdminOrdersPage() {
           </select>
         </div>
 
-        <div style={{ flex: '1 1 145px' }}>
+        <div style={{ flex: '1 1 140px' }}>
           <label htmlFor="order-date-from">From Date</label>
           <input
             id="order-date-from"
@@ -339,7 +321,7 @@ export default function AdminOrdersPage() {
           />
         </div>
 
-        <div style={{ flex: '1 1 145px' }}>
+        <div style={{ flex: '1 1 140px' }}>
           <label htmlFor="order-date-to">To Date</label>
           <input
             id="order-date-to"
@@ -355,44 +337,55 @@ export default function AdminOrdersPage() {
         <LoadingSkeleton rows={5} />
       ) : (
         <div className="card">
-          <div className="customer-table-scroll" role="region" aria-label="All orders table" tabIndex={0}>
+          <div
+            className="admin-table-wrap"
+            role="region"
+            aria-label="Customer orders table"
+            tabIndex={0}
+          >
             <table className="data-table">
               <thead>
                 <tr>
                   <th scope="col">Order ID</th>
-                  <th scope="col">Date &amp; Time</th>
                   <th scope="col">Customer</th>
-                  <th scope="col">Phone</th>
-                  <th scope="col">Items</th>
-                  <th scope="col">Order Amount</th>
+                  <th scope="col">Product</th>
+                  <th scope="col">Quantity</th>
+                  <th scope="col">Total Amount</th>
                   <th scope="col">Payment Status</th>
                   <th scope="col">Order Status</th>
-                  <th scope="col">Actions</th>
+                  <th scope="col">Order Date</th>
+                  <th scope="col">Action</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredOrders.map((order) => {
-                  const canConfirm = validateOrderTransition({
-                    currentStatus: order.orderStatus,
-                    nextStatus: 'CONFIRMED',
-                    paymentStatus: order.paymentStatus,
-                  }).allowed;
-                  const canStartPacking = validateOrderTransition({
-                    currentStatus: order.orderStatus,
-                    nextStatus: 'PACKING',
-                    paymentStatus: order.paymentStatus,
-                  }).allowed;
-                  const canMarkPacked = validateOrderTransition({
-                    currentStatus: order.orderStatus,
-                    nextStatus: 'PACKED',
-                    paymentStatus: order.paymentStatus,
-                  }).allowed;
+                  const allowedActions = getAllowedOrderActions(
+                    order.orderStatus,
+                    order.paymentStatus,
+                  );
+                  const totalQty = getOrderTotalQuantity(order);
 
                   return (
                     <tr key={order.id}>
                       <td>
                         <strong>{order.orderNumber}</strong>
-                        <p className="text-small text-secondary">{order.area}</p>
+                      </td>
+                      <td>
+                        <strong>{order.customerName}</strong>
+                        <p className="text-small text-secondary">{order.phone}</p>
+                      </td>
+                      <td>{getOrderProductLabel(order)}</td>
+                      <td>
+                        <strong>{totalQty}</strong> {totalQty === 1 ? 'pack' : 'packs'}
+                      </td>
+                      <td>
+                        <strong>{formatINR(order.totalAmount)}</strong>
+                      </td>
+                      <td>
+                        <StatusBadge status={order.paymentStatus} kind="payment" />
+                      </td>
+                      <td>
+                        <StatusBadge status={order.orderStatus} kind="order" />
                       </td>
                       <td className="text-small">
                         {new Date(order.createdAt).toLocaleString('en-IN', {
@@ -403,54 +396,33 @@ export default function AdminOrdersPage() {
                           minute: '2-digit',
                         })}
                       </td>
-                      <td><strong>{order.customerName}</strong></td>
-                      <td>{order.phone}</td>
-                      <td>{order.itemsSummary}</td>
-                      <td><strong>{formatINR(order.totalAmount)}</strong></td>
-                      <td><StatusBadge status={order.paymentStatus} kind="payment" /></td>
-                      <td><StatusBadge status={order.orderStatus} kind="order" /></td>
                       <td>
                         <div className="admin-action-group">
                           <button
                             type="button"
-                            className="text-button"
+                            className="btn btn--outline btn--sm"
                             onClick={() => setSelectedOrder(order)}
                           >
-                            Details
+                            View Order
                           </button>
-                          {canConfirm && (
+                          {allowedActions.map((act) => (
                             <button
+                              key={act.nextStatus}
                               type="button"
-                              className="btn btn--primary btn--sm"
+                              className={
+                                act.tone === 'danger'
+                                  ? 'btn btn--danger-outline btn--sm'
+                                  : act.tone === 'primary'
+                                  ? 'btn btn--primary btn--sm'
+                                  : 'btn btn--dark btn--sm'
+                              }
                               onClick={() =>
-                                initiateOrderTransition(order, 'CONFIRMED', 'Confirm Order')
+                                initiateOrderTransition(order, act.nextStatus, act.label)
                               }
                             >
-                              Confirm
+                              {act.label}
                             </button>
-                          )}
-                          {canStartPacking && (
-                            <button
-                              type="button"
-                              className="btn btn--dark btn--sm"
-                              onClick={() =>
-                                initiateOrderTransition(order, 'PACKING', 'Start Packing')
-                              }
-                            >
-                              Start Packing
-                            </button>
-                          )}
-                          {canMarkPacked && (
-                            <button
-                              type="button"
-                              className="btn btn--dark btn--sm"
-                              onClick={() =>
-                                initiateOrderTransition(order, 'PACKED', 'Mark Packed')
-                              }
-                            >
-                              Mark Packed
-                            </button>
-                          )}
+                          ))}
                         </div>
                       </td>
                     </tr>
@@ -472,14 +444,6 @@ export default function AdminOrdersPage() {
               Showing {filteredOrders.length ? `1–${filteredOrders.length}` : '0'} of{' '}
               {filteredOrders.length} matching orders
             </span>
-            <div className="customer-filter-chips">
-              <button type="button" className="btn btn--sm" disabled>
-                Previous
-              </button>
-              <button type="button" className="btn btn--sm" disabled>
-                Next
-              </button>
-            </div>
           </div>
         </div>
       )}
@@ -496,81 +460,39 @@ export default function AdminOrdersPage() {
         onClose={() => setSelectedOrder(null)}
         footer={
           selectedOrder && (
-            <div className="admin-action-group" style={{ width: '100%', justifyContent: 'space-between' }}>
-              <div>
-                {selectedOrder.orderStatus !== 'CANCELLED' &&
-                  selectedOrder.orderStatus !== 'DELIVERED' && (
-                    <button
-                      type="button"
-                      className="btn btn--outline btn--sm"
-                      style={{ borderColor: '#B42318', color: '#B42318' }}
-                      onClick={() =>
-                        initiateOrderTransition(selectedOrder, 'CANCELLED', 'Cancel Order')
-                      }
-                    >
-                      Cancel Order
-                    </button>
-                  )}
-              </div>
+            <div
+              className="admin-action-group"
+              style={{ width: '100%', justifyContent: 'space-between' }}
+            >
+              <button
+                type="button"
+                className="btn btn--outline btn--sm"
+                onClick={() => setSelectedOrder(null)}
+              >
+                Close
+              </button>
               <div className="admin-action-group">
-                <button
-                  type="button"
-                  className="btn btn--primary btn--sm"
-                  disabled={
-                    !validateOrderTransition({
-                      currentStatus: selectedOrder.orderStatus,
-                      nextStatus: 'CONFIRMED',
-                      paymentStatus: selectedOrder.paymentStatus,
-                    }).allowed
-                  }
-                  title={
-                    selectedOrder.paymentStatus !== 'VERIFIED'
-                      ? 'Payment must be VERIFIED before order confirmation'
-                      : undefined
-                  }
-                  onClick={() =>
-                    initiateOrderTransition(selectedOrder, 'CONFIRMED', 'Confirm Order')
-                  }
-                >
-                  Confirm Order
-                </button>
-                <button
-                  type="button"
-                  className="btn btn--dark btn--sm"
-                  disabled={
-                    !validateOrderTransition({
-                      currentStatus: selectedOrder.orderStatus,
-                      nextStatus: 'PACKING',
-                      paymentStatus: selectedOrder.paymentStatus,
-                    }).allowed
-                  }
-                  title={
-                    selectedOrder.orderStatus !== 'CONFIRMED'
-                      ? 'Order must be CONFIRMED before packing begins'
-                      : undefined
-                  }
-                  onClick={() =>
-                    initiateOrderTransition(selectedOrder, 'PACKING', 'Start Packing')
-                  }
-                >
-                  Start Packing
-                </button>
-                <button
-                  type="button"
-                  className="btn btn--dark btn--sm"
-                  disabled={
-                    !validateOrderTransition({
-                      currentStatus: selectedOrder.orderStatus,
-                      nextStatus: 'PACKED',
-                      paymentStatus: selectedOrder.paymentStatus,
-                    }).allowed
-                  }
-                  onClick={() =>
-                    initiateOrderTransition(selectedOrder, 'PACKED', 'Mark Packed')
-                  }
-                >
-                  Mark Packed
-                </button>
+                {getAllowedOrderActions(
+                  selectedOrder.orderStatus,
+                  selectedOrder.paymentStatus,
+                ).map((act) => (
+                  <button
+                    key={act.nextStatus}
+                    type="button"
+                    className={
+                      act.tone === 'danger'
+                        ? 'btn btn--danger-outline btn--sm'
+                        : act.tone === 'primary'
+                        ? 'btn btn--primary btn--sm'
+                        : 'btn btn--dark btn--sm'
+                    }
+                    onClick={() =>
+                      initiateOrderTransition(selectedOrder, act.nextStatus, act.label)
+                    }
+                  >
+                    {act.label}
+                  </button>
+                ))}
               </div>
             </div>
           )
@@ -578,14 +500,12 @@ export default function AdminOrdersPage() {
       >
         {selectedOrder && (
           <div>
-            {/* State Machine Policy Notice if Unverified */}
             {selectedOrder.paymentStatus !== 'VERIFIED' && (
               <Notice tone="warning" title="Payment not verified yet">
-                This order cannot be confirmed or packed until an Owner Admin independently verifies the bank credit in the <Link to="/admin/payments">Manual Payment Verification</Link> module.
+                This order cannot be confirmed or packed until an Owner Admin verifies the bank credit in the <Link to="/admin/dashboard">Pending Payment Confirmations</Link> queue.
               </Notice>
             )}
 
-            {/* Customer & Delivery Information */}
             <h3 style={{ fontSize: 18, marginBottom: 10 }}>Customer &amp; Delivery Address</h3>
             <dl className="admin-kv-grid">
               <div className="admin-kv-item">
@@ -616,7 +536,6 @@ export default function AdminOrdersPage() {
               )}
             </dl>
 
-            {/* Line Items with Product Images */}
             <h3 style={{ fontSize: 18, marginBottom: 10 }}>Ordered Items</h3>
             <div className="card" style={{ padding: 16, marginBottom: 20 }}>
               {selectedOrder.items.map((item) => (
@@ -627,6 +546,7 @@ export default function AdminOrdersPage() {
                     alignItems: 'center',
                     gap: 16,
                     paddingBottom: 12,
+                    marginBottom: 12,
                     borderBottom: '1px solid var(--color-border)',
                   }}
                 >
@@ -669,7 +589,6 @@ export default function AdminOrdersPage() {
               </div>
             </div>
 
-            {/* Payment Details */}
             <h3 style={{ fontSize: 18, marginBottom: 10 }}>Payment Verification Details</h3>
             <dl className="admin-kv-grid">
               <div className="admin-kv-item">
@@ -678,7 +597,7 @@ export default function AdminOrdersPage() {
               </div>
               <div className="admin-kv-item">
                 <dt>Submitted UTR</dt>
-                <dd><code>{selectedOrder.paymentDetails.utrNumber ?? 'Not submitted'}</code></dd>
+                <dd><code className="admin-utr-code">{selectedOrder.paymentDetails.utrNumber ?? 'Not submitted'}</code></dd>
               </div>
               <div className="admin-kv-item">
                 <dt>Bank Credit Reference</dt>
@@ -688,17 +607,8 @@ export default function AdminOrdersPage() {
                 <dt>Receiving Account</dt>
                 <dd>{selectedOrder.paymentDetails.receivingBankAccount ?? 'Official UPI'}</dd>
               </div>
-              {selectedOrder.paymentDetails.verifiedBy && (
-                <div className="admin-kv-item">
-                  <dt>Verified By</dt>
-                  <dd>
-                    {selectedOrder.paymentDetails.verifiedBy} ({selectedOrder.paymentDetails.verifiedAt})
-                  </dd>
-                </div>
-              )}
             </dl>
 
-            {/* Order History Timeline */}
             <h3 style={{ fontSize: 18, marginBottom: 10 }}>Immutable Order Timeline</h3>
             <AdminTimeline
               items={selectedOrder.timeline.map((ev) => ({
@@ -719,7 +629,7 @@ export default function AdminOrdersPage() {
         title={pendingAction ? `${pendingAction.label} — ${pendingAction.order.orderNumber}` : ''}
         description={
           pendingAction
-            ? `Transition Order ${pendingAction.order.orderNumber} (${pendingAction.order.customerName}) from ${ORDER_STATUS_LABELS[pendingAction.order.orderStatus]} to ${ORDER_STATUS_LABELS[pendingAction.nextStatus]}. Every update is recorded with your admin identity and timestamp.`
+            ? `Transition Order ${pendingAction.order.orderNumber} (${pendingAction.order.customerName}) from ${ORDER_STATUS_LABELS[pendingAction.order.orderStatus]} to ${ORDER_STATUS_LABELS[pendingAction.nextStatus]}. Every update is recorded in the backend and reflected in customer order tracking.`
             : ''
         }
         confirmLabel={pendingAction?.label ?? 'Confirm'}

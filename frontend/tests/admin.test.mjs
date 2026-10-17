@@ -438,8 +438,223 @@ const sqlWithoutComments = migrationSql.replace(/--.*$/gm, '');
 assert.doesNotMatch(sqlWithoutComments, /auth\.role\(\)/, 'Must not use deprecated auth.role() in RLS policies');
 assert.match(migrationSql, /create or replace function private\.is_owner_admin\(\)/);
 assert.match(migrationSql, /'payment-proofs'/);
+assert.match(migrationSql, /cost_price_paise/);
+assert.match(migrationSql, /unit_cost_paise/);
+
+/* ================================================================== */
+/*  8. DASHBOARD METRICS (PRODUCTS SOLD & NET PROFIT) & ACTION FLOW   */
+/* ================================================================== */
+
+const {
+  calculateProductsSold,
+  calculateNetProfit,
+  getAllowedOrderActions,
+} = stateMachine;
+const refData = load('src/features/admin/lib/referenceData.ts');
+
+// Products Sold counts total product units from DELIVERED + VERIFIED orders
+assert.equal(calculateProductsSold(refData.SAMPLE_ADMIN_ORDERS), 1);
+assert.equal(calculateProductsSold(refData.SAMPLE_ADMIN_ORDERS, 18), 18);
+
+// Net Profit returns null ("Not configured") when cost prices or selling prices are null
+assert.equal(
+  calculateNetProfit({
+    orders: refData.SAMPLE_ADMIN_ORDERS,
+    products: refData.SAMPLE_ADMIN_PRODUCTS,
+    refunds: refData.SAMPLE_ADMIN_REFUNDS,
+  }),
+  null,
+);
+
+// Net Profit accurately computes revenue - product costs - delivery expenses - completed refunds when configured
+const configuredOrders = [
+  {
+    ...refData.SAMPLE_ADMIN_ORDERS[3], // DELIVERED + VERIFIED
+    orderStatus: 'DELIVERED',
+    paymentStatus: 'VERIFIED',
+    totalAmount: 550,
+    deliveryCharges: 40,
+    items: [
+      {
+        id: 'item-1',
+        variantId: 'var-faki-500g',
+        productType: 'faki',
+        productName: 'Faki',
+        productNameGu: 'ફાકી',
+        packSize: '500g',
+        quantity: 2,
+        unitPrice: 255,
+        unitCostPrice: 150,
+        lineTotal: 510,
+        productImage: '/images/hero-product.jpg',
+      },
+    ],
+  },
+];
+const configuredRefunds = [
+  {
+    ...refData.SAMPLE_ADMIN_REFUNDS[0],
+    refundStatus: 'COMPLETED',
+    refundAmount: 30,
+  },
+];
+// Revenue (550) - Cost (2 * 150 = 300) - Delivery (40) - Refund (30) = 180
+assert.equal(
+  calculateNetProfit({
+    orders: configuredOrders,
+    products: refData.SAMPLE_ADMIN_PRODUCTS,
+    refunds: configuredRefunds,
+  }),
+  180,
+);
+
+// Order Management state machine action buttons follow exact sequence
+const expectedStepAction = [
+  ['AWAITING_CONFIRMATION', 'CONFIRMED', 'Confirm Order'],
+  ['CONFIRMED', 'PACKING', 'Start Packing'],
+  ['PACKING', 'PACKED', 'Mark Packed'],
+  ['PACKED', 'PICKED_UP', 'Mark Picked Up'],
+  ['PICKED_UP', 'SHIPPED', 'Mark Shipped'],
+  ['SHIPPED', 'OUT_FOR_DELIVERY', 'Mark Out for Delivery'],
+  ['OUT_FOR_DELIVERY', 'DELIVERED', 'Mark Delivered'],
+];
+for (const [status, expectedNext, expectedLabel] of expectedStepAction) {
+  const actions = getAllowedOrderActions(status, 'VERIFIED');
+  assert.equal(actions[0].nextStatus, expectedNext);
+  assert.equal(actions[0].label, expectedLabel);
+}
+assert.equal(getAllowedOrderActions('DELIVERED', 'VERIFIED').length, 0);
+assert.equal(getAllowedOrderActions('CANCELLED', 'VERIFIED').length, 0);
+
+/* ================================================================== */
+/*  9. PRIMARY ADMIN NAVIGATION & 4-PAGE SSR RENDERING VERIFICATION   */
+/* ================================================================== */
+
+const React = require('react');
+const { renderToStaticMarkup } = require('react-dom/server');
+const { MemoryRouter } = require('react-router-dom');
+
+const NoticeMod = load('src/components/common/Notice.tsx');
+const StatCardMod = load('src/features/admin/components/StatCard.tsx');
+const StatusBadgeMod = load('src/features/admin/components/StatusBadge.tsx', {
+  '../lib/orderStateMachine': stateMachine,
+});
+const DetailDrawerMod = load('src/features/admin/components/DetailDrawer.tsx');
+const ConfirmDialogMod = load('src/features/admin/components/ConfirmDialog.tsx');
+const ImagePreviewMod = load('src/features/admin/components/ImagePreview.tsx');
+const AdminTimelineMod = load('src/features/admin/components/AdminTimeline.tsx');
+const AdminStatesMod = load('src/features/admin/components/AdminStates.tsx', {
+  '../../../components/common/Notice': NoticeMod,
+});
+const AdminToastMod = load('src/features/admin/components/Toast.tsx');
+const AdminSidebarMod = load('src/features/admin/components/AdminSidebar.tsx', {
+  '../../../lib/supabase': authStub,
+});
+
+// Verify primary navigation contains strictly the 4 simplified pages
+const navItems = AdminSidebarMod.ADMIN_NAV_GROUPS.flatMap((g) => g.items);
+assert.deepEqual(
+  JSON.parse(JSON.stringify(navItems.map((i) => ({ label: i.label, to: i.to })))),
+  [
+    { label: 'Dashboard', to: '/admin/dashboard' },
+    { label: 'Price Management', to: '/admin/prices' },
+    { label: 'Order Management', to: '/admin/orders' },
+    { label: 'Feedback Management', to: '/admin/feedback' },
+  ],
+);
+
+const adminComponentsBarrel = {
+  StatCard: StatCardMod.default,
+  StatusBadge: StatusBadgeMod.default,
+  DetailDrawer: DetailDrawerMod.default,
+  ConfirmDialog: ConfirmDialogMod.default,
+  ImagePreview: ImagePreviewMod.default,
+  AdminTimeline: AdminTimelineMod.default,
+  LoadingSkeleton: AdminStatesMod.LoadingSkeleton,
+  useAdminToast: () => ({ showToast: () => {} }),
+  AdminToastProvider: AdminToastMod.AdminToastProvider,
+};
+
+const offlineEnv = { apiBaseUrl: '', supportWhatsApp: '918000961030' };
+const commonPageStubs = {
+  '../../../components/common/Notice': NoticeMod,
+  '../../../lib/env': { env: offlineEnv },
+  '../../../lib/api': apiModule,
+  '../api': adminApi,
+  '../lib/referenceData': refData,
+  '../lib/orderStateMachine': stateMachine,
+  '../components': adminComponentsBarrel,
+};
+
+const DashboardPage = load('src/features/admin/pages/AdminDashboardPage.tsx', commonPageStubs).default;
+const PricesPage = load('src/features/admin/pages/AdminProductsPage.tsx', commonPageStubs).default;
+const OrdersPage = load('src/features/admin/pages/AdminOrdersPage.tsx', commonPageStubs).default;
+const FeedbackPage = load('src/features/admin/pages/AdminReviewsPage.tsx', commonPageStubs).default;
+
+const dashboardHtml = renderToStaticMarkup(
+  React.createElement(MemoryRouter, { initialEntries: ['/admin/dashboard'] }, React.createElement(DashboardPage)),
+);
+assert.match(dashboardHtml, /Products Sold/);
+assert.match(dashboardHtml, /1 Item/);
+assert.match(dashboardHtml, /Net Profit/);
+assert.match(dashboardHtml, /Not configured/);
+assert.match(dashboardHtml, /Pending Payment Confirmations/);
+for (const col of [
+  'Order ID',
+  'Customer Name',
+  'Product',
+  'Total Amount',
+  'Payment UTR',
+  'Payment Screenshot',
+  'Submitted Date',
+  'Payment Status',
+  'Review Payment Action',
+]) {
+  assert.match(dashboardHtml, new RegExp(col), `Dashboard table missing column: ${col}`);
+}
+assert.doesNotMatch(dashboardHtml, /Sales &amp; Order Volume Overview/);
+assert.doesNotMatch(dashboardHtml, /Recent Admin Audit Activity/);
+
+const pricesHtml = renderToStaticMarkup(
+  React.createElement(MemoryRouter, { initialEntries: ['/admin/prices'] }, React.createElement(PricesPage)),
+);
+assert.match(pricesHtml, /Price Management/);
+for (const col of ['Product', 'Pack Size', 'Cost Price', 'Selling Price', 'Action']) {
+  assert.match(pricesHtml, new RegExp(col), `Price Management missing column: ${col}`);
+}
+assert.match(pricesHtml, /250g/);
+assert.match(pricesHtml, /500g/);
+assert.match(pricesHtml, /1kg/);
+
+const ordersHtml = renderToStaticMarkup(
+  React.createElement(MemoryRouter, { initialEntries: ['/admin/orders'] }, React.createElement(OrdersPage)),
+);
+assert.match(ordersHtml, /Order Management/);
+for (const col of [
+  'Order ID',
+  'Customer',
+  'Product',
+  'Quantity',
+  'Total Amount',
+  'Payment Status',
+  'Order Status',
+  'Order Date',
+  'Action',
+]) {
+  assert.match(ordersHtml, new RegExp(col), `Order Management missing column: ${col}`);
+}
+assert.match(ordersHtml, /Confirm Order/);
+assert.match(ordersHtml, /Start Packing/);
+
+const feedbackHtml = renderToStaticMarkup(
+  React.createElement(MemoryRouter, { initialEntries: ['/admin/feedback'] }, React.createElement(FeedbackPage)),
+);
+assert.match(feedbackHtml, /Feedback Management/);
+assert.match(feedbackHtml, /Star Rating/);
+assert.match(feedbackHtml, /View \/ Reply/);
 
 console.log(
-  'Admin panel & Supabase DB: 18 tables, RLS policies, RBAC route guard, payment/order state separation, duplicate UTR/bank-ref blocking, step-skip prevention, refund verification, stock bounds, and typed API client passed.',
+  'Admin panel & Supabase DB: 18 tables, RLS policies, RBAC route guard, 4-page navigation, minimal Dashboard (Products Sold + Net Profit + Pending Payment Confirmations), Price Management, Order Management, Feedback Management, and typed API client passed.',
 );
+
 

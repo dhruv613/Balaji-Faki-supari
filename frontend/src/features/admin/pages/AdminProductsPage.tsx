@@ -7,17 +7,30 @@ import {
   createAdminProduct,
   updateAdminProduct,
 } from '../api';
-import type { AdminProduct, PackSize, ProductType } from '../types';
+import type { AdminProduct, AdminProductVariant, PackSize, ProductType } from '../types';
 import { SAMPLE_ADMIN_PRODUCTS } from '../lib/referenceData';
+import { notifyAdminDataChanged } from '../lib/orderStateMachine';
 import { DetailDrawer, LoadingSkeleton, useAdminToast } from '../components';
+
+interface EditingRowState {
+  productId: string;
+  variantId: string;
+  packSize: PackSize;
+  costPriceInput: string;
+  sellingPriceInput: string;
+}
 
 export default function AdminProductsPage() {
   const { showToast } = useAdminToast();
   const [products, setProducts] = useState<AdminProduct[]>(SAMPLE_ADMIN_PRODUCTS);
+
+  // Inline table row editing state for Cost Price & Selling Price
+  const [editingRow, setEditingRow] = useState<EditingRowState | null>(null);
+  const [rowBusy, setRowBusy] = useState(false);
+
+  // Full product drawer state (preserves catalog management capability)
   const [editingProduct, setEditingProduct] = useState<AdminProduct | null>(null);
   const [isCreating, setIsCreating] = useState(false);
-
-  // Form states for Add / Edit Product
   const [formType, setFormType] = useState<ProductType>('faki');
   const [formName, setFormName] = useState('');
   const [formNameGu, setFormNameGu] = useState('');
@@ -26,6 +39,11 @@ export default function AdminProductsPage() {
   const [formDescriptionGu, setFormDescriptionGu] = useState('');
   const [formImageUrl, setFormImageUrl] = useState('/images/hero-product.jpg');
   const [formActive, setFormActive] = useState(true);
+  const [variantCostPrices, setVariantCostPrices] = useState<Record<PackSize, string>>({
+    '250g': '',
+    '500g': '',
+    '1kg': '',
+  });
   const [variantPrices, setVariantPrices] = useState<Record<PackSize, string>>({
     '250g': '',
     '500g': '',
@@ -73,6 +91,89 @@ export default function AdminProductsPage() {
     };
   }, []);
 
+  function startRowEdit(product: AdminProduct, variant: AdminProductVariant) {
+    setEditingRow({
+      productId: product.id,
+      variantId: variant.id,
+      packSize: variant.packSize,
+      costPriceInput:
+        variant.costPrice !== null && variant.costPrice !== undefined
+          ? String(variant.costPrice)
+          : '',
+      sellingPriceInput: variant.price !== null ? String(variant.price) : '',
+    });
+  }
+
+  function cancelRowEdit() {
+    setEditingRow(null);
+  }
+
+  async function saveRowEdit(product: AdminProduct) {
+    if (!editingRow || editingRow.productId !== product.id) return;
+
+    const rawCost = editingRow.costPriceInput.trim();
+    const rawSelling = editingRow.sellingPriceInput.trim();
+
+    const parsedCost = rawCost === '' ? null : Number(rawCost);
+    const parsedSelling = rawSelling === '' ? null : Number(rawSelling);
+
+    if (parsedCost !== null && (!Number.isFinite(parsedCost) || parsedCost < 0)) {
+      showToast('Enter a valid non-negative Cost Price in INR.', 'warning');
+      return;
+    }
+    if (parsedSelling !== null && (!Number.isFinite(parsedSelling) || parsedSelling < 0)) {
+      showToast('Enter a valid non-negative Selling Price in INR.', 'warning');
+      return;
+    }
+
+    const updatedVariants = product.variants.map((v) => {
+      if (v.packSize !== editingRow.packSize) {
+        return {
+          packSize: v.packSize,
+          sku: v.sku,
+          costPrice: v.costPrice ?? null,
+          price: v.price,
+          availableQuantity: v.availableQuantity,
+          isAvailable: v.isAvailable,
+        };
+      }
+      return {
+        packSize: v.packSize,
+        sku: v.sku,
+        costPrice: parsedCost,
+        price: parsedSelling,
+        availableQuantity: v.availableQuantity,
+        isAvailable: v.isAvailable,
+      };
+    });
+
+    if (!env.apiBaseUrl) {
+      showToast(
+        'Integration pending: FastAPI (/api/admin/products) is not connected. Price changes require backend persistence.',
+        'warning',
+      );
+      return;
+    }
+
+    setRowBusy(true);
+    try {
+      const updated = await updateAdminProduct(product.id, {
+        variants: updatedVariants,
+      });
+      setProducts((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+      setEditingRow(null);
+      notifyAdminDataChanged();
+      showToast(
+        `Saved ${product.name} (${editingRow.packSize}) Cost & Selling Prices.`,
+        'success',
+      );
+    } catch (err) {
+      showToast(getErrorMessage(err), 'error');
+    } finally {
+      setRowBusy(false);
+    }
+  }
+
   function openEditDrawer(product: AdminProduct) {
     setIsCreating(false);
     setEditingProduct(product);
@@ -85,33 +186,21 @@ export default function AdminProductsPage() {
     setFormImageUrl(product.imageUrl);
     setFormActive(product.active);
 
+    const costs: Record<PackSize, string> = { '250g': '', '500g': '', '1kg': '' };
     const prices: Record<PackSize, string> = { '250g': '', '500g': '', '1kg': '' };
     const stocks: Record<PackSize, string> = { '250g': '0', '500g': '0', '1kg': '0' };
     const avail: Record<PackSize, boolean> = { '250g': true, '500g': true, '1kg': true };
     for (const v of product.variants) {
+      costs[v.packSize] =
+        v.costPrice !== null && v.costPrice !== undefined ? String(v.costPrice) : '';
       prices[v.packSize] = v.price !== null ? String(v.price) : '';
       stocks[v.packSize] = String(v.availableQuantity);
       avail[v.packSize] = v.isAvailable;
     }
+    setVariantCostPrices(costs);
     setVariantPrices(prices);
     setVariantStock(stocks);
     setVariantAvailable(avail);
-  }
-
-  function openAddDrawer() {
-    setIsCreating(true);
-    setEditingProduct(null);
-    setFormType('faki');
-    setFormName('');
-    setFormNameGu('');
-    setFormCategory('Traditional Blend');
-    setFormDescription('');
-    setFormDescriptionGu('');
-    setFormImageUrl('/images/hero-product.jpg');
-    setFormActive(true);
-    setVariantPrices({ '250g': '', '500g': '', '1kg': '' });
-    setVariantStock({ '250g': '0', '500g': '0', '1kg': '0' });
-    setVariantAvailable({ '250g': true, '500g': true, '1kg': true });
   }
 
   async function handleSaveProduct(e: FormEvent) {
@@ -123,12 +212,15 @@ export default function AdminProductsPage() {
 
     const packSizes: PackSize[] = ['250g', '500g', '1kg'];
     const parsedVariants = packSizes.map((size) => {
+      const rawCost = variantCostPrices[size].trim();
+      const costVal = rawCost === '' ? null : Number(rawCost);
       const rawPrice = variantPrices[size].trim();
       const priceVal = rawPrice === '' ? null : Number(rawPrice);
       const stockVal = Math.max(0, Math.trunc(Number(variantStock[size]) || 0));
       return {
         packSize: size,
         sku: `BFP-${formType.toUpperCase()}-${size.toUpperCase()}`,
+        costPrice: costVal !== null && Number.isFinite(costVal) && costVal >= 0 ? costVal : null,
         price: priceVal !== null && Number.isFinite(priceVal) && priceVal >= 0 ? priceVal : null,
         availableQuantity: stockVal,
         isAvailable: variantAvailable[size],
@@ -158,6 +250,7 @@ export default function AdminProductsPage() {
           variants: parsedVariants,
         });
         setProducts((prev) => [...prev, created]);
+        notifyAdminDataChanged();
         showToast(`Created product ${created.name}.`, 'success');
       } else if (editingProduct) {
         const updated = await updateAdminProduct(editingProduct.id, {
@@ -171,6 +264,7 @@ export default function AdminProductsPage() {
           variants: parsedVariants,
         });
         setProducts((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+        notifyAdminDataChanged();
         showToast(`Updated product ${updated.name}.`, 'success');
       }
       setEditingProduct(null);
@@ -186,119 +280,174 @@ export default function AdminProductsPage() {
     <div className="wrapper">
       <div className="admin-heading">
         <div>
-          <h1 className="page__header">Product &amp; Variant Catalog</h1>
+          <h1 className="page__header">Price Management</h1>
           <p className="page__subtitle">
-            Manage Faki (<span lang="gu">ફાકી</span>) and Supari (<span lang="gu">સુપારી</span>) pack variants, prices, and store availability.
+            Manage Faki (<span lang="gu">ફાકી</span>) and Supari (<span lang="gu">સુપારી</span>) pack-size Cost Prices and Selling Prices (250g · 500g · 1kg).
           </p>
         </div>
-        <button type="button" className="btn btn--primary" onClick={openAddDrawer}>
-          + Add Product
-        </button>
       </div>
 
+      <Notice title="Historical Order Price Protection">
+        Cost Price and Selling Price are stored separately per pack size. Updating prices here applies only to new orders — existing customer orders always retain their original purchased prices.
+      </Notice>
+
       {!isLive && (
-        <Notice title="Server-Authoritative Pricing Policy">
-          FastAPI (<code>/api/admin/products</code>) is not connected yet. Final product prices are never invented or hardcoded in the frontend — unconfigured variant prices show <strong>Awaiting price</strong> until saved in PostgreSQL through FastAPI.
+        <Notice tone="info" title="Server-Authoritative Pricing Policy">
+          FastAPI (<code>/api/admin/products</code>) is not connected yet. Unconfigured prices display <strong>Not configured</strong> / <strong>Awaiting price</strong> until saved in PostgreSQL through FastAPI.
         </Notice>
       )}
-      {error && <Notice tone="error" title="Catalog sync error">{error}</Notice>}
+      {error && <Notice tone="error" title="Price catalog sync error">{error}</Notice>}
 
       {loading ? (
-        <LoadingSkeleton rows={4} />
+        <LoadingSkeleton rows={6} />
       ) : (
-        <div className="grid">
-          {products.map((product) => (
-            <article key={product.id} className="card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
-                <img
-                  src={product.imageUrl}
-                  alt={product.name}
-                  style={{
-                    width: 96,
-                    height: 96,
-                    objectFit: 'cover',
-                    borderRadius: 16,
-                    border: '1px solid var(--color-border)',
-                  }}
-                />
-                <div style={{ flex: 1 }}>
-                  <div className="detail-header" style={{ marginBottom: 4 }}>
-                    <h2 style={{ fontSize: 32, color: 'var(--color-primary-dark)' }}>
-                      {product.name}{' '}
-                      <span lang="gu" style={{ fontSize: 22, color: 'var(--color-text-secondary)' }}>
-                        ({product.nameGu})
-                      </span>
-                    </h2>
-                    <span className={`badge ${product.active ? 'badge--green' : 'badge--outline'}`}>
-                      {product.active ? 'Active' : 'Inactive'}
-                    </span>
-                  </div>
-                  <p className="text-small text-secondary">{product.category}</p>
-                  <p style={{ marginTop: 6 }}>{product.description}</p>
-                  {product.descriptionGu && (
-                    <p className="text-small text-secondary" lang="gu" style={{ marginTop: 4 }}>
-                      {product.descriptionGu}
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              <div>
-                <h3 style={{ fontSize: 16, marginBottom: 8 }}>
-                  Independently Managed Pack Variants (250 g · 500 g · 1 kg)
-                </h3>
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th scope="col">Variant</th>
-                      <th scope="col">SKU</th>
-                      <th scope="col">Unit Price</th>
-                      <th scope="col">Available Stock</th>
-                      <th scope="col">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {product.variants.map((variant) => (
-                      <tr key={variant.id}>
-                        <td><strong>{formatPackSize(variant.packSize)}</strong></td>
-                        <td><code className="text-small">{variant.sku}</code></td>
-                        <td><strong>{formatINR(variant.price)}</strong></td>
-                        <td>{variant.availableQuantity} packs</td>
-                        <td>
-                          <span
-                            className={`badge ${
-                              variant.isAvailable ? 'badge--green' : 'badge--outline'
-                            }`}
-                          >
-                            {variant.isAvailable ? 'Available' : 'Unavailable'}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              <div className="detail-header" style={{ marginTop: 'auto', paddingTop: 8 }}>
-                <span className="text-small text-secondary">Last updated: {product.updatedAt}</span>
+        <section className="card" aria-labelledby="price-management-table-heading">
+          <div className="detail-header">
+            <div>
+              <h2 id="price-management-table-heading" className="admin-section-title" style={{ marginBottom: 4 }}>
+                Product &amp; Pack-Size Pricing Table
+              </h2>
+              <p className="text-small text-secondary">
+                Edit Cost Price and Selling Price for each pack size (250g, 500g, 1kg) and save changes to the backend.
+              </p>
+            </div>
+            <div className="admin-action-group">
+              {products.map((product) => (
                 <button
+                  key={product.id}
                   type="button"
-                  className="btn btn--dark btn--sm"
+                  className="btn btn--outline btn--sm"
                   onClick={() => openEditDrawer(product)}
                 >
-                  Edit Product &amp; Variants
+                  Edit {product.name} Details
                 </button>
-              </div>
-            </article>
-          ))}
-        </div>
+              ))}
+            </div>
+          </div>
+
+          <div
+            className="admin-table-wrap"
+            role="region"
+            aria-label="Product and pack-size price management table"
+            tabIndex={0}
+          >
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th scope="col">Product</th>
+                  <th scope="col">Pack Size</th>
+                  <th scope="col">Cost Price</th>
+                  <th scope="col">Selling Price</th>
+                  <th scope="col">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {products.flatMap((product) =>
+                  product.variants.map((variant) => {
+                    const isEditingThisRow =
+                      editingRow?.productId === product.id &&
+                      editingRow?.packSize === variant.packSize;
+
+                    return (
+                      <tr key={`${product.id}-${variant.packSize}`}>
+                        <td>
+                          <strong>{product.name}</strong>{' '}
+                          <span lang="gu" className="text-secondary">
+                            ({product.nameGu})
+                          </span>
+                        </td>
+                        <td>
+                          <strong>{variant.packSize}</strong>
+                        </td>
+                        <td>
+                          {isEditingThisRow ? (
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              className="input admin-price-input"
+                              aria-label={`Cost Price for ${product.name} ${variant.packSize}`}
+                              placeholder="Cost price (₹)"
+                              value={editingRow.costPriceInput}
+                              onChange={(e) =>
+                                setEditingRow((prev) =>
+                                  prev ? { ...prev, costPriceInput: e.target.value } : null,
+                                )
+                              }
+                              disabled={rowBusy}
+                            />
+                          ) : variant.costPrice !== null && variant.costPrice !== undefined ? (
+                            <strong>{formatINR(variant.costPrice)}</strong>
+                          ) : (
+                            <span className="text-secondary">Not configured</span>
+                          )}
+                        </td>
+                        <td>
+                          {isEditingThisRow ? (
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              className="input admin-price-input"
+                              aria-label={`Selling Price for ${product.name} ${variant.packSize}`}
+                              placeholder="Selling price (₹)"
+                              value={editingRow.sellingPriceInput}
+                              onChange={(e) =>
+                                setEditingRow((prev) =>
+                                  prev ? { ...prev, sellingPriceInput: e.target.value } : null,
+                                )
+                              }
+                              disabled={rowBusy}
+                            />
+                          ) : (
+                            <strong>{formatINR(variant.price)}</strong>
+                          )}
+                        </td>
+                        <td>
+                          {isEditingThisRow ? (
+                            <div className="admin-action-group">
+                              <button
+                                type="button"
+                                className="btn btn--primary btn--sm"
+                                disabled={rowBusy}
+                                onClick={() => void saveRowEdit(product)}
+                              >
+                                {rowBusy ? 'Saving…' : 'Save'}
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn--outline btn--sm"
+                                disabled={rowBusy}
+                                onClick={cancelRowEdit}
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              className="btn btn--outline btn--sm"
+                              onClick={() => startRowEdit(product, variant)}
+                            >
+                              Edit
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  }),
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
       )}
 
-      {/* Add / Edit Product Drawer */}
+      {/* Full Product & Variant Editor Drawer */}
       <DetailDrawer
         open={isCreating || editingProduct !== null}
         title={isCreating ? 'Add Product' : `Edit ${editingProduct?.name ?? 'Product'}`}
-        subtitle="Configure product details, Gujarati name, and per-variant pricing & stock."
+        subtitle="Configure product details, Cost Prices, and Selling Prices for 250g, 500g, and 1kg."
         onClose={() => {
           setIsCreating(false);
           setEditingProduct(null);
@@ -357,60 +506,14 @@ export default function AdminProductsPage() {
             </div>
           </div>
 
-          <div style={{ marginBottom: 14 }}>
-            <label htmlFor="prod-image">Product Image Path / Supabase Storage URL</label>
-            <input
-              id="prod-image"
-              className="input"
-              value={formImageUrl}
-              onChange={(e) => setFormImageUrl(e.target.value)}
-            />
-          </div>
-
-          <div style={{ marginBottom: 14 }}>
-            <label htmlFor="prod-desc">Description (English)</label>
-            <textarea
-              id="prod-desc"
-              className="input"
-              value={formDescription}
-              onChange={(e) => setFormDescription(e.target.value)}
-            />
-          </div>
-
-          <div style={{ marginBottom: 14 }}>
-            <label htmlFor="prod-desc-gu">Description (Gujarati / ગુજરાતી)</label>
-            <input
-              id="prod-desc-gu"
-              className="input"
-              lang="gu"
-              value={formDescriptionGu}
-              onChange={(e) => setFormDescriptionGu(e.target.value)}
-            />
-          </div>
-
-          <div className="checkbox-row">
-            <input
-              id="prod-active"
-              type="checkbox"
-              checked={formActive}
-              onChange={(e) => setFormActive(e.target.checked)}
-            />
-            <label htmlFor="prod-active" style={{ marginBottom: 0 }}>
-              Product Active on Customer Storefront
-            </label>
-          </div>
-
           <h3 style={{ fontSize: 18, margin: '20px 0 10px' }}>
-            Variant Pricing &amp; Inventory (250g · 500g · 1kg)
+            Pack-Size Cost &amp; Selling Prices (250g · 500g · 1kg)
           </h3>
-          <p className="text-small text-secondary" style={{ marginBottom: 12 }}>
-            Leave price empty to keep as <strong>Awaiting price</strong>. Each variant has an independently managed price and stock quantity.
-          </p>
 
           {(['250g', '500g', '1kg'] as PackSize[]).map((size) => (
             <div key={size} className="card card--tinted" style={{ padding: 14, marginBottom: 12 }}>
               <div className="detail-header">
-                <strong>Variant: {formatPackSize(size)}</strong>
+                <strong>Pack Size: {formatPackSize(size)}</strong>
                 <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, margin: 0, fontSize: 14 }}>
                   <input
                     type="checkbox"
@@ -424,7 +527,22 @@ export default function AdminProductsPage() {
               </div>
               <div className="form-row" style={{ marginBottom: 0 }}>
                 <div>
-                  <label htmlFor={`price-${size}`}>Unit Price (₹ INR)</label>
+                  <label htmlFor={`cost-${size}`}>Cost Price (₹ INR)</label>
+                  <input
+                    id={`cost-${size}`}
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    className="input"
+                    placeholder="Not configured"
+                    value={variantCostPrices[size]}
+                    onChange={(e) =>
+                      setVariantCostPrices((prev) => ({ ...prev, [size]: e.target.value }))
+                    }
+                  />
+                </div>
+                <div>
+                  <label htmlFor={`price-${size}`}>Selling Price (₹ INR)</label>
                   <input
                     id={`price-${size}`}
                     type="number"
@@ -435,20 +553,6 @@ export default function AdminProductsPage() {
                     value={variantPrices[size]}
                     onChange={(e) =>
                       setVariantPrices((prev) => ({ ...prev, [size]: e.target.value }))
-                    }
-                  />
-                </div>
-                <div>
-                  <label htmlFor={`stock-${size}`}>Available Stock (Packs)</label>
-                  <input
-                    id={`stock-${size}`}
-                    type="number"
-                    min="0"
-                    step="1"
-                    className="input"
-                    value={variantStock[size]}
-                    onChange={(e) =>
-                      setVariantStock((prev) => ({ ...prev, [size]: e.target.value }))
                     }
                   />
                 </div>
@@ -468,7 +572,7 @@ export default function AdminProductsPage() {
               Cancel
             </button>
             <button type="submit" className="btn btn--primary btn--sm" disabled={busy}>
-              {busy ? 'Saving…' : 'Save Product & Variants'}
+              {busy ? 'Saving…' : 'Save'}
             </button>
           </div>
         </form>

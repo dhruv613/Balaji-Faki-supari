@@ -18,6 +18,9 @@ import type {
   AdminPaymentStatus,
   AdminDeliveryStatus,
   AdminRefundStatus,
+  AdminOrderDetail,
+  AdminProduct,
+  AdminRefundRecord,
   ApprovePaymentRequest,
   RecordRefundTransferRequest,
   StockAdjustmentRequest,
@@ -57,6 +60,23 @@ export const ORDER_STATUS_LABELS: Record<AdminOrderStatus, string> = {
   CANCELLED: 'Cancelled',
   DELIVERY_FAILED: 'Delivery failed',
 };
+
+export const ORDER_ACTION_LABELS: Partial<Record<AdminOrderStatus, string>> = {
+  CONFIRMED: 'Confirm Order',
+  PACKING: 'Start Packing',
+  PACKED: 'Mark Packed',
+  PICKED_UP: 'Mark Picked Up',
+  SHIPPED: 'Mark Shipped',
+  OUT_FOR_DELIVERY: 'Mark Out for Delivery',
+  DELIVERED: 'Mark Delivered',
+  CANCELLED: 'Cancel Order',
+};
+
+export interface AllowedOrderAction {
+  nextStatus: AdminOrderStatus;
+  label: string;
+  tone: 'primary' | 'dark' | 'danger';
+}
 
 export const PAYMENT_STATUS_LABELS: Record<AdminPaymentStatus, string> = {
   PENDING: 'Pending',
@@ -158,6 +178,35 @@ export function getAllowedNextOrderStatuses(
   return candidates.filter((nextStatus) =>
     validateOrderTransition({ currentStatus, nextStatus, paymentStatus }).allowed,
   );
+}
+
+/**
+ * Returns the explicit list of admin action buttons allowed for an order's current state.
+ * Only actions valid in the order state machine are returned.
+ */
+export function getAllowedOrderActions(
+  currentStatus: AdminOrderStatus,
+  paymentStatus: AdminPaymentStatus,
+): AllowedOrderAction[] {
+  const allowedStatuses = getAllowedNextOrderStatuses(currentStatus, paymentStatus);
+  const actions: AllowedOrderAction[] = [];
+
+  for (const nextStatus of allowedStatuses) {
+    const label = ORDER_ACTION_LABELS[nextStatus];
+    if (!label) continue;
+    actions.push({
+      nextStatus,
+      label,
+      tone:
+        nextStatus === 'CANCELLED'
+          ? 'danger'
+          : nextStatus === 'CONFIRMED' || nextStatus === 'DELIVERED'
+          ? 'primary'
+          : 'dark',
+    });
+  }
+
+  return actions;
 }
 
 /* ================================================================== */
@@ -441,4 +490,114 @@ export function isAuthorizedOwnerAdmin(user: {
   if (!user) return false;
   if (user.role === 'CUSTOMER' || user.appMetadataRole === 'CUSTOMER') return false;
   return user.role === 'OWNER_ADMIN' || user.appMetadataRole === 'OWNER_ADMIN';
+}
+
+/* ================================================================== */
+/*  7. DASHBOARD METRIC CALCULATIONS (PRODUCTS SOLD & NET PROFIT)     */
+/* ================================================================== */
+
+/**
+ * Calculates total number of product units sold strictly from delivered/completed
+ * orders whose payment is verified. Never hardcoded.
+ */
+export function calculateProductsSold(
+  orders: ReadonlyArray<Pick<AdminOrderDetail, 'orderStatus' | 'paymentStatus' | 'items'>>,
+  metricsOverride?: number | null,
+): number {
+  if (typeof metricsOverride === 'number' && Number.isFinite(metricsOverride) && metricsOverride >= 0) {
+    return Math.trunc(metricsOverride);
+  }
+  return orders
+    .filter((o) => o.orderStatus === 'DELIVERED' && o.paymentStatus === 'VERIFIED')
+    .reduce((total, order) => {
+      const units = order.items.reduce((sum, item) => sum + Math.max(0, Math.trunc(Number(item.quantity) || 0)), 0);
+      return total + units;
+    }, 0);
+}
+
+/**
+ * Calculates actual Net Profit in INR from completed sales revenue minus
+ * product purchase/cost prices, completed refunds, and delivery expenses.
+ * If cost data or selling price data is unavailable, returns `null` so the UI
+ * displays "Not configured" instead of fabricated profit.
+ */
+export function calculateNetProfit(params: {
+  orders: ReadonlyArray<AdminOrderDetail>;
+  products: ReadonlyArray<AdminProduct>;
+  refunds?: ReadonlyArray<AdminRefundRecord>;
+  metricsNetProfitOverride?: number | null;
+}): number | null {
+  const { orders, products, refunds = [], metricsNetProfitOverride } = params;
+
+  if (typeof metricsNetProfitOverride === 'number' && Number.isFinite(metricsNetProfitOverride)) {
+    return metricsNetProfitOverride;
+  }
+
+  const costMap = new Map<string, number | null>();
+  for (const prod of products) {
+    for (const variant of prod.variants) {
+      costMap.set(`${prod.type}:${variant.packSize}`, variant.costPrice ?? null);
+    }
+  }
+
+  const deliveredOrders = orders.filter(
+    (o) => o.orderStatus === 'DELIVERED' && o.paymentStatus === 'VERIFIED',
+  );
+
+  if (deliveredOrders.length === 0) {
+    const anyCostConfigured = products.some((p) =>
+      p.variants.some((v) => v.costPrice !== null && v.costPrice !== undefined && Number.isFinite(v.costPrice)),
+    );
+    return anyCostConfigured ? 0 : null;
+  }
+
+  let totalRevenue = 0;
+  let totalCost = 0;
+  let totalDeliveryExpenses = 0;
+
+  for (const order of deliveredOrders) {
+    if (order.totalAmount === null || !Number.isFinite(order.totalAmount)) {
+      return null;
+    }
+    totalRevenue += order.totalAmount;
+    if (order.deliveryCharges !== null && Number.isFinite(order.deliveryCharges)) {
+      totalDeliveryExpenses += order.deliveryCharges;
+    }
+
+    for (const item of order.items) {
+      const unitCost =
+        item.unitCostPrice !== undefined && item.unitCostPrice !== null
+          ? item.unitCostPrice
+          : costMap.get(`${item.productType}:${item.packSize}`) ?? null;
+      if (unitCost === null || !Number.isFinite(unitCost)) {
+        return null;
+      }
+      totalCost += unitCost * item.quantity;
+    }
+  }
+
+  const completedRefundsTotal = refunds
+    .filter((r) => r.refundStatus === 'COMPLETED')
+    .reduce(
+      (sum, r) => sum + (r.refundAmount !== null && Number.isFinite(r.refundAmount) ? r.refundAmount : 0),
+      0,
+    );
+
+  return Math.round((totalRevenue - totalCost - totalDeliveryExpenses - completedRefundsTotal) * 100) / 100;
+}
+
+const ADMIN_DATA_CHANGED_EVENT = 'bfp:admin-data-changed';
+
+export function notifyAdminDataChanged(): void {
+  if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+    window.dispatchEvent(new CustomEvent(ADMIN_DATA_CHANGED_EVENT));
+  }
+}
+
+export function subscribeAdminDataChanged(listener: () => void): () => void {
+  if (typeof window === 'undefined' || typeof window.addEventListener !== 'function') {
+    return () => {};
+  }
+  window.addEventListener(ADMIN_DATA_CHANGED_EVENT, listener);
+  return () => window.removeEventListener(ADMIN_DATA_CHANGED_EVENT, listener);
 }

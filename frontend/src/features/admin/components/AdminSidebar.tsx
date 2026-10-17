@@ -14,35 +14,12 @@ export interface AdminNavGroup {
 
 export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
   {
-    section: 'Overview & Operations',
+    section: 'Admin Navigation',
     items: [
       { to: '/admin/dashboard', label: 'Dashboard' },
-      { to: '/admin/orders', label: 'Orders' },
-      { to: '/admin/payments', label: 'Payments', badge: 'Verify' },
-      { to: '/admin/delivery', label: 'Delivery' },
-    ],
-  },
-  {
-    section: 'Catalog & Stock',
-    items: [
-      { to: '/admin/products', label: 'Products' },
-      { to: '/admin/inventory', label: 'Inventory' },
-    ],
-  },
-  {
-    section: 'Customer Relations',
-    items: [
-      { to: '/admin/customers', label: 'Customers' },
-      { to: '/admin/reviews', label: 'Reviews' },
-      { to: '/admin/refunds', label: 'Refunds' },
-    ],
-  },
-  {
-    section: 'Analytics & System',
-    items: [
-      { to: '/admin/reports', label: 'Reports' },
-      { to: '/admin/notifications', label: 'Notifications' },
-      { to: '/admin/settings', label: 'Settings' },
+      { to: '/admin/prices', label: 'Price Management' },
+      { to: '/admin/orders', label: 'Order Management' },
+      { to: '/admin/feedback', label: 'Feedback Management' },
     ],
   },
 ];
@@ -111,29 +88,10 @@ export default function AdminSidebar({ open, onClose }: AdminSidebarProps) {
         </nav>
 
         <div className="admin-sidebar__footer">
-          <div
-            style={{
-              padding: '10px 12px',
-              borderRadius: 10,
-              background: 'var(--bg-cream)',
-              border: '1px solid var(--border)',
-              marginBottom: 8,
-            }}
-          >
-            <div style={{ fontWeight: 700, fontSize: '0.88rem', color: 'var(--text)' }}>
-              {fullName}
-            </div>
-            <div
-              className="text-small text-secondary"
-              style={{ fontSize: '0.75rem', wordBreak: 'break-all' }}
-            >
-              {email}
-            </div>
-            {phone && (
-              <div className="text-small text-secondary" style={{ fontSize: '0.75rem' }}>
-                {phone}
-              </div>
-            )}
+          <div className="admin-sidebar__user-card">
+            <div className="admin-sidebar__user-name">{fullName}</div>
+            <div className="admin-sidebar__user-meta">{email}</div>
+            {phone && <div className="admin-sidebar__user-meta">{phone}</div>}
           </div>
 
           <Link to="/" className="btn btn--outline btn--sm" style={{ width: '100%' }}>

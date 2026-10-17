@@ -59,11 +59,14 @@ export function AppRouter() {
         <Route path="payment-flow" element={<PaymentFlowPage />} />
       </Route>
 
-      {/* ========== Admin routes (12 modules) ========== */}
+      {/* ========== Admin routes (primary 4 pages + preserved modules) ========== */}
       <Route path="admin" element={<AdminLayout />}>
         <Route index element={<Navigate to="dashboard" replace />} />
         <Route path="dashboard" element={<AdminDashboardPage />} />
+        <Route path="prices" element={<AdminProductsPage />} />
         <Route path="orders" element={<AdminOrdersPage />} />
+        <Route path="feedback" element={<AdminReviewsPage />} />
+        {/* Preserved additional admin routes */}
         <Route path="payments" element={<AdminPaymentsPage />} />
         <Route path="products" element={<AdminProductsPage />} />
         <Route path="inventory" element={<AdminInventoryPage />} />

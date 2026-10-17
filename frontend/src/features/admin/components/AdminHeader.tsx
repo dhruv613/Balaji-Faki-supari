@@ -131,16 +131,15 @@ export default function AdminHeader({ onOpenSidebar }: AdminHeaderProps) {
             className="admin-profile-pill"
             onClick={openProfileModal}
             title="View & edit your Admin profile"
-            style={{ cursor: 'pointer', background: '#fff' }}
           >
             <span className="admin-profile-pill__avatar" aria-hidden="true">
               {initials}
             </span>
-            <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', lineHeight: 1.2 }}>
-              <span className="text-small" style={{ fontWeight: 700, color: 'var(--text)' }}>
+            <span className="admin-profile-pill__meta">
+              <span className="admin-profile-pill__name">
                 {displayName}
               </span>
-              <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
+              <span className="admin-profile-pill__email">
                 {userEmail}
               </span>
             </span>
@@ -163,7 +162,7 @@ export default function AdminHeader({ onOpenSidebar }: AdminHeaderProps) {
 
       {profileOpen && (
         <div
-          className="admin-modal-backdrop"
+          className="admin-overlay"
           role="dialog"
           aria-modal="true"
           aria-labelledby="admin-profile-modal-title"
@@ -207,8 +206,8 @@ export default function AdminHeader({ onOpenSidebar }: AdminHeaderProps) {
                 <div className="text-small text-secondary" style={{ wordBreak: 'break-all' }}>
                   {userEmail}
                 </div>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4 }}>
-                  <span className="badge badge--success">{userRole}</span>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4, flexWrap: 'wrap' }}>
+                  <span className="badge badge--green">{userRole}</span>
                   <span className="text-small text-secondary">{userPhone}</span>
                 </div>
               </div>
@@ -223,7 +222,7 @@ export default function AdminHeader({ onOpenSidebar }: AdminHeaderProps) {
               {profileMsg && (
                 <p
                   className="text-small"
-                  style={{ color: 'var(--success)', fontWeight: 600, marginBottom: 10 }}
+                  style={{ color: 'var(--color-green)', fontWeight: 600, marginBottom: 10 }}
                 >
                   {profileMsg}
                 </p>
@@ -255,7 +254,7 @@ export default function AdminHeader({ onOpenSidebar }: AdminHeaderProps) {
                 disabled={savingProfile}
               />
 
-              <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
+              <div style={{ display: 'flex', gap: 10, marginTop: 14, flexWrap: 'wrap' }}>
                 <button
                   type="submit"
                   className="btn btn--primary"
@@ -274,7 +273,7 @@ export default function AdminHeader({ onOpenSidebar }: AdminHeaderProps) {
               </div>
             </form>
 
-            <hr style={{ border: 0, borderTop: '1px solid var(--border)', margin: '16px 0' }} />
+            <hr style={{ border: 0, borderTop: '1px solid var(--color-border)', margin: '16px 0' }} />
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <Link

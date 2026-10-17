@@ -112,9 +112,9 @@ export default function AdminReviewsPage() {
     <div className="wrapper">
       <div className="admin-heading">
         <div>
-          <h1 className="page__header">Reviews &amp; Customer Feedback</h1>
+          <h1 className="page__header">Feedback Management</h1>
           <p className="page__subtitle">
-            Moderate verified-purchase reviews and respond to customer feedback.
+            View customer feedback, star ratings, and order details; reply to reviews and moderate visibility.
           </p>
         </div>
       </div>
@@ -131,7 +131,7 @@ export default function AdminReviewsPage() {
       {error && <Notice tone="error" title="Reviews sync failed">{error}</Notice>}
 
       <div className="stats-grid">
-        <StatCard label="Total Reviews" value={reviews.length} />
+        <StatCard label="Total Feedback" value={reviews.length} />
         <StatCard label="Average Rating" value={`${avgRating} / 5`} />
         <StatCard
           label="Published Reviews"
@@ -146,7 +146,7 @@ export default function AdminReviewsPage() {
       {/* Filters */}
       <div className="card card--tinted customer-filters">
         <div style={{ flex: '2 1 260px' }}>
-          <label htmlFor="rev-admin-search">Search Customer, Order ID, Area, or Text</label>
+          <label htmlFor="rev-admin-search">Search Feedback by Customer, Order ID, Area, or Text</label>
           <input
             id="rev-admin-search"
             type="search"
@@ -158,7 +158,7 @@ export default function AdminReviewsPage() {
         </div>
 
         <div style={{ flex: '1 1 160px' }}>
-          <label htmlFor="rev-rating-filter">Rating Filter</label>
+          <label htmlFor="rev-rating-filter">Filter by Rating</label>
           <select
             id="rev-rating-filter"
             className="input"
@@ -201,17 +201,17 @@ export default function AdminReviewsPage() {
         <LoadingSkeleton rows={4} />
       ) : (
         <div className="card">
-          <div className="customer-table-scroll" role="region" aria-label="Customer reviews table" tabIndex={0}>
+          <div className="admin-table-wrap" role="region" aria-label="Customer feedback table" tabIndex={0}>
             <table className="data-table">
               <thead>
                 <tr>
                   <th scope="col">Customer &amp; Area</th>
                   <th scope="col">Order ID</th>
                   <th scope="col">Product</th>
-                  <th scope="col">Rating</th>
-                  <th scope="col">Review Text</th>
+                  <th scope="col">Star Rating</th>
+                  <th scope="col">Feedback</th>
                   <th scope="col">Date</th>
-                  <th scope="col">Moderation Status</th>
+                  <th scope="col">Status</th>
                   <th scope="col">Action</th>
                 </tr>
               </thead>
@@ -233,7 +233,12 @@ export default function AdminReviewsPage() {
                     <td>
                       {rev.productName} · {formatPackSize(rev.packSize)}
                     </td>
-                    <td><strong>{rev.rating}.0 ★</strong></td>
+                    <td>
+                      <strong aria-label={`${rev.rating} out of 5 stars`}>
+                        {'★'.repeat(rev.rating)}
+                        {'☆'.repeat(Math.max(0, 5 - rev.rating))} ({rev.rating}.0)
+                      </strong>
+                    </td>
                     <td style={{ maxWidth: 320 }}>
                       <p className="text-small">{rev.reviewText}</p>
                       {rev.adminReply && (
@@ -250,7 +255,7 @@ export default function AdminReviewsPage() {
                         className="btn btn--outline btn--sm"
                         onClick={() => openReviewDrawer(rev)}
                       >
-                        Moderate / Reply
+                        View / Reply
                       </button>
                     </td>
                   </tr>
@@ -258,7 +263,7 @@ export default function AdminReviewsPage() {
                 {filtered.length === 0 && (
                   <tr>
                     <td colSpan={8} className="text-secondary">
-                      No reviews match these filters.
+                      No feedback entries match these filters.
                     </td>
                   </tr>
                 )}

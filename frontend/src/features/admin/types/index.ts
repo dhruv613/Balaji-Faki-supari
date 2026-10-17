@@ -145,6 +145,10 @@ export interface AdminDashboardMetrics {
   pendingRefundsCount: number;
   completedRefundsAmount: number;
   lowStockProductsCount: number;
+  /** Total product units sold across delivered/completed orders */
+  productsSoldCount?: number;
+  /** Actual calculated net profit in INR, or null when cost prices are not configured */
+  netProfitAmount?: number | null;
 }
 
 export interface SalesChartPoint {
@@ -185,6 +189,7 @@ export interface AdminOrderItem {
   packSize: PackSize;
   quantity: number;
   unitPrice: number | null;
+  unitCostPrice?: number | null;
   lineTotal: number | null;
 }
 
@@ -284,6 +289,7 @@ export interface AdminPaymentSubmission {
   orderNumber: string;
   customerName: string;
   customerPhone: string;
+  productSummary?: string;
   expectedAmount: number | null;
   submittedUtr: string;
   /** Private Supabase Storage object path; viewed only via short-lived signed URL from FastAPI */
@@ -318,13 +324,16 @@ export interface RejectPaymentRequest {
 }
 
 /* ================================================================== */
-/*  7. MODULE 04 — PRODUCT MANAGEMENT                                 */
+/*  7. MODULE 04 — PRODUCT & PRICE MANAGEMENT                         */
 /* ================================================================== */
 
 export interface AdminProductVariant {
   id: string;
   packSize: PackSize;
   sku: string;
+  /** Product purchase/cost price stored separately from selling price */
+  costPrice: number | null;
+  /** Product selling price */
   price: number | null;
   availableQuantity: number;
   reservedQuantity: number;
@@ -357,6 +366,7 @@ export interface CreateAdminProductRequest {
   variants: Array<{
     packSize: PackSize;
     sku: string;
+    costPrice?: number | null;
     price: number | null;
     availableQuantity: number;
     isAvailable: boolean;
@@ -374,6 +384,7 @@ export interface UpdateAdminProductRequest {
   variants?: Array<{
     id?: string;
     packSize: PackSize;
+    costPrice?: number | null;
     price: number | null;
     availableQuantity?: number;
     isAvailable: boolean;
