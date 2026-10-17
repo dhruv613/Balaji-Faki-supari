@@ -1,13 +1,18 @@
 # Dependencies & build output
 node_modules/
+frontend/node_modules/
 dist/
+frontend/dist/
 *.tsbuildinfo
 coverage/
 
 # Environment variables (keep .env.example templates tracked)
 .env
 .env.*
+frontend/.env
+frontend/.env.*
 !.env.example
+!frontend/.env.example
 !backend/.env.example
 *.local
 
@@ -20,4 +25,4 @@ venv/
 
 # Supabase CLI temporary state & local verification captures
 supabase/.temp/
-verification/
+docs/testing/verification/

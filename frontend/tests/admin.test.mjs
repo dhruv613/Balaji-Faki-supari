@@ -396,7 +396,7 @@ assert.equal(
 /* ================================================================== */
 
 const migrationSql = readFileSync(
-  new URL('../supabase/migrations/20261017000000_balaji_faki_point_schema.sql', import.meta.url),
+  new URL('../../supabase/migrations/20261017000000_balaji_faki_point_schema.sql', import.meta.url),
   'utf8',
 );
 

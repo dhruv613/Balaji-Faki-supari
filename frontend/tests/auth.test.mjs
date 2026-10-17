@@ -97,10 +97,10 @@ assert.match(renderToStaticMarkup(render(profile.type,profile.props)),/Unable to
 assert.doesNotMatch(renderGate(),/PRIVATE STORE CONTENT/,'Failed profile save cannot unlock store');
 
 if (process.argv.includes('--fixtures')) {
-  mkdirSync(new URL('../verification/fixtures/',import.meta.url),{recursive:true});
+  mkdirSync(new URL('../../docs/testing/verification/fixtures/',import.meta.url),{recursive:true});
   for (const [name,session] of [['login',null],['profile',{user:{id:'unit-user',email:'design-preview@example.test',user_metadata:{}}}]]) {
     authState={session,loading:false};
-    writeFileSync(new URL(`../verification/fixtures/${name}.html`,import.meta.url),`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link href="https://fonts.googleapis.com/css2?family=Gloock&family=Hind+Vadodara:wght@400;500;600;700&display=swap" rel="stylesheet"><link rel="stylesheet" href="/src/styles/globals.css"></head><body><aside class="notice">STATIC AUTH DESIGN FIXTURE · No account exists. Controls are inactive.</aside>${renderGate()}</body></html>`);
+    writeFileSync(new URL(`../../docs/testing/verification/fixtures/${name}.html`,import.meta.url),`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link href="https://fonts.googleapis.com/css2?family=Gloock&family=Hind+Vadodara:wght@400;500;600;700&display=swap" rel="stylesheet"><link rel="stylesheet" href="/src/styles/globals.css"></head><body><aside class="notice">STATIC AUTH DESIGN FIXTURE · No account exists. Controls are inactive.</aside>${renderGate()}</body></html>`);
   }
 }
 console.log('Authentication: session/profile gates, password login, email confirmation, invalid mobile rejection, profile save errors and sign-out passed (isolated SDK tests).');

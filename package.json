@@ -3,12 +3,16 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
+  "workspaces": [
+    "frontend"
+  ],
   "scripts": {
-    "dev": "node ./node_modules/vite/bin/vite.js",
-    "build": "node ./node_modules/typescript/bin/tsc -b && node ./node_modules/vite/bin/vite.js build",
-    "preview": "node ./node_modules/vite/bin/vite.js preview",
-    "typecheck": "node ./node_modules/typescript/bin/tsc --noEmit",
-    "test": "node tests/checkout.test.mjs && node tests/secondary-pages.test.mjs && node tests/auth.test.mjs && node tests/admin.test.mjs"
+    "dev": "npm --prefix frontend run dev",
+    "build": "npm --prefix frontend run build && node --input-type=module -e \"import{cpSync,rmSync}from'node:fs';rmSync('dist',{recursive:true,force:true});cpSync('frontend/dist','dist',{recursive:true})\"",
+    "preview": "npm --prefix frontend run preview",
+    "typecheck": "npm --prefix frontend run typecheck",
+    "test": "npm --prefix frontend test",
+    "verify": "node scripts/verify-all.mjs"
   },
   "dependencies": {
     "react": "^19.0.0",

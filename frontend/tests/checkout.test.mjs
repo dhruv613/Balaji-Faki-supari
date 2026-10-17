@@ -128,7 +128,7 @@ await assert.rejects(api.apiFetch('/test'),/unreadable/);
 
 // Actual React components rendered with explicitly isolated design-only data; never imported by src.
 if (process.argv.includes('--fixtures')) {
-  mkdirSync(new URL('../verification/fixtures/',import.meta.url),{recursive:true});
+  mkdirSync(new URL('../../docs/testing/verification/fixtures/',import.meta.url),{recursive:true});
   const notice=load('src/components/common/Notice.tsx').default;
   const stepper=load('src/components/common/OrderStepper.tsx').default;
   const noOrder=load('src/components/common/NoActiveOrder.tsx',{'react-router-dom':require('react-router-dom')}).default;
@@ -150,7 +150,7 @@ if (process.argv.includes('--fixtures')) {
     const markup=renderToStaticMarkup(React.createElement(MemoryRouter,null,React.createElement(component)));
     if(name==='payment') assert.ok(!markup.includes('Pay within'),'No fabricated payment expiry');
     const html=`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link href="https://fonts.googleapis.com/css2?family=Gloock&family=Hind+Vadodara:wght@400;500;600;700&display=swap" rel="stylesheet"><link rel="stylesheet" href="/src/styles/globals.css"></head><body><aside class="notice">DESIGN TEST FIXTURE · No order exists. Do not pay. Controls are static.</aside><header class="header"><div class="wrapper"><img src="/images/balaji-logo.png" height="56" width="109" alt="Balaji Faki Point"><nav class="nav">Home　Order　My Orders　Track　Reviews　Visit Store　Help</nav></div></header><main class="page">${markup}</main></body></html>`;
-    writeFileSync(new URL(`../verification/fixtures/${name}.html`,import.meta.url),html);
+    writeFileSync(new URL(`../../docs/testing/verification/fixtures/${name}.html`,import.meta.url),html);
   }
 }
 console.log('Core checkout: validation, draft persistence, payment reset, server contracts, bearer auth, idempotency, upload validation and failure handling passed.');
