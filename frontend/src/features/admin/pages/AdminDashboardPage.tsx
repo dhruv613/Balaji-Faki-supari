@@ -6,10 +6,9 @@ import { formatINR, formatPackSize, getErrorMessage } from '../../../lib/api';
 import {
   getAdminDashboard,
   getAdminPayments,
+  getAdminPaymentProof,
   getAdminOrders,
   getAdminOrderById,
-  getAdminProducts,
-  getAdminRefunds,
   approveAdminPayment,
   rejectAdminPayment,
 } from '../api';
@@ -17,19 +16,9 @@ import type {
   AdminDashboardMetrics,
   AdminOrderDetail,
   AdminPaymentSubmission,
-  AdminProduct,
-  AdminRefundRecord,
   ApprovePaymentRequest,
 } from '../types';
 import {
-  SAMPLE_ADMIN_ORDERS,
-  SAMPLE_ADMIN_PAYMENTS,
-  SAMPLE_ADMIN_PRODUCTS,
-  SAMPLE_ADMIN_REFUNDS,
-} from '../lib/referenceData';
-import {
-  calculateNetProfit,
-  calculateProductsSold,
   notifyAdminDataChanged,
   subscribeAdminDataChanged,
   validatePaymentApproval,
@@ -48,10 +37,8 @@ export default function AdminDashboardPage() {
   const { showToast } = useAdminToast();
 
   const [dashboardMetrics, setDashboardMetrics] = useState<AdminDashboardMetrics | null>(null);
-  const [orders, setOrders] = useState<AdminOrderDetail[]>(SAMPLE_ADMIN_ORDERS);
-  const [payments, setPayments] = useState<AdminPaymentSubmission[]>(SAMPLE_ADMIN_PAYMENTS);
-  const [products, setProducts] = useState<AdminProduct[]>(SAMPLE_ADMIN_PRODUCTS);
-  const [refunds, setRefunds] = useState<AdminRefundRecord[]>(SAMPLE_ADMIN_REFUNDS);
+  const [orders, setOrders] = useState<AdminOrderDetail[]>([]);
+  const [payments, setPayments] = useState<AdminPaymentSubmission[]>([]);
 
   const [loading, setLoading] = useState(Boolean(env.apiBaseUrl));
   const [error, setError] = useState('');
@@ -85,12 +72,10 @@ export default function AdminDashboardPage() {
     }
     setError('');
     try {
-      const [dashRes, paymentsRes, ordersRes, productsRes, refundsRes] = await Promise.all([
+      const [dashRes, paymentsRes, ordersRes] = await Promise.all([
         getAdminDashboard(),
         getAdminPayments({ status: 'ALL' }),
         getAdminOrders({ status: 'ALL', paymentStatus: 'ALL' }),
-        getAdminProducts().catch(() => SAMPLE_ADMIN_PRODUCTS),
-        getAdminRefunds({ status: 'ALL' }).catch(() => ({ items: SAMPLE_ADMIN_REFUNDS, total: 0 })),
       ]);
 
       const detailedOrders = await Promise.all(
@@ -102,11 +87,7 @@ export default function AdminDashboardPage() {
       const resolvedOrders = detailedOrders.filter(
         (item): item is AdminOrderDetail => item !== null,
       );
-      if (resolvedOrders.length > 0) {
-        setOrders(resolvedOrders);
-      }
-      setProducts(productsRes);
-      setRefunds(refundsRes.items);
+      setOrders(resolvedOrders);
       setIsLive(true);
     } catch (err) {
       setError(getErrorMessage(err));
@@ -133,23 +114,8 @@ export default function AdminDashboardPage() {
     };
   }, [loadDashboardData]);
 
-  // Card 1: Products Sold (total product units from delivered/completed orders)
-  const productsSoldCount = useMemo(
-    () => calculateProductsSold(orders, dashboardMetrics?.productsSoldCount),
-    [orders, dashboardMetrics],
-  );
-
-  // Card 2: Net Profit (completed sales revenue minus product costs, refunds & delivery expenses)
-  const netProfitAmount = useMemo(
-    () =>
-      calculateNetProfit({
-        orders,
-        products,
-        refunds,
-        metricsNetProfitOverride: dashboardMetrics?.netProfitAmount,
-      }),
-    [orders, products, refunds, dashboardMetrics],
-  );
+  const productsSoldCount = dashboardMetrics?.productsSoldCount;
+  const netProfitAmount = dashboardMetrics?.netProfitAmount;
 
   // Pending Payment Confirmations queue
   const pendingPayments = useMemo(
@@ -185,6 +151,17 @@ export default function AdminDashboardPage() {
     setVerificationNotes('');
     setRejectionReason(payment.rejectionReason ?? '');
     setValidationError('');
+    if (env.apiBaseUrl && !payment.signedScreenshotUrl) {
+      void getAdminPaymentProof(payment.id)
+        .then((proof) => {
+          setSelectedPayment((prev) =>
+            prev && prev.id === payment.id
+              ? { ...prev, signedScreenshotUrl: proof.signedUrl }
+              : prev,
+          );
+        })
+        .catch(() => undefined);
+    }
   }
 
   function handleViewOrder(payment: AdminPaymentSubmission) {
@@ -320,8 +297,8 @@ export default function AdminDashboardPage() {
       </div>
 
       {!isLive && (
-        <Notice title="Backend integration pending — Reference overview">
-          FastAPI (<code>GET /api/admin/dashboard</code>) is not connected yet. Metrics below are computed from real order and cost records without fabricated figures.
+        <Notice title="Dashboard data unavailable">
+          Connect the local FastAPI server to load live dashboard data. No sample orders, payments, or financial figures are shown.
         </Notice>
       )}
       {error && <Notice tone="error" title="Dashboard sync failed">{error}</Notice>}
@@ -335,14 +312,24 @@ export default function AdminDashboardPage() {
             <div className="admin-kpi-grid">
               <StatCard
                 label="Products Sold"
-                value={`${productsSoldCount} ${productsSoldCount === 1 ? 'Item' : 'Items'}`}
-                subtitle="Total product units from delivered & verified orders"
+                value={
+                  isLive && typeof productsSoldCount === 'number'
+                    ? `${productsSoldCount} ${productsSoldCount === 1 ? 'Item' : 'Items'}`
+                    : 'Unavailable'
+                }
+                subtitle="Delivered product units from the local order database"
               />
               <StatCard
                 label="Net Profit"
-                value={netProfitAmount !== null ? formatINR(netProfitAmount) : 'Not configured'}
+                value={
+                  !isLive
+                    ? 'Unavailable'
+                    : netProfitAmount !== null && netProfitAmount !== undefined
+                      ? formatINR(netProfitAmount)
+                      : 'Not configured'
+                }
                 subtitle={
-                  netProfitAmount !== null
+                  netProfitAmount !== null && netProfitAmount !== undefined
                     ? 'Completed sales minus product costs, delivery & refunds'
                     : 'Configure product cost & selling prices in Price Management'
                 }

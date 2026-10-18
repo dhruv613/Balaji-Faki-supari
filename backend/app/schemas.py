@@ -1,0 +1,179 @@
+"""Pydantic v2 request and response models for Balaji Faki Point FastAPI backend."""
+
+from __future__ import annotations
+
+from typing import Literal, Optional
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class CamelModel(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+
+class CheckoutQuoteRequestSchema(CamelModel):
+    product: Literal["faki", "supari"]
+    pack_size: Literal["250g", "500g", "1kg"] = Field(alias="packSize")
+    quantity: int = Field(ge=1, le=20)
+    pin_code: str = Field(alias="pinCode", min_length=6, max_length=6)
+
+
+class CheckoutQuoteResponseSchema(CamelModel):
+    subtotal: float | int
+    delivery_fee: float | int = Field(alias="deliveryFee")
+    total: float | int
+    currency: Literal["INR"] = "INR"
+
+
+class CreateOrderRequestSchema(CamelModel):
+    product: Literal["faki", "supari"]
+    pack_size: Literal["250g", "500g", "1kg"] = Field(alias="packSize")
+    quantity: int = Field(ge=1, le=20)
+    full_name: str = Field(alias="fullName", min_length=2, max_length=100)
+    phone: str = Field(min_length=10, max_length=20)
+    address: str = Field(min_length=10, max_length=500)
+    pin_code: str = Field(alias="pinCode", min_length=6, max_length=6)
+
+
+class PaymentInstructionsSchema(CamelModel):
+    amount: float | int
+    payee_name: str = Field(alias="payeeName")
+    upi_id: str = Field(alias="upiId")
+    qr_image_url: Optional[str] = Field(default=None, alias="qrImageUrl")
+    expires_at: Optional[str] = Field(default=None, alias="expiresAt")
+
+
+class OrderResponseSchema(CamelModel):
+    id: str
+    order_number: str = Field(alias="orderNumber")
+    product: Literal["faki", "supari"]
+    product_name: str = Field(alias="productName")
+    product_image_url: Optional[str] = Field(default=None, alias="productImageUrl")
+    pack_size: Literal["250g", "500g", "1kg"] = Field(alias="packSize")
+    quantity: int
+    subtotal: float | int
+    delivery_fee: float | int = Field(alias="deliveryFee")
+    total: float | int
+    customer_name: str = Field(alias="customerName")
+    phone: str
+    address: str
+    pin_code: str = Field(alias="pinCode")
+    status: str
+    payment_status: str = Field(alias="paymentStatus")
+    utr_number: Optional[str] = Field(default=None, alias="utrNumber")
+    created_at: str = Field(alias="createdAt")
+    updated_at: str = Field(alias="updatedAt")
+    payment: Optional[PaymentInstructionsSchema] = None
+
+
+class PaymentSubmissionResponseSchema(CamelModel):
+    payment_id: str = Field(alias="paymentId")
+    order_id: str = Field(alias="orderId")
+    order_number: str = Field(alias="orderNumber")
+    payment_status: str = Field(alias="paymentStatus")
+    order_status: str = Field(alias="orderStatus")
+    utr_masked: str = Field(alias="utrMasked")
+    submitted_at: str = Field(alias="submittedAt")
+    message: str
+
+
+class PaymentStatusResponseSchema(CamelModel):
+    order_id: str = Field(alias="orderId")
+    order_number: str = Field(alias="orderNumber")
+    status: str
+    order_status: str = Field(alias="orderStatus")
+    message: Optional[str] = None
+    utr_masked: Optional[str] = Field(default=None, alias="utrMasked")
+
+
+class ApprovePaymentRequestSchema(CamelModel):
+    receiving_bank_account: str = Field(alias="receivingBankAccount", min_length=4, max_length=128)
+    verified_amount: float = Field(alias="verifiedAmount", gt=0)
+    verified_utr: str = Field(alias="verifiedUtr", min_length=12, max_length=12)
+    transaction_status: str = Field(alias="transactionStatus")
+    bank_credit_reference: str = Field(alias="bankCreditReference", min_length=4, max_length=128)
+    notes: Optional[str] = None
+
+
+class ReviewPaymentRequestSchema(CamelModel):
+    notes: Optional[str] = Field(default=None, max_length=500)
+
+
+class RejectPaymentRequestSchema(CamelModel):
+    reason: str = Field(min_length=5, max_length=500)
+    request_corrected_proof: bool = Field(default=False, alias="requestCorrectedProof")
+
+
+class SubmitReviewRequestSchema(CamelModel):
+    rating: int = Field(ge=1, le=5)
+    review_text: str = Field(alias="reviewText", min_length=10, max_length=2000)
+
+
+class UpdateAdminReviewRequestSchema(CamelModel):
+    moderation_status: Optional[Literal["PUBLISHED", "HIDDEN", "PENDING_MODERATION"]] = Field(
+        default=None, alias="moderationStatus"
+    )
+    admin_reply: Optional[str] = Field(default=None, alias="adminReply", max_length=2000)
+
+
+class ConfirmOrderRequestSchema(CamelModel):
+    notes: Optional[str] = None
+
+
+class UpdateOrderStatusRequestSchema(CamelModel):
+    status: str
+    notes: Optional[str] = None
+    cancellation_reason: Optional[str] = Field(default=None, alias="cancellationReason")
+    failure_reason: Optional[str] = Field(default=None, alias="failureReason")
+
+
+class CancelOrderRequestSchema(CamelModel):
+    reason: str = Field(min_length=5, max_length=500)
+
+
+class UpdateDeliveryRequestSchema(CamelModel):
+    status: Optional[str] = None
+    assigned_delivery_person: Optional[str] = Field(default=None, alias="assignedDeliveryPerson")
+    delivery_phone: Optional[str] = Field(default=None, alias="deliveryPhone")
+    courier_tracking_reference: Optional[str] = Field(default=None, alias="courierTrackingReference")
+    dispatch_date: Optional[str] = Field(default=None, alias="dispatchDate")
+    pickup_date: Optional[str] = Field(default=None, alias="pickupDate")
+    estimated_delivery_date: Optional[str] = Field(default=None, alias="estimatedDeliveryDate")
+    delivered_date: Optional[str] = Field(default=None, alias="deliveredDate")
+    delivery_notes: Optional[str] = Field(default=None, alias="deliveryNotes")
+    failure_reason: Optional[str] = Field(default=None, alias="failureReason")
+
+
+class ApproveRefundRequestSchema(CamelModel):
+    notes: Optional[str] = Field(default=None, max_length=500)
+
+
+class RecordRefundTransferRequestSchema(CamelModel):
+    refund_transaction_reference: str = Field(alias="refundTransactionReference", min_length=4, max_length=128)
+    refund_bank_account: str = Field(alias="refundBankAccount", min_length=4, max_length=128)
+    refund_date: str = Field(alias="refundDate", min_length=8, max_length=32)
+    verified_amount: float = Field(alias="verifiedAmount", gt=0)
+    notes: Optional[str] = Field(default=None, max_length=500)
+
+
+class UpdateProductVariantInputSchema(CamelModel):
+    id: Optional[str] = None
+    pack_size: Literal["250g", "500g", "1kg"] = Field(alias="packSize")
+    cost_price: Optional[float] = Field(default=None, alias="costPrice")
+    price: Optional[float] = None
+    available_quantity: Optional[int] = Field(default=None, alias="availableQuantity")
+    is_available: bool = Field(default=True, alias="isAvailable")
+
+
+class UpdateAdminProductRequestSchema(CamelModel):
+    name: Optional[str] = None
+    name_gu: Optional[str] = Field(default=None, alias="nameGu")
+    category: Optional[str] = None
+    description: Optional[str] = None
+    description_gu: Optional[str] = Field(default=None, alias="descriptionGu")
+    image_url: Optional[str] = Field(default=None, alias="imageUrl")
+    active: Optional[bool] = None
+    variants: Optional[list[UpdateProductVariantInputSchema]] = None
+
+
+class LinkLegacyAccountRequestSchema(CamelModel):
+    legacy_password: str = Field(alias="legacyPassword", min_length=4, max_length=128)

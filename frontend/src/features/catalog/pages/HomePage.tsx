@@ -11,23 +11,16 @@ export default function HomePage() {
         <div className="hero">
           <div className="hero__content">
             <span className="badge">Order online · Pay by UPI QR</span>
-            <h1>
-              Faki &amp; Supari,
-              <br />
-              ordered in two
-              <br />
-              minutes.
-            </h1>
+            <h1>Order Faki &amp; Supari online.</h1>
             <p className="hero__subtitle">
-              Pick your pack, pay with a UPI QR and track your order —
-              all in one place.
+              Pick your pack, pay with a UPI QR, and see every confirmed update in My Orders.
             </p>
             <div className="hero__actions">
-              <Link to="/order" className="btn btn--primary" id="hero-order-btn">
-                Order Now
+              <Link to="/order?product=faki" className="btn btn--primary" id="hero-order-faki-btn">
+                Order Faki
               </Link>
-              <Link to="/store" className="btn" id="hero-store-btn">
-                Visit Store
+              <Link to="/order?product=supari" className="btn btn--dark" id="hero-order-supari-btn">
+                Order Supari
               </Link>
             </div>
           </div>
@@ -61,8 +54,8 @@ export default function HomePage() {
             />
             <StepCard
               num={3}
-              title="We verify & dispatch"
-              desc="Once payment is verified, your order becomes active."
+              title="We verify & confirm"
+              desc="Payment verification comes first; the shop confirms before packing and delivery updates begin."
             />
           </div>
         </div>
@@ -75,7 +68,9 @@ export default function HomePage() {
           <div className="product-cards" style={{ marginTop: 28 }}>
             {products.map((product) => (
               <div className="product-card" key={product.type}>
+                {product.imageUrl && <img className="product-card__image" src={product.imageUrl} alt={product.name} width="640" height="360" />}
                 <div className="product-card__name">{product.name}</div>
+                <p className="product-card__details">{product.description?.trim() || 'Ask the store for current product details, packaging, and storage information.'}</p>
                 <p className="product-card__packs">
                   Packs: {product.packSizes.map(formatPackSize).join(' · ')}
                 </p>
@@ -99,198 +94,29 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ---- Customer Reviews Showcase Section ---- */}
+      {/* ---- Customer Reviews ---- */}
       <section className="section section--tinted" id="home-customer-reviews" aria-labelledby="home-reviews-heading">
         <div className="wrapper">
-          <div
-            style={{
-              display: 'flex',
-              flexWrap: 'wrap',
-              alignItems: 'flex-end',
-              justifyContent: 'space-between',
-              gap: 16,
-              marginBottom: 28,
-            }}
-          >
+          <div className="card" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
             <div>
-              <span className="badge">4.7 ★ Customer Rating · Rajkot</span>
-              <h2 id="home-reviews-heading" style={{ marginTop: 8 }}>
-                See here is our Customers Review — go &amp; checkout
-              </h2>
+              <span className="badge">Verified-purchase feedback</span>
+              <h2 id="home-reviews-heading" style={{ marginTop: 8 }}>Customer reviews</h2>
               <p className="text-secondary" style={{ marginTop: 6 }}>
-                Feedback from customers across Rajkot ordering Faki &amp; Supari online.
+                Read published feedback or share your own review after delivery.
               </p>
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
               <Link to="/reviews" className="btn" id="home-view-all-reviews-btn">
-                See All Reviews
+                Read reviews
               </Link>
-              <Link to="/order" className="btn btn--primary" id="home-reviews-checkout-btn">
-                Go &amp; Checkout
-              </Link>
-            </div>
-          </div>
-
-          <div className="reviews-grid" style={{ marginBottom: 28 }}>
-            {HOME_FEATURED_REVIEWS.map((review) => (
-              <article className="review-card" key={review.id} style={{ background: '#FFFFFF' }}>
-                <div className="review-card__header">
-                  <span className="review-avatar">{review.initials}</span>
-                  <div>
-                    <strong>{review.customerName}</strong>
-                    <p className="review-location text-small text-secondary">
-                      <svg className="icon icon--sm" viewBox="0 0 24 24" aria-hidden="true">
-                        <path d="M12 21s7-6 7-11a7 7 0 10-14 0c0 5 7 11 7 11z" />
-                        <circle cx="12" cy="10" r="2.5" />
-                      </svg>
-                      {review.area}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="review-meta">
-                  <HomeStars rating={review.rating} />
-                  <strong>{review.rating}.0</strong>
-                  <span className="text-small text-secondary">· {review.createdAt}</span>
-                </div>
-
-                <p style={{ margin: '12px 0' }}>{review.feedback}</p>
-
-                <div className="review-footer">
-                  <span className="text-small text-secondary">
-                    {review.product} · {review.packSize}
-                  </span>
-                  <Link
-                    to={`/order?product=${review.productType}`}
-                    className="text-small"
-                    style={{
-                      color: 'var(--color-primary-dark, #B93C06)',
-                      fontWeight: 600,
-                      textDecoration: 'none',
-                    }}
-                  >
-                    Order &amp; Checkout →
-                  </Link>
-                </div>
-              </article>
-            ))}
-          </div>
-
-          <div
-            className="card"
-            style={{
-              display: 'flex',
-              flexWrap: 'wrap',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: 16,
-              background: '#FFFFFF',
-            }}
-          >
-            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 16 }}>
-              <div
-                style={{
-                  fontFamily: 'var(--font-display)',
-                  fontSize: 36,
-                  lineHeight: 1,
-                  color: 'var(--color-text)',
-                }}
-              >
-                4.7
-              </div>
-              <div>
-                <div className="review-meta" style={{ margin: 0 }}>
-                  <HomeStars rating={5} />
-                  <span className="text-small text-secondary">out of 5 · 6 reference customer reviews</span>
-                </div>
-                <p className="text-small text-secondary" style={{ margin: '4px 0 0' }}>
-                  Loved by customers in Kalawad Road, University Road, Raiya Road &amp; Mavdi.
-                </p>
-              </div>
-            </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-              <Link to="/reviews" className="btn">
-                Read or Write a Review
-              </Link>
-              <Link to="/order" className="btn btn--primary">
-                Order Now &amp; Checkout
+              <Link to="/my-orders" className="btn btn--primary" id="home-reviews-write-btn">
+                Write a review
               </Link>
             </div>
           </div>
         </div>
       </section>
     </>
-  );
-}
-
-/* ---------- Home Featured Reviews Data & Helpers ---------- */
-
-const HOME_FEATURED_REVIEWS = [
-  {
-    id: 'home-rev-1',
-    initials: 'HP',
-    customerName: 'Hetal P.',
-    area: 'Kalawad Road, Rajkot',
-    rating: 5,
-    feedback: 'Ordered online, paid by QR and got my confirmation quickly. Packing was neat.',
-    product: 'Faki',
-    productType: 'faki',
-    packSize: '500 g',
-    createdAt: '12 Oct 2026',
-  },
-  {
-    id: 'home-rev-2',
-    initials: 'RM',
-    customerName: 'Rahul M.',
-    area: 'University Road, Rajkot',
-    rating: 5,
-    feedback: 'Easy order form, and tracking showed every step until delivery.',
-    product: 'Supari',
-    productType: 'supari',
-    packSize: '250 g',
-    createdAt: '9 Oct 2026',
-  },
-  {
-    id: 'home-rev-3',
-    initials: 'JS',
-    customerName: 'Jignesh S.',
-    area: 'Raiya Road, Rajkot',
-    rating: 4,
-    feedback: 'Good quality. Payment verification took a little while, but the team called me.',
-    product: 'Faki',
-    productType: 'faki',
-    packSize: '1 kg',
-    createdAt: '3 Oct 2026',
-  },
-  {
-    id: 'home-rev-4',
-    initials: 'PD',
-    customerName: 'Pooja D.',
-    area: 'Mavdi, Rajkot',
-    rating: 5,
-    feedback: 'Reordering from My Orders was simple. Will order again.',
-    product: 'Faki',
-    productType: 'faki',
-    packSize: '250 g',
-    createdAt: '28 Sep 2026',
-  },
-] as const;
-
-function HomeStars({ rating }: { rating: number }) {
-  return (
-    <span className="stars" role="img" aria-label={`${rating} out of 5 stars`}>
-      {[1, 2, 3, 4, 5].map((star) => (
-        <svg
-          key={star}
-          className="icon icon--sm"
-          viewBox="0 0 24 24"
-          aria-hidden="true"
-          style={{ fill: star <= rating ? 'currentColor' : 'none' }}
-        >
-          <path d="M12 3.5l2.6 5.4 5.9.8-4.3 4.1 1 5.9L12 16.9 6.8 19.7l1-5.9L3.5 9.7l5.9-.8z" />
-        </svg>
-      ))}
-    </span>
   );
 }
 

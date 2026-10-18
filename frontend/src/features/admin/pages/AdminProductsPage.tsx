@@ -8,7 +8,6 @@ import {
   updateAdminProduct,
 } from '../api';
 import type { AdminProduct, AdminProductVariant, PackSize, ProductType } from '../types';
-import { SAMPLE_ADMIN_PRODUCTS } from '../lib/referenceData';
 import { notifyAdminDataChanged } from '../lib/orderStateMachine';
 import { DetailDrawer, LoadingSkeleton, useAdminToast } from '../components';
 
@@ -22,7 +21,7 @@ interface EditingRowState {
 
 export default function AdminProductsPage() {
   const { showToast } = useAdminToast();
-  const [products, setProducts] = useState<AdminProduct[]>(SAMPLE_ADMIN_PRODUCTS);
+  const [products, setProducts] = useState<AdminProduct[]>([]);
 
   // Inline table row editing state for Cost Price & Selling Price
   const [editingRow, setEditingRow] = useState<EditingRowState | null>(null);
@@ -36,8 +35,7 @@ export default function AdminProductsPage() {
   const [formNameGu, setFormNameGu] = useState('');
   const [formCategory, setFormCategory] = useState('');
   const [formDescription, setFormDescription] = useState('');
-  const [formDescriptionGu, setFormDescriptionGu] = useState('');
-  const [formImageUrl, setFormImageUrl] = useState('/images/hero-product.jpg');
+  const [formImageUrl, setFormImageUrl] = useState('');
   const [formActive, setFormActive] = useState(true);
   const [variantCostPrices, setVariantCostPrices] = useState<Record<PackSize, string>>({
     '250g': '',
@@ -182,7 +180,6 @@ export default function AdminProductsPage() {
     setFormNameGu(product.nameGu);
     setFormCategory(product.category);
     setFormDescription(product.description);
-    setFormDescriptionGu(product.descriptionGu ?? '');
     setFormImageUrl(product.imageUrl);
     setFormActive(product.active);
 
@@ -244,7 +241,6 @@ export default function AdminProductsPage() {
           nameGu: formNameGu.trim(),
           category: formCategory.trim(),
           description: formDescription.trim(),
-          descriptionGu: formDescriptionGu.trim() || undefined,
           imageUrl: formImageUrl.trim(),
           active: formActive,
           variants: parsedVariants,
@@ -258,7 +254,6 @@ export default function AdminProductsPage() {
           nameGu: formNameGu.trim(),
           category: formCategory.trim(),
           description: formDescription.trim(),
-          descriptionGu: formDescriptionGu.trim() || undefined,
           imageUrl: formImageUrl.trim(),
           active: formActive,
           variants: parsedVariants,
@@ -293,7 +288,7 @@ export default function AdminProductsPage() {
 
       {!isLive && (
         <Notice tone="info" title="Server-Authoritative Pricing Policy">
-          FastAPI (<code>/api/admin/products</code>) is not connected yet. Unconfigured prices display <strong>Not configured</strong> / <strong>Awaiting price</strong> until saved in PostgreSQL through FastAPI.
+          Connect the local FastAPI server to load and edit database prices. No sample product or price records are shown.
         </Notice>
       )}
       {error && <Notice tone="error" title="Price catalog sync error">{error}</Notice>}
@@ -437,6 +432,13 @@ export default function AdminProductsPage() {
                     );
                   }),
                 )}
+                {products.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="text-secondary">
+                      No products are available from the local catalog yet.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
@@ -504,6 +506,31 @@ export default function AdminProductsPage() {
                 required
               />
             </div>
+          </div>
+
+          <div>
+            <label htmlFor="prod-description">Verified product details</label>
+            <textarea
+              id="prod-description"
+              className="input"
+              value={formDescription}
+              onChange={(e) => setFormDescription(e.target.value)}
+              maxLength={2000}
+              placeholder="Only store-confirmed ingredients, packaging, manufacturer/provider, characteristics, and storage information."
+            />
+            <p className="text-small text-secondary">Do not enter unverified claims, certifications, or ingredients.</p>
+          </div>
+
+          <div style={{ marginTop: 16 }}>
+            <label htmlFor="prod-image-url">Product image URL</label>
+            <input
+              id="prod-image-url"
+              type="url"
+              className="input"
+              value={formImageUrl}
+              onChange={(e) => setFormImageUrl(e.target.value)}
+              placeholder="/images/faki.jpg"
+            />
           </div>
 
           <h3 style={{ fontSize: 18, margin: '20px 0 10px' }}>

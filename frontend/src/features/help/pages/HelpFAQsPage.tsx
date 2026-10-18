@@ -18,7 +18,7 @@ const FAQS: FAQItem[] = [
   },
   {
     question: 'How do I track my order?',
-    answer: 'Go to "My Orders" and click "Track" next to your active order. Tracking will show the latest status provided by the store once online ordering is connected.',
+    answer: 'Go to "My Orders" and open the order details to see its latest status and completed updates.',
   },
   {
     question: 'Can I change my address?',

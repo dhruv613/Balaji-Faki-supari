@@ -9,6 +9,8 @@ import { useSession } from '../../../lib/supabase';
 import EmailSignIn from '../../../components/common/EmailSignIn';
 import {
   SCREENSHOT_ACCEPT,
+  getPaymentStatus,
+  isPaymentSubmittedOrVerified,
   submitPayment,
   validateScreenshot,
   validateUtr,
@@ -68,7 +70,7 @@ export default function QRPaymentPage() {
   if (!session) return <div className="wrapper"><OrderStepper currentStep={3} /><EmailSignIn /></div>;
 
   // Already submitted — never allow a second submission from this screen.
-  if (state.paymentStatus === 'verifying' || state.paymentStatus === 'verified') {
+  if (isPaymentSubmittedOrVerified(state.paymentStatus)) {
     return <Navigate to="/order/verification" replace />;
   }
 
@@ -125,8 +127,8 @@ export default function QRPaymentPage() {
 
     setSubmitting(true);
     try {
-      // FastAPI stores the screenshot in private Supabase Storage and marks
-      // the payment as "verifying". This is NOT a successful payment.
+      // FastAPI stores the screenshot in private Supabase Storage and sets
+      // Payment = SUBMITTED and Order = PAYMENT_REVIEW. This is NOT verified payment.
       const result = await submitPayment(order!.id, {
         utrNumber: state.utrNumber.trim(),
         screenshot: state.screenshotFile,
@@ -136,6 +138,19 @@ export default function QRPaymentPage() {
       navigate('/order/verification');
     } catch (err) {
       if (activeScope.current !== scope) return;
+      if (isNetworkError(err)) {
+        try {
+          const currentStatus = await getPaymentStatus(order!.id);
+          if (activeScope.current !== scope) return;
+          if (isPaymentSubmittedOrVerified(currentStatus.status)) {
+            dispatch({ type: 'SET_PAYMENT_STATUS', payload: currentStatus.status });
+            navigate('/order/verification');
+            return;
+          }
+        } catch {
+          // Fall through to offline notice without encouraging duplicate payment
+        }
+      }
       setSubmitError({
         kind: isNetworkError(err) ? 'offline' : 'server',
         message: getErrorMessage(err),

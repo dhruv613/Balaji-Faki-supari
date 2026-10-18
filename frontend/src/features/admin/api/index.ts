@@ -18,8 +18,10 @@ import type {
   ConfirmOrderRequest,
   UpdateOrderStatusRequest,
   AdminPaymentSubmission,
+  AdminPaymentProofResponse,
   AdminPaymentsQueryParams,
   ApprovePaymentRequest,
+  ReviewPaymentRequest,
   RejectPaymentRequest,
   AdminProduct,
   CreateAdminProductRequest,
@@ -164,6 +166,31 @@ export async function getAdminPayments(
 export async function getAdminPaymentById(paymentId: string): Promise<AdminPaymentSubmission> {
   return apiFetch<AdminPaymentSubmission>(
     resolveApiPath(`/api/admin/payments/${encodeURIComponent(paymentId)}`),
+  );
+}
+
+/** GET /api/admin/payments/{id}/proof — Issue short-lived signed URL for private screenshot */
+export async function getAdminPaymentProof(paymentId: string): Promise<AdminPaymentProofResponse> {
+  return apiFetch<AdminPaymentProofResponse>(
+    resolveApiPath(`/api/admin/payments/${encodeURIComponent(paymentId)}/proof`),
+  );
+}
+
+/**
+ * POST /api/admin/payments/{id}/review
+ * Explicitly moves a persisted proof from SUBMITTED to UNDER_REVIEW.
+ */
+export async function startAdminPaymentReview(
+  paymentId: string,
+  payload: ReviewPaymentRequest = {},
+): Promise<AdminPaymentSubmission> {
+  return apiFetch<AdminPaymentSubmission>(
+    resolveApiPath(`/api/admin/payments/${encodeURIComponent(paymentId)}/review`),
+    {
+      method: 'POST',
+      headers: { 'Idempotency-Key': `admin-review-payment-${paymentId}` },
+      body: JSON.stringify(payload),
+    },
   );
 }
 

@@ -5,18 +5,32 @@ import { formatINR, formatPackSize, getErrorMessage } from '../../../lib/api';
 import EmailSignIn from '../../../components/common/EmailSignIn';
 import Notice from '../../../components/common/Notice';
 import { getMyOrders } from '../api/ordersApi';
-import { useOrderDispatch } from '../../../context/OrderContext';
+import { ORDER_STATUS_DISPLAY_LABELS } from '../../../types/orders';
 import type { Order, OrderStatus } from '../../../types/orders';
 
 type Filter = 'all' | 'active' | 'delivered' | 'pending';
-const LABELS: Record<OrderStatus, string> = {
-  pending_payment: 'Pending payment', verifying_payment: 'Verifying payment', active: 'Active',
-  packing: 'Packing', dispatched: 'Dispatched', out_for_delivery: 'Out for delivery', delivered: 'Delivered',
-};
+const PENDING_STATUSES: OrderStatus[] = [
+  'PENDING_PAYMENT',
+  'PAYMENT_REVIEW',
+  'AWAITING_CONFIRMATION',
+  'pending_payment',
+  'verifying_payment',
+];
+const ACTIVE_STATUSES: OrderStatus[] = [
+  'CONFIRMED',
+  'PACKING',
+  'PACKED',
+  'PICKED_UP',
+  'SHIPPED',
+  'OUT_FOR_DELIVERY',
+  'active',
+  'packing',
+  'dispatched',
+  'out_for_delivery',
+];
 
 export default function MyOrdersPage() {
   const { session, loading: authLoading } = useSession();
-  const dispatch = useOrderDispatch();
   const [filter, setFilter] = useState<Filter>('all');
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(false);
@@ -34,9 +48,9 @@ export default function MyOrdersPage() {
   }, [session?.user.id, attempt]);
   const filtered = orders.filter(order => {
     if (filter === 'all') return true;
-    if (filter === 'delivered') return order.status === 'delivered';
-    if (filter === 'pending') return ['pending_payment', 'verifying_payment'].includes(order.status);
-    return ['active', 'packing', 'dispatched', 'out_for_delivery'].includes(order.status);
+    if (filter === 'delivered') return order.status === 'DELIVERED' || order.status === 'delivered';
+    if (filter === 'pending') return PENDING_STATUSES.includes(order.status);
+    return ACTIVE_STATUSES.includes(order.status);
   });
   return (
     <div className="wrapper">
@@ -56,14 +70,16 @@ export default function MyOrdersPage() {
           {loading && <p role="status">Loading your orders…</p>}
           {error && <Notice tone="warning" title="Orders are unavailable" actions={<button className="btn btn--sm" onClick={() => setAttempt(attempt + 1)}>Try again</button>}>{error}</Notice>}
           {!loading && !error && !filtered.length && <div className="card empty-state"><p>No orders found.</p><Link to="/order" className="btn btn--primary btn--full">Place an order</Link></div>}
-          {filtered.map(order => (
-            <article className="order-card" key={order.id}>
-              <div><div className="order-card__id">{order.orderNumber}</div><div className="order-card__date">{new Date(order.createdAt).toLocaleDateString('en-IN', {day:'numeric', month:'short', year:'numeric'})}</div></div>
-              <div className="order-card__details"><span className="order-card__product">{order.productName} · {formatPackSize(order.packSize)} × {order.quantity}</span><span className="order-card__amount">{formatINR(order.total)}</span></div>
-              <span className={`badge ${['pending_payment', 'verifying_payment'].includes(order.status) ? '' : 'badge--dark'}`}>{LABELS[order.status]}</span>
-              <Link className="btn" onClick={() => { if (order.status === 'delivered') dispatch({ type: 'RESET' }); }} to={order.status === 'delivered' ? `/order?product=${order.product}` : `/track/${encodeURIComponent(order.id)}`}>{order.status === 'delivered' ? 'Reorder' : 'Track'}</Link>
-            </article>
-          ))}
+          {filtered.map(order => {
+            return (
+              <article className="order-card" key={order.id}>
+                <div><div className="order-card__id">{order.orderNumber}</div><div className="order-card__date">{new Date(order.createdAt).toLocaleDateString('en-IN', {day:'numeric', month:'short', year:'numeric'})}</div></div>
+                <div className="order-card__details"><span className="order-card__product">{order.productName} · {formatPackSize(order.packSize)} × {order.quantity}</span><span className="order-card__amount">{formatINR(order.total)}</span></div>
+                <span className={`badge ${PENDING_STATUSES.includes(order.status) ? '' : 'badge--dark'}`}>{ORDER_STATUS_DISPLAY_LABELS[order.status]}</span>
+                <Link className="btn" to={`/my-orders/${encodeURIComponent(order.id)}`}>View order</Link>
+              </article>
+            );
+          })}
         </>
       )}
     </div>

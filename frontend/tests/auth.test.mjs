@@ -78,6 +78,60 @@ change(render(SignIn),'login-password','wrong-unit-password');
 await submit(render(SignIn));
 assert.match(renderToStaticMarkup(render(SignIn)),/Invalid login credentials/);
 
+// Priority 2: Unified "Continue" flow tests (new customer auto-signup, wrong password rejection)
+hooks = []; cursor = 0; authFailure = null; signupSession = null;
+let continueHistory = [];
+const continueSdk = {
+  auth: {
+    signInWithPassword: async payload => {
+      continueHistory.push({ method: 'signInWithPassword', payload });
+      if (payload.email === 'newcustomer@example.test') {
+        return { data: { session: null, user: null }, error: new Error('Invalid login credentials') };
+      }
+      if (payload.email === 'existing@example.test' && payload.password !== 'correctpass') {
+        return { data: { session: null, user: null }, error: new Error('Invalid login credentials') };
+      }
+      return { data: { session: { user: { email: payload.email } } }, error: null };
+    },
+    signUp: async payload => {
+      continueHistory.push({ method: 'signUp', payload });
+      if (payload.email === 'existing@example.test') {
+        return { data: { session: null, user: null }, error: new Error('User already registered') };
+      }
+      return { data: { session: { user: { email: payload.email } } }, error: null };
+    },
+  },
+};
+const ContinueSignIn = load(
+  'src/components/common/EmailSignIn.tsx',
+  { 'react': hookReact, '../../lib/supabase': { supabase: continueSdk, useSession: () => authState }, './Notice': { default: notice } },
+).default;
+
+// Test 2.1: New customer entering email/password continues automatically without email confirmation wait
+let continueTree = render(ContinueSignIn);
+change(continueTree, 'login-email', 'newcustomer@example.test');
+change(continueTree, 'login-password', 'secretpass123');
+await submit(render(ContinueSignIn));
+assert.equal(continueHistory[0].method, 'signInWithPassword');
+assert.equal(continueHistory[1].method, 'signUp');
+assert.equal(control(render(ContinueSignIn), node => node.props.id === 'login-password').props.value, '');
+assert.doesNotMatch(renderToStaticMarkup(render(ContinueSignIn)), /Check your email/, 'Auto-registered session proceeds immediately without confirmation wait');
+
+// Test 2.2: Existing user with wrong password rejects login and does NOT register replacement account
+continueHistory = [];
+hooks = []; cursor = 0;
+continueTree = render(ContinueSignIn);
+change(continueTree, 'login-email', 'existing@example.test');
+change(continueTree, 'login-password', 'wrongpass456');
+await submit(render(ContinueSignIn));
+assert.equal(continueHistory[0].method, 'signInWithPassword');
+assert.equal(continueHistory[1].method, 'signUp');
+assert.match(
+  renderToStaticMarkup(render(ContinueSignIn)),
+  /Invalid login credentials/,
+  'Wrong password must reject login and prevent duplicate/replacement account creation',
+);
+
 let focused=''; hooks=[]; authFailure=null;
 authState.session={user:{id:'unit-user',email:'test@example.test',user_metadata:{}}};
 const InteractiveGate=load('src/components/common/AuthGate.tsx',{...gateStubs,'react':hookReact},{document:{getElementById:id=>({focus(){focused=id;}})}}).default;
@@ -96,11 +150,106 @@ await submit(render(profile.type,profile.props));
 assert.match(renderToStaticMarkup(render(profile.type,profile.props)),/Unable to reach authentication service/);
 assert.doesNotMatch(renderGate(),/PRIVATE STORE CONTENT/,'Failed profile save cannot unlock store');
 
+// Phase 2 Security Assertions: Verify synthetic session code is removed and JWT validation rejects forged/anon tokens
+const supabaseSource = readFileSync(new URL('../src/lib/supabase.ts', import.meta.url), 'utf8');
+assert.doesNotMatch(supabaseSource, /buildSessionFromDbUser/, 'Synthetic session builder must be removed');
+assert.doesNotMatch(supabaseSource, /simple_auth_login/, 'Direct DB login RPC must not be called');
+assert.doesNotMatch(supabaseSource, /simple_auth_update_profile/, 'Insecure profile RPC must not be called');
+
+const supabaseMod = load(
+  'src/lib/supabase.ts',
+  {
+    './env': { env: { supabaseUrl: 'https://example.supabase.co', supabaseAnonKey: 'sb_publishable_test_key' } },
+    '@supabase/supabase-js': {
+      createClient: () => ({
+        from: () => ({}),
+        rpc: async () => ({ data: null, error: null }),
+        storage: {},
+        auth: {
+          getSession: async () => ({ data: { session: null }, error: null }),
+          signInWithPassword: async () => ({ data: { session: null, user: null }, error: null }),
+          signUp: async () => ({ data: { session: null, user: null }, error: null }),
+          updateUser: async () => ({ data: { user: null }, error: null }),
+          signOut: async () => ({ error: null }),
+          onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
+        },
+      }),
+    },
+  },
+  { Buffer },
+);
+
+function makeJwt(payload) {
+  const b64 = obj => Buffer.from(JSON.stringify(obj)).toString('base64url');
+  return `${b64({ alg: 'ES256', typ: 'JWT' })}.${b64(payload)}.signature`;
+}
+
+const nowSec = Math.floor(Date.now() / 1000);
+assert.equal(supabaseMod.isGenuineSupabaseUserSession(null), false);
+assert.equal(
+  supabaseMod.isGenuineSupabaseUserSession({
+    access_token: 'bfp-session-unit-user',
+    user: { id: 'unit-user' },
+  }),
+  false,
+  'Synthetic session string must be rejected',
+);
+assert.equal(
+  supabaseMod.isGenuineSupabaseUserSession({
+    access_token: 'sb_publishable_test_key',
+    user: { id: 'unit-user' },
+  }),
+  false,
+  'Publishable anon key must be rejected as user session token',
+);
+assert.equal(
+  supabaseMod.isGenuineSupabaseUserSession({
+    access_token: makeJwt({ role: 'anon', exp: nowSec + 3600 }),
+    user: { id: 'unit-user' },
+  }),
+  false,
+  'Anon role JWT without matching user sub must be rejected',
+);
+assert.equal(
+  supabaseMod.isGenuineSupabaseUserSession({
+    access_token: makeJwt({ sub: 'other-user', role: 'authenticated', exp: nowSec + 3600 }),
+    user: { id: 'unit-user' },
+  }),
+  false,
+  'Mismatched sub claim must be rejected',
+);
+assert.equal(
+  supabaseMod.isGenuineSupabaseUserSession({
+    access_token: makeJwt({ sub: 'unit-user', role: 'authenticated', exp: nowSec - 60 }),
+    user: { id: 'unit-user' },
+  }),
+  false,
+  'Expired JWT must be rejected',
+);
+assert.equal(
+  supabaseMod.isGenuineSupabaseUserSession({
+    access_token: makeJwt({ sub: 'unit-user', role: 'authenticated', exp: nowSec + 3600 }),
+    user: { id: 'unit-user' },
+  }),
+  true,
+  'Genuine authenticated user JWT must be accepted',
+);
+
+const fakeLocalStorage = new Map([
+  ['bfp-simple-db-session-v1', '{"user":{"id":"1"}}'],
+  ['bfp-simple-db-session-v2', '{"user":{"id":"2"}}'],
+]);
+supabaseMod.purgeLegacySyntheticSessions({
+  removeItem: key => fakeLocalStorage.delete(key),
+});
+assert.equal(fakeLocalStorage.size, 0, 'Legacy synthetic session keys must be purged');
+
 if (process.argv.includes('--fixtures')) {
   mkdirSync(new URL('../../docs/testing/verification/fixtures/',import.meta.url),{recursive:true});
   for (const [name,session] of [['login',null],['profile',{user:{id:'unit-user',email:'design-preview@example.test',user_metadata:{}}}]]) {
     authState={session,loading:false};
-    writeFileSync(new URL(`../../docs/testing/verification/fixtures/${name}.html`,import.meta.url),`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link href="https://fonts.googleapis.com/css2?family=Gloock&family=Hind+Vadodara:wght@400;500;600;700&display=swap" rel="stylesheet"><link rel="stylesheet" href="/src/styles/globals.css"></head><body><aside class="notice">STATIC AUTH DESIGN FIXTURE · No account exists. Controls are inactive.</aside>${renderGate()}</body></html>`);
+    writeFileSync(new URL(`../../docs/testing/verification/fixtures/${name}.html`,import.meta.url),`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link href="https://fonts.googleapis.com/css2?family=Gloock&family=Hind+Vadodara:wght@400;500;600;700&display=swap" rel="stylesheet"><link href="/src/styles/globals.css" rel="stylesheet"></head><body><aside class="notice">STATIC AUTH DESIGN FIXTURE · No account exists. Controls are inactive.</aside>${renderGate()}</body></html>`);
   }
 }
-console.log('Authentication: session/profile gates, password login, email confirmation, invalid mobile rejection, profile save errors and sign-out passed (isolated SDK tests).');
+console.log('Authentication: genuine Supabase JWT validation, synthetic token rejection, session/profile gates, password login, email confirmation, invalid mobile rejection, profile save errors and sign-out passed.');
+

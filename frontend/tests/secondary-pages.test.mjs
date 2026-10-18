@@ -8,7 +8,11 @@ const require = createRequire(import.meta.url);
 function loadPage(path) {
   const source = readFileSync(new URL(`../src/features/${path}`, import.meta.url), 'utf8');
   const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
-  const context = { exports: {}, require: name => name.endsWith('/Notice') ? {} : require(name) };
+  const context = { exports: {}, require: name => (
+    name.endsWith('/Notice') || name.endsWith('/reviewsApi') || name.endsWith('/ordersApi') || name.endsWith('/supabase') || name.endsWith('/api')
+      ? {}
+      : require(name)
+  ) };
   vm.runInNewContext(compiled, context);
   return context.exports;
 }
@@ -30,8 +34,8 @@ assert.ok(csv.includes('"\'+91 98XXX XX021"'));
 assert.ok(csv.includes('"Area, ""quoted"""'), 'CSV must escape commas and quotes');
 assert.equal(csv.split('\r\n').length, 2);
 
-const { validateFeedback } = loadPage('reviews/pages/CustomerReviewsPage.tsx');
-assert.equal(Object.keys(validateFeedback({ name: '  ', area: ' ', feedback: 'too short' })).length, 3);
-assert.equal(Object.keys(validateFeedback({ name: 'હેતલ', area: 'રાજકોટ', feedback: 'ગુણવત્તા અને પેકિંગ સારું છે.' })).length, 0);
-assert.equal(Object.keys(validateFeedback({ name: 'Hetal', area: 'Rajkot', feedback: 'Very good packing.' })).length, 0);
-console.log('Secondary pages: combined customer filters, safe sample CSV, and feedback validation passed.');
+const { validateReviewText } = loadPage('reviews/pages/CustomerReviewsPage.tsx');
+assert.ok(validateReviewText('too short'));
+assert.equal(validateReviewText('ગુણવત્તા અને પેકિંગ સારું છે.'), null);
+assert.equal(validateReviewText('Very good packing.'), null);
+console.log('Secondary pages: combined customer filters, safe sample CSV, and review validation passed.');

@@ -64,7 +64,7 @@ export default function PaymentVerificationPage() {
 
   /* Check on arrival, then poll while the payment is still being verified. */
   useEffect(() => {
-    if (!orderId || !state.serverOrder || status === 'failed') return;
+    if (!orderId || !state.serverOrder || status === 'failed' || status === 'REJECTED') return;
     void checkStatus();
     const timer = window.setInterval(() => {
       if (document.visibilityState === 'visible') void checkStatus();
@@ -87,11 +87,15 @@ export default function PaymentVerificationPage() {
   if (!state.serverOrder) return <div className="wrapper"><OrderStepper currentStep={4} /><Notice title="Recover your existing order" actions={<button className="btn" onClick={() => dispatch({ type: 'RETRY_ORDER' })}>Retry loading order</button>}>{state.orderLoadStatus || 'Please sign in through My Orders to reload your existing order.'} Please do not pay again.</Notice></div>;
 
   // Payment details were never submitted — send the customer back to the QR step.
-  if (serverInfo?.status === 'pending') {
+  if (serverInfo?.status === 'pending' || serverInfo?.status === 'PENDING') {
     return <Navigate to="/order/payment" replace />;
   }
 
-  const failed = status === 'failed';
+  const failed =
+    status === 'failed' ||
+    status === 'REJECTED' ||
+    serverInfo?.status === 'failed' ||
+    serverInfo?.status === 'REJECTED';
   const orderNumber = serverInfo?.orderNumber ?? state.orderNumber;
   const utrDisplay = serverInfo?.utrMasked ?? (state.utrNumber ? maskUtr(state.utrNumber) : '—');
   const supportHref = `https://wa.me/${env.supportWhatsApp}?text=${encodeURIComponent(
@@ -142,9 +146,11 @@ export default function PaymentVerificationPage() {
           ) : (
             <>
               <h1 style={{ marginBottom: 8 }}>Verifying your payment</h1>
-              <p className="text-secondary" style={{ maxWidth: 460, margin: '0 auto 24px' }}>
-                We're matching your UPI transaction with our account. This page
-                updates automatically — please don't pay again.
+              <p className="text-secondary" style={{ maxWidth: 460, margin: '0 auto 24px' }} id="verification-waiting-copy">
+                {serverInfo?.message ??
+                  'Payment proof submitted successfully. Waiting for admin verification.'}{' '}
+                We're matching your UPI transaction with our account. This page updates
+                automatically — please don't pay again.
               </p>
             </>
           )}

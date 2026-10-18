@@ -14,7 +14,6 @@ import type {
   AdminOrderStatus,
   AdminPaymentStatus,
 } from '../types';
-import { SAMPLE_ADMIN_ORDERS } from '../lib/referenceData';
 import {
   ORDER_STATUS_LABELS,
   PAYMENT_STATUS_LABELS,
@@ -106,7 +105,7 @@ export default function AdminOrdersPage() {
   const initialStatusParam = searchParams.get('status') as AdminOrderStatus | null;
   const initialQueryParam = searchParams.get('q') ?? searchParams.get('orderId') ?? '';
 
-  const [orders, setOrders] = useState<AdminOrderDetail[]>(SAMPLE_ADMIN_ORDERS);
+  const [orders, setOrders] = useState<AdminOrderDetail[]>([]);
   const [query, setQuery] = useState(initialQueryParam);
   const [statusFilter, setStatusFilter] = useState<AdminOrderStatus | 'ALL'>(
     initialStatusParam && ORDER_STATUS_OPTIONS.includes(initialStatusParam)
@@ -211,6 +210,10 @@ export default function AdminOrdersPage() {
       showToast('Please enter a cancellation reason (at least 5 characters).', 'warning');
       return;
     }
+    if (nextStatus === 'DELIVERY_FAILED' && actionNotes.trim().length < 5) {
+      showToast('Please enter a delivery failure reason (at least 5 characters).', 'warning');
+      return;
+    }
 
     if (!env.apiBaseUrl) {
       showToast(
@@ -230,6 +233,7 @@ export default function AdminOrdersPage() {
               status: nextStatus,
               notes: actionNotes.trim() || undefined,
               cancellationReason: nextStatus === 'CANCELLED' ? actionNotes.trim() : undefined,
+              failureReason: nextStatus === 'DELIVERY_FAILED' ? actionNotes.trim() : undefined,
             });
       setOrders((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
       setSelectedOrder(updated);
@@ -258,8 +262,8 @@ export default function AdminOrdersPage() {
       </div>
 
       {!isLive && (
-        <Notice title="Development reference examples — State machine active">
-          FastAPI (<code>GET /api/admin/orders</code>) is not connected yet. Only actions valid for each order’s current status are displayed.
+        <Notice title="Order data unavailable">
+          Connect the local FastAPI server to load and manage real orders. No sample orders are shown.
         </Notice>
       )}
       {error && <Notice tone="error" title="Orders request failed">{error}</Notice>}
@@ -272,7 +276,7 @@ export default function AdminOrdersPage() {
             id="order-search"
             type="search"
             className="input"
-            placeholder="#BFP-1042, Rahul Mehta, or +91 98XXX…"
+            placeholder="Order ID, customer name, or phone"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
@@ -642,6 +646,8 @@ export default function AdminOrdersPage() {
           <label htmlFor="order-action-notes">
             {pendingAction?.nextStatus === 'CANCELLED'
               ? 'Cancellation Reason (Required)'
+              : pendingAction?.nextStatus === 'DELIVERY_FAILED'
+              ? 'Delivery Failure Reason (Required)'
               : 'Admin Audit Notes (Optional)'}
           </label>
           <textarea
@@ -650,6 +656,8 @@ export default function AdminOrdersPage() {
             placeholder={
               pendingAction?.nextStatus === 'CANCELLED'
                 ? 'State why this order is being cancelled…'
+                : pendingAction?.nextStatus === 'DELIVERY_FAILED'
+                ? 'State why delivery could not be completed…'
                 : 'Add optional fulfillment or audit note…'
             }
             value={actionNotes}

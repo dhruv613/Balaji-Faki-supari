@@ -33,6 +33,7 @@ export interface AuthenticatedUserProfile {
   fullName: string;
   phone?: string;
   role: UserRole;
+  isActive?: boolean;
   createdAt: string;
   lastSignInAt?: string;
 }
@@ -258,6 +259,7 @@ export interface UpdateOrderStatusRequest {
   status: AdminOrderStatus;
   notes?: string;
   cancellationReason?: string;
+  failureReason?: string;
 }
 
 /* ================================================================== */
@@ -318,9 +320,21 @@ export interface ApprovePaymentRequest {
   notes?: string;
 }
 
+export interface ReviewPaymentRequest {
+  notes?: string;
+}
+
 export interface RejectPaymentRequest {
   reason: string;
   requestCorrectedProof?: boolean;
+}
+
+export interface AdminPaymentProofResponse {
+  paymentId: string;
+  orderId: string;
+  privateStoragePath: string;
+  signedUrl: string;
+  expiresAt: string;
 }
 
 /* ================================================================== */
@@ -498,7 +512,7 @@ export interface AdminDeliveriesQueryParams extends PaginationParams {
 }
 
 export interface UpdateDeliveryRequest {
-  status: AdminDeliveryStatus;
+  status?: AdminDeliveryStatus;
   assignedDeliveryPerson?: string;
   deliveryPhone?: string;
   courierTrackingReference?: string;

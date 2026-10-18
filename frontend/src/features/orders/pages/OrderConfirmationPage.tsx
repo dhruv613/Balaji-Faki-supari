@@ -27,7 +27,7 @@ export default function OrderConfirmationPage() {
     Promise.all([getOrder(orderId), getPaymentStatus(orderId)]).then(([order, payment]) => {
       if (!active) return;
       dispatch({ type: 'SET_PAYMENT_STATUS', payload: payment.status });
-      if (isPaymentConfirmed(payment) && order.paymentStatus === 'verified' && isConfirmedOrder(order.status)) {
+      if (isPaymentConfirmed(payment) && (order.paymentStatus === 'VERIFIED' || order.paymentStatus === 'verified') && isConfirmedOrder(order.status)) {
         setConfirmedOrder(order);
       } else navigate('/order/verification', { replace: true });
     }).catch(cause => { if (active) setError(getErrorMessage(cause)); });
@@ -111,8 +111,8 @@ export default function OrderConfirmationPage() {
 
         {/* Action buttons */}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, justifyContent: 'center' }}>
-          <Link to={`/track/${encodeURIComponent(orderId)}`} className="btn btn--primary" id="track-order-btn">
-            Track Order
+          <Link to={`/my-orders/${encodeURIComponent(orderId)}`} className="btn btn--primary" id="order-details-btn">
+            View Order Details
           </Link>
           <Link to="/my-orders" className="btn" id="my-orders-btn">
             My Orders

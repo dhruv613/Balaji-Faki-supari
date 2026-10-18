@@ -54,3 +54,11 @@ export async function getOrderTracking(orderId: string): Promise<{ events: Track
     `/orders/${encodeURIComponent(orderId)}/tracking`,
   ));
 }
+
+/** POST /orders/:id/cancel — customer cancellation; FastAPI enforces eligibility. */
+export async function cancelOrder(orderId: string, reason: string): Promise<Order> {
+  return readOrder(await apiFetch<unknown>(`/orders/${encodeURIComponent(orderId)}/cancel`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+  }));
+}

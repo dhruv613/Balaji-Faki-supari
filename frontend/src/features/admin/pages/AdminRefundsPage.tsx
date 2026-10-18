@@ -9,7 +9,6 @@ import {
   recordAdminRefundTransfer,
 } from '../api';
 import type { AdminRefundRecord, AdminRefundStatus } from '../types';
-import { SAMPLE_ADMIN_REFUNDS } from '../lib/referenceData';
 import {
   REFUND_STATUS_LABELS,
   validateRefundCompletion,
@@ -38,7 +37,7 @@ export default function AdminRefundsPage() {
 
   const initialStatus = searchParams.get('status') as AdminRefundStatus | null;
 
-  const [refunds, setRefunds] = useState<AdminRefundRecord[]>(SAMPLE_ADMIN_REFUNDS);
+  const [refunds, setRefunds] = useState<AdminRefundRecord[]>([]);
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<AdminRefundStatus | 'ALL'>(
     initialStatus && REFUND_FILTER_OPTIONS.includes(initialStatus) ? initialStatus : 'ALL',
@@ -208,29 +207,29 @@ export default function AdminRefundsPage() {
       </Notice>
 
       {!isLive && (
-        <Notice title="Development reference examples">
-          FastAPI (<code>/api/admin/refunds</code>) is not connected yet. The records below illustrate the two-step refund approval and verified bank transfer recording workflow.
+        <Notice title="Refund data unavailable">
+          Connect the local FastAPI server to load eligible refunds. No sample refund records are shown.
         </Notice>
       )}
       {error && <Notice tone="error" title="Refunds sync error">{error}</Notice>}
 
       <div className="stats-grid">
-        <StatCard label="Total Refund Records" value={refunds.length} />
+        <StatCard label="Total Refund Records" value={isLive ? refunds.length : 'Unavailable'} />
         <StatCard
           label="Pending Refunds"
-          value={refunds.filter((r) => r.refundStatus === 'PENDING').length}
+          value={isLive ? refunds.filter((r) => r.refundStatus === 'PENDING').length : 'Unavailable'}
           subtitle="Awaiting approval"
         />
         <StatCard
           label="Approved / Processing"
-          value={
+          value={isLive ? (
             refunds.filter((r) => ['APPROVED', 'PROCESSING'].includes(r.refundStatus)).length
-          }
+          ) : 'Unavailable'}
           subtitle="Awaiting bank transfer ref"
         />
         <StatCard
           label="Completed Refunds"
-          value={refunds.filter((r) => r.refundStatus === 'COMPLETED').length}
+          value={isLive ? refunds.filter((r) => r.refundStatus === 'COMPLETED').length : 'Unavailable'}
           subtitle="Bank transfer verified"
         />
       </div>
@@ -245,7 +244,7 @@ export default function AdminRefundsPage() {
             id="refund-search"
             type="search"
             className="input"
-            placeholder="#BFP-1038, Pooja Dave, or AXIS-REF…"
+            placeholder="Order ID, customer, UTR, or refund reference"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />

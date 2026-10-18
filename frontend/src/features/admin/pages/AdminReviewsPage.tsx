@@ -4,7 +4,6 @@ import { env } from '../../../lib/env';
 import { formatPackSize, getErrorMessage } from '../../../lib/api';
 import { getAdminReviews, updateAdminReview } from '../api';
 import type { AdminReviewRecord, ReviewModerationStatus } from '../types';
-import { SAMPLE_ADMIN_REVIEWS } from '../lib/referenceData';
 import {
   StatCard,
   StatusBadge,
@@ -15,7 +14,7 @@ import {
 
 export default function AdminReviewsPage() {
   const { showToast } = useAdminToast();
-  const [reviews, setReviews] = useState<AdminReviewRecord[]>(SAMPLE_ADMIN_REVIEWS);
+  const [reviews, setReviews] = useState<AdminReviewRecord[]>([]);
   const [query, setQuery] = useState('');
   const [ratingFilter, setRatingFilter] = useState<number | 'ALL'>('ALL');
   const [modFilter, setModFilter] = useState<ReviewModerationStatus | 'ALL'>('ALL');
@@ -124,8 +123,8 @@ export default function AdminReviewsPage() {
       </Notice>
 
       {!isLive && (
-        <Notice tone="info" title="Development reference examples">
-          FastAPI (<code>/api/admin/reviews</code>) is not connected yet. Reviews shown below are the supplied design reference examples.
+        <Notice tone="info" title="Review data unavailable">
+          Connect the local FastAPI server to manage real customer reviews. No sample reviews are shown here.
         </Notice>
       )}
       {error && <Notice tone="error" title="Reviews sync failed">{error}</Notice>}

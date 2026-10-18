@@ -5,9 +5,20 @@ import { env } from '../../../lib/env';
 import { formatPackSize, getErrorMessage } from '../../../lib/api';
 import { getAdminInventory, createStockAdjustment } from '../api';
 import type { AdminInventoryItem, AdminInventoryResponse } from '../types';
-import { SAMPLE_ADMIN_INVENTORY } from '../lib/referenceData';
 import { validateStockAdjustment } from '../lib/orderStateMachine';
 import { StatCard, DetailDrawer, LoadingSkeleton, useAdminToast } from '../components';
+
+const EMPTY_INVENTORY: AdminInventoryResponse = {
+  summary: {
+    totalStockUnits: 0,
+    availableStockUnits: 0,
+    reservedStockUnits: 0,
+    lowStockAlertsCount: 0,
+    reservationExpiryMinutes: 0,
+  },
+  items: [],
+  movements: [],
+};
 
 export default function AdminInventoryPage() {
   const [searchParams] = useSearchParams();
@@ -15,7 +26,7 @@ export default function AdminInventoryPage() {
 
   const initialLowStockOnly = searchParams.get('filter') === 'low_stock';
 
-  const [inventory, setInventory] = useState<AdminInventoryResponse>(SAMPLE_ADMIN_INVENTORY);
+  const [inventory, setInventory] = useState<AdminInventoryResponse>(EMPTY_INVENTORY);
   const [query, setQuery] = useState('');
   const [lowStockOnly, setLowStockOnly] = useState(initialLowStockOnly);
 
@@ -135,13 +146,15 @@ export default function AdminInventoryPage() {
           </p>
         </div>
         <span className="badge badge--info">
-          Reservation Expiry Policy: {inventory.summary.reservationExpiryMinutes} mins
+          {isLive
+            ? `Reservation Expiry Policy: ${inventory.summary.reservationExpiryMinutes} mins`
+            : 'Inventory data unavailable'}
         </span>
       </div>
 
       {!isLive && (
-        <Notice title="Inventory Integrity Rules">
-          FastAPI (<code>/api/admin/inventory</code>) is not connected yet. Rules enforced: Available stock can never become negative, confirming an order validates available stock, cancelled orders release reservations, and double stock deductions are prevented.
+        <Notice title="Inventory data unavailable">
+          Connect the local FastAPI server to load stock and audit history. No sample inventory or movements are shown.
         </Notice>
       )}
       {error && <Notice tone="error" title="Inventory sync failed">{error}</Notice>}
@@ -149,22 +162,26 @@ export default function AdminInventoryPage() {
       <div className="stats-grid">
         <StatCard
           label="Total Stock (Packs)"
-          value={inventory.summary.totalStockUnits}
+          value={isLive ? inventory.summary.totalStockUnits : 'Unavailable'}
           subtitle="Available + Reserved"
         />
         <StatCard
           label="Available Stock"
-          value={inventory.summary.availableStockUnits}
+          value={isLive ? inventory.summary.availableStockUnits : 'Unavailable'}
           subtitle="Ready for new orders"
         />
         <StatCard
           label="Reserved Stock"
-          value={inventory.summary.reservedStockUnits}
-          subtitle={`Expires after ${inventory.summary.reservationExpiryMinutes}m if unpaid`}
+          value={isLive ? inventory.summary.reservedStockUnits : 'Unavailable'}
+          subtitle={
+            isLive
+              ? `Expires after ${inventory.summary.reservationExpiryMinutes}m if unpaid`
+              : 'Loaded from the local inventory service'
+          }
         />
         <StatCard
           label="Low Stock Alerts"
-          value={inventory.summary.lowStockAlertsCount}
+          value={isLive ? inventory.summary.lowStockAlertsCount : 'Unavailable'}
           subtitle="Variants below threshold"
         />
       </div>
@@ -177,7 +194,7 @@ export default function AdminInventoryPage() {
             id="inv-search"
             type="search"
             className="input"
-            placeholder="Faki, Supari, 1kg, or BFP-FAKI-1KG…"
+            placeholder="Product, pack size, or SKU"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
@@ -253,6 +270,13 @@ export default function AdminInventoryPage() {
                       </td>
                     </tr>
                   ))}
+                  {filteredItems.length === 0 && (
+                    <tr>
+                      <td colSpan={8} className="text-secondary">
+                        No inventory variants match the current filters.
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -309,6 +333,13 @@ export default function AdminInventoryPage() {
                       <td className="text-small">{mov.actorEmail}</td>
                     </tr>
                   ))}
+                  {inventory.movements.length === 0 && (
+                    <tr>
+                      <td colSpan={7} className="text-secondary">
+                        No stock movements are available from the local inventory service.
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>

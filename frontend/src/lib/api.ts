@@ -87,7 +87,7 @@ export function getErrorMessage(err: unknown): string {
 }
 
 /* ---------- Placeholder product catalogue ---------- */
-/* These display-only prices will be replaced by server data. */
+/* Temporary local preview prices. FastAPI remains the source of truth when connected. */
 
 export const PRODUCTS: Product[] = [
   {
@@ -96,9 +96,9 @@ export const PRODUCTS: Product[] = [
     nameGu: 'ફાકી',
     packSizes: ['250g', '500g', '1kg'],
     prices: {
-      '250g': null,
-      '500g': null,
-      '1kg': null,
+      '250g': 250,
+      '500g': 500,
+      '1kg': 1000,
     },
   },
   {
@@ -107,9 +107,9 @@ export const PRODUCTS: Product[] = [
     nameGu: 'સુપારી',
     packSizes: ['250g', '500g', '1kg'],
     prices: {
-      '250g': null,
-      '500g': null,
-      '1kg': null,
+      '250g': 200,
+      '500g': 400,
+      '1kg': 800,
     },
   },
 ];

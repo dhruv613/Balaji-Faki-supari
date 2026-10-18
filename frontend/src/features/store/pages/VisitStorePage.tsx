@@ -1,7 +1,7 @@
 export default function VisitStorePage() {
   return (
     <div className="wrapper">
-      <h1 className="page__header">Visit our store</h1>
+      <h1 className="page__header">Our shop</h1>
       <p className="page__subtitle">Drop by and pick up your Faki &amp; Supari in person.</p>
       <div className="store-layout">
         <aside className="card card--tinted" aria-label="Store details">
@@ -29,6 +29,12 @@ export default function VisitStorePage() {
           </div>
         </div>
       </div>
+      <section className="card" style={{ marginTop: 24 }} aria-labelledby="shop-information-heading">
+        <h2 id="shop-information-heading">Product and shop information</h2>
+        <p className="text-secondary" style={{ marginTop: 8 }}>
+          Call the store for current, store-confirmed preparation, packaging, provider, and storage information before ordering.
+        </p>
+      </section>
     </div>
   );
 }

@@ -119,6 +119,17 @@ assert.equal(
   true,
 );
 
+// Self-assigned user_metadata.role = OWNER_ADMIN without serverRole/app_metadata is strictly denied
+assert.equal(
+  routeGuard.evaluateAdminRouteAccess({
+    user: { id: 'attacker-1', email: 'attacker@example.com', user_metadata: { role: 'OWNER_ADMIN' } },
+    serverRole: null,
+    apiConnected: false,
+    devPreviewAcknowledged: true,
+  }).allowed,
+  false,
+);
+
 /* ================================================================== */
 /*  2. ORDER & PAYMENT SEPARATION INVARIANTS                          */
 /* ================================================================== */
@@ -221,7 +232,7 @@ assert.equal(
 // Duplicate UTR across orders is blocked
 assert.equal(
   validatePaymentApproval({
-    currentPaymentStatus: 'SUBMITTED',
+    currentPaymentStatus: 'UNDER_REVIEW',
     expectedAmount: 420,
     submittedUtr: '429104857123',
     approvalInput: validApprovalInput,
@@ -233,7 +244,7 @@ assert.equal(
 // Duplicate bank credit reference is blocked
 assert.equal(
   validatePaymentApproval({
-    currentPaymentStatus: 'SUBMITTED',
+    currentPaymentStatus: 'UNDER_REVIEW',
     expectedAmount: 420,
     submittedUtr: '429104857123',
     approvalInput: validApprovalInput,
@@ -245,7 +256,7 @@ assert.equal(
 // Mismatched amount is blocked
 assert.equal(
   validatePaymentApproval({
-    currentPaymentStatus: 'SUBMITTED',
+    currentPaymentStatus: 'UNDER_REVIEW',
     expectedAmount: 420,
     submittedUtr: '429104857123',
     approvalInput: { ...validApprovalInput, verifiedAmount: 400 },
@@ -256,10 +267,21 @@ assert.equal(
 // Mismatched UTR vs customer submitted UTR is blocked
 assert.equal(
   validatePaymentApproval({
-    currentPaymentStatus: 'SUBMITTED',
+    currentPaymentStatus: 'UNDER_REVIEW',
     expectedAmount: 420,
     submittedUtr: '429104857123',
     approvalInput: { ...validApprovalInput, verifiedUtr: '999999999999' },
+  }).allowed,
+  false,
+);
+
+// Payment approval must follow the explicit SUBMITTED -> UNDER_REVIEW action.
+assert.equal(
+  validatePaymentApproval({
+    currentPaymentStatus: 'SUBMITTED',
+    expectedAmount: 420,
+    submittedUtr: '429104857123',
+    approvalInput: validApprovalInput,
   }).allowed,
   false,
 );
@@ -441,6 +463,29 @@ assert.match(migrationSql, /'payment-proofs'/);
 assert.match(migrationSql, /cost_price_paise/);
 assert.match(migrationSql, /unit_cost_paise/);
 
+const remediationSql = readFileSync(
+  new URL('../../supabase/migrations/20261018000000_remediate_auth_and_rls_security.sql', import.meta.url),
+  'utf8',
+);
+assert.match(remediationSql, /drop function public\.simple_auth_login\(text, text\)/);
+assert.match(remediationSql, /drop function public\.simple_auth_update_profile\(uuid, text, text\)/);
+assert.match(remediationSql, /drop policy if exists "user_profiles_simple_auth_select" on public\.user_profiles/);
+assert.match(remediationSql, /drop policy if exists "user_profiles_simple_auth_insert" on public\.user_profiles/);
+assert.match(remediationSql, /drop policy if exists "user_profiles_simple_auth_update" on public\.user_profiles/);
+assert.match(remediationSql, /drop policy if exists "customers_simple_auth_select" on public\.customers/);
+assert.match(remediationSql, /drop policy if exists "customers_simple_auth_insert" on public\.customers/);
+assert.match(remediationSql, /drop policy if exists "customers_simple_auth_update" on public\.customers/);
+assert.match(remediationSql, /create table if not exists private\.legacy_db_auth_accounts/);
+assert.match(remediationSql, /drop column password_hash/);
+assert.match(remediationSql, /create policy "user_profiles_select_own_or_admin"/);
+assert.match(remediationSql, /create policy "user_profiles_insert_own_customer"/);
+assert.match(remediationSql, /create policy "user_profiles_update_own"/);
+assert.match(remediationSql, /create policy "customers_select_own_or_admin"/);
+assert.match(remediationSql, /create policy "customers_insert_own_or_admin"/);
+assert.match(remediationSql, /create policy "customers_update_own_or_admin"/);
+assert.match(remediationSql, /create or replace function private\.enforce_user_profile_role_security\(\)/);
+assert.match(remediationSql, /create or replace function public\.sync_my_profile\(/);
+
 /* ================================================================== */
 /*  8. DASHBOARD METRICS (PRODUCTS SOLD & NET PROFIT) & ACTION FLOW   */
 /* ================================================================== */
@@ -590,15 +635,36 @@ const DashboardPage = load('src/features/admin/pages/AdminDashboardPage.tsx', co
 const PricesPage = load('src/features/admin/pages/AdminProductsPage.tsx', commonPageStubs).default;
 const OrdersPage = load('src/features/admin/pages/AdminOrdersPage.tsx', commonPageStubs).default;
 const FeedbackPage = load('src/features/admin/pages/AdminReviewsPage.tsx', commonPageStubs).default;
+const PaymentsPage = load('src/features/admin/pages/AdminPaymentsPage.tsx', commonPageStubs).default;
+const DeliveryPage = load('src/features/admin/pages/AdminDeliveryPage.tsx', commonPageStubs).default;
+const InventoryPage = load('src/features/admin/pages/AdminInventoryPage.tsx', commonPageStubs).default;
+const RefundsPage = load('src/features/admin/pages/AdminRefundsPage.tsx', commonPageStubs).default;
+
+for (const pagePath of [
+  'src/features/admin/pages/AdminDashboardPage.tsx',
+  'src/features/admin/pages/AdminOrdersPage.tsx',
+  'src/features/admin/pages/AdminProductsPage.tsx',
+  'src/features/admin/pages/AdminPaymentsPage.tsx',
+  'src/features/admin/pages/AdminDeliveryPage.tsx',
+  'src/features/admin/pages/AdminInventoryPage.tsx',
+  'src/features/admin/pages/AdminRefundsPage.tsx',
+]) {
+  assert.doesNotMatch(
+    readFileSync(new URL(`../${pagePath}`, import.meta.url), 'utf8'),
+    /SAMPLE_ADMIN_/,
+    `${pagePath} must not render operational sample data`,
+  );
+}
 
 const dashboardHtml = renderToStaticMarkup(
   React.createElement(MemoryRouter, { initialEntries: ['/admin/dashboard'] }, React.createElement(DashboardPage)),
 );
 assert.match(dashboardHtml, /Products Sold/);
-assert.match(dashboardHtml, /1 Item/);
+assert.match(dashboardHtml, /Unavailable/);
 assert.match(dashboardHtml, /Net Profit/);
-assert.match(dashboardHtml, /Not configured/);
 assert.match(dashboardHtml, /Pending Payment Confirmations/);
+assert.match(dashboardHtml, /No sample orders, payments, or financial figures are shown/);
+assert.match(dashboardHtml, /No pending payment proofs currently require verification/);
 for (const col of [
   'Order ID',
   'Customer Name',
@@ -614,6 +680,7 @@ for (const col of [
 }
 assert.doesNotMatch(dashboardHtml, /Sales &amp; Order Volume Overview/);
 assert.doesNotMatch(dashboardHtml, /Recent Admin Audit Activity/);
+assert.doesNotMatch(dashboardHtml, /#BFP-/);
 
 const pricesHtml = renderToStaticMarkup(
   React.createElement(MemoryRouter, { initialEntries: ['/admin/prices'] }, React.createElement(PricesPage)),
@@ -622,9 +689,9 @@ assert.match(pricesHtml, /Price Management/);
 for (const col of ['Product', 'Pack Size', 'Cost Price', 'Selling Price', 'Action']) {
   assert.match(pricesHtml, new RegExp(col), `Price Management missing column: ${col}`);
 }
-assert.match(pricesHtml, /250g/);
-assert.match(pricesHtml, /500g/);
-assert.match(pricesHtml, /1kg/);
+assert.match(pricesHtml, /No sample product or price records are shown/);
+assert.match(pricesHtml, /No products are available from the local catalog yet/);
+assert.doesNotMatch(pricesHtml, /Faki Premium Blend/);
 
 const ordersHtml = renderToStaticMarkup(
   React.createElement(MemoryRouter, { initialEntries: ['/admin/orders'] }, React.createElement(OrdersPage)),
@@ -643,15 +710,47 @@ for (const col of [
 ]) {
   assert.match(ordersHtml, new RegExp(col), `Order Management missing column: ${col}`);
 }
-assert.match(ordersHtml, /Confirm Order/);
-assert.match(ordersHtml, /Start Packing/);
+assert.match(ordersHtml, /No sample orders are shown/);
+assert.match(ordersHtml, /No orders match the current search and status filters/);
+assert.doesNotMatch(ordersHtml, /#BFP-/);
 
 const feedbackHtml = renderToStaticMarkup(
   React.createElement(MemoryRouter, { initialEntries: ['/admin/feedback'] }, React.createElement(FeedbackPage)),
 );
 assert.match(feedbackHtml, /Feedback Management/);
 assert.match(feedbackHtml, /Star Rating/);
-assert.match(feedbackHtml, /View \/ Reply/);
+assert.match(feedbackHtml, /Review data unavailable/);
+assert.match(feedbackHtml, /No feedback entries match these filters/);
+assert.doesNotMatch(feedbackHtml, /View \/ Reply/);
+
+const paymentsHtml = renderToStaticMarkup(
+  React.createElement(MemoryRouter, { initialEntries: ['/admin/payments'] }, React.createElement(PaymentsPage)),
+);
+assert.match(paymentsHtml, /Payment data unavailable/);
+assert.match(paymentsHtml, /No sample payments are shown/);
+assert.match(paymentsHtml, /No payment submissions match these filters/);
+
+const deliveryHtml = renderToStaticMarkup(
+  React.createElement(MemoryRouter, { initialEntries: ['/admin/delivery'] }, React.createElement(DeliveryPage)),
+);
+assert.match(deliveryHtml, /Fulfillment data unavailable/);
+assert.match(deliveryHtml, /No sample delivery records are shown/);
+assert.match(deliveryHtml, /No fulfillment records match these filters/);
+
+const inventoryHtml = renderToStaticMarkup(
+  React.createElement(MemoryRouter, { initialEntries: ['/admin/inventory'] }, React.createElement(InventoryPage)),
+);
+assert.match(inventoryHtml, /Inventory data unavailable/);
+assert.match(inventoryHtml, /No sample inventory or movements are shown/);
+assert.match(inventoryHtml, /No inventory variants match the current filters/);
+assert.match(inventoryHtml, /No stock movements are available from the local inventory service/);
+
+const refundsHtml = renderToStaticMarkup(
+  React.createElement(MemoryRouter, { initialEntries: ['/admin/refunds'] }, React.createElement(RefundsPage)),
+);
+assert.match(refundsHtml, /Refund data unavailable/);
+assert.match(refundsHtml, /No sample refund records are shown/);
+assert.match(refundsHtml, /No cancellation or refund records match these filters/);
 
 console.log(
   'Admin panel & Supabase DB: 18 tables, RLS policies, RBAC route guard, 4-page navigation, minimal Dashboard (Products Sold + Net Profit + Pending Payment Confirmations), Price Management, Order Management, Feedback Management, and typed API client passed.',

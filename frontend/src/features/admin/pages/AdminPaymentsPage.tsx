@@ -5,6 +5,8 @@ import { env } from '../../../lib/env';
 import { formatINR, getErrorMessage } from '../../../lib/api';
 import {
   getAdminPayments,
+  getAdminPaymentProof,
+  startAdminPaymentReview,
   approveAdminPayment,
   rejectAdminPayment,
 } from '../api';
@@ -13,7 +15,6 @@ import type {
   AdminPaymentStatus,
   ApprovePaymentRequest,
 } from '../types';
-import { SAMPLE_ADMIN_PAYMENTS } from '../lib/referenceData';
 import {
   PAYMENT_STATUS_LABELS,
   validatePaymentApproval,
@@ -44,7 +45,7 @@ export default function AdminPaymentsPage() {
   const initialStatus = searchParams.get('status') as AdminPaymentStatus | null;
   const initialQuery = searchParams.get('order') ?? '';
 
-  const [payments, setPayments] = useState<AdminPaymentSubmission[]>(SAMPLE_ADMIN_PAYMENTS);
+  const [payments, setPayments] = useState<AdminPaymentSubmission[]>([]);
   const [query, setQuery] = useState(initialQuery);
   const [statusFilter, setStatusFilter] = useState<AdminPaymentStatus | 'ALL'>(
     initialStatus && PAYMENT_FILTER_OPTIONS.includes(initialStatus) ? initialStatus : 'ALL',
@@ -107,6 +108,17 @@ export default function AdminPaymentsPage() {
     setVerificationNotes('');
     setRejectionReason(payment.rejectionReason ?? '');
     setValidationError('');
+    if (env.apiBaseUrl && !payment.signedScreenshotUrl) {
+      void getAdminPaymentProof(payment.id)
+        .then((proof) => {
+          setSelectedPayment((prev) =>
+            prev && prev.id === payment.id
+              ? { ...prev, signedScreenshotUrl: proof.signedUrl }
+              : prev,
+          );
+        })
+        .catch(() => undefined);
+    }
   }
 
   const filteredPayments = payments.filter((p) => {
@@ -117,6 +129,9 @@ export default function AdminPaymentsPage() {
       .toLowerCase()
       .includes(q);
   });
+  const verifiedReceiptsTotal = payments
+    .filter((payment) => payment.paymentStatus === 'VERIFIED')
+    .reduce((sum, payment) => sum + (payment.expectedAmount ?? 0), 0);
 
   async function handleApprovePayment() {
     if (!selectedPayment) return;
@@ -181,6 +196,32 @@ export default function AdminPaymentsPage() {
     }
   }
 
+  async function handleStartPaymentReview() {
+    if (!selectedPayment) return;
+    setValidationError('');
+    if (!env.apiBaseUrl) {
+      setValidationError('Integration Pending: FastAPI must start the independent payment review.');
+      return;
+    }
+    if (selectedPayment.paymentStatus !== 'SUBMITTED') {
+      setValidationError('Only a submitted proof can enter bank-credit review.');
+      return;
+    }
+    setBusy(true);
+    try {
+      const updated = await startAdminPaymentReview(selectedPayment.id, {
+        notes: verificationNotes.trim() || undefined,
+      });
+      setPayments((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+      setSelectedPayment(updated);
+      showToast(`Bank-credit review started for ${updated.orderNumber}.`, 'info');
+    } catch (err) {
+      setValidationError(getErrorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleRejectOrRequestProof(requestCorrectedProof: boolean) {
     if (!selectedPayment) return;
     setValidationError('');
@@ -238,8 +279,8 @@ export default function AdminPaymentsPage() {
       </Notice>
 
       {!isLive && (
-        <Notice title="Integration Pending — Live Payment Approvals Disabled">
-          FastAPI (<code>/api/admin/payments</code>) and private Supabase Storage signed URLs are not connected yet. Entries below are reference examples. Approval and rejection buttons validate inputs and show the integration-pending state without simulating fake approvals.
+        <Notice title="Payment data unavailable">
+          Connect the local FastAPI server and private Supabase Storage to load payment proofs. No sample payments are shown and approvals remain backend-only.
         </Notice>
       )}
       {error && <Notice tone="error" title="Payment queue sync error">{error}</Notice>}
@@ -247,23 +288,23 @@ export default function AdminPaymentsPage() {
       <div className="stats-grid">
         <StatCard
           label="Pending Payment Queue"
-          value={
+          value={isLive ? (
             payments.filter((p) => ['SUBMITTED', 'UNDER_REVIEW'].includes(p.paymentStatus)).length
-          }
+          ) : 'Unavailable'}
           subtitle="Requires bank check"
         />
         <StatCard
           label="Verified Bank Credits"
-          value={payments.filter((p) => p.paymentStatus === 'VERIFIED').length}
+          value={isLive ? payments.filter((p) => p.paymentStatus === 'VERIFIED').length : 'Unavailable'}
           subtitle="Matched with bank statement"
         />
         <StatCard
           label="Rejected / Mismatched"
-          value={payments.filter((p) => p.paymentStatus === 'REJECTED').length}
+          value={isLive ? payments.filter((p) => p.paymentStatus === 'REJECTED').length : 'Unavailable'}
         />
         <StatCard
           label="Verified Receipts Total"
-          value={isLive ? formatINR(0) : 'Awaiting price'}
+          value={isLive ? formatINR(verifiedReceiptsTotal) : 'Unavailable'}
           subtitle="Unverified proofs excluded"
         />
       </div>
@@ -276,7 +317,7 @@ export default function AdminPaymentsPage() {
             id="payment-search"
             type="search"
             className="input"
-            placeholder="#BFP-1043, 12-digit UTR, or AXIS-CR…"
+            placeholder="Order number, 12-digit UTR, or bank reference"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
@@ -448,7 +489,7 @@ export default function AdminPaymentsPage() {
                     className="input"
                     value={receivingBankAccount}
                     onChange={(e) => setReceivingBankAccount(e.target.value)}
-                    disabled={selectedPayment.paymentStatus === 'VERIFIED' || busy}
+                    disabled={selectedPayment.paymentStatus !== 'UNDER_REVIEW' || busy}
                   />
                 </div>
                 <div>
@@ -460,7 +501,7 @@ export default function AdminPaymentsPage() {
                     onChange={(e) =>
                       setTransactionStatus(e.target.value as 'CREDITED' | 'MISMATCH')
                     }
-                    disabled={selectedPayment.paymentStatus === 'VERIFIED' || busy}
+                    disabled={selectedPayment.paymentStatus !== 'UNDER_REVIEW' || busy}
                   >
                     <option value="CREDITED">CREDITED (Settled in bank)</option>
                     <option value="MISMATCH">MISMATCH / NOT FOUND</option>
@@ -478,7 +519,7 @@ export default function AdminPaymentsPage() {
                     placeholder="12-digit UTR from bank statement"
                     value={verifiedUtrInput}
                     onChange={(e) => setVerifiedUtrInput(e.target.value.replace(/\D/g, ''))}
-                    disabled={selectedPayment.paymentStatus === 'VERIFIED' || busy}
+                    disabled={selectedPayment.paymentStatus !== 'UNDER_REVIEW' || busy}
                   />
                 </div>
                 <div>
@@ -491,7 +532,7 @@ export default function AdminPaymentsPage() {
                     placeholder="Exact amount credited"
                     value={verifiedAmountInput}
                     onChange={(e) => setVerifiedAmountInput(e.target.value)}
-                    disabled={selectedPayment.paymentStatus === 'VERIFIED' || busy}
+                    disabled={selectedPayment.paymentStatus !== 'UNDER_REVIEW' || busy}
                   />
                 </div>
               </div>
@@ -504,7 +545,7 @@ export default function AdminPaymentsPage() {
                   placeholder="e.g. AXIS-CR-20261015-8841"
                   value={bankCreditRefInput}
                   onChange={(e) => setBankCreditRefInput(e.target.value)}
-                  disabled={selectedPayment.paymentStatus === 'VERIFIED' || busy}
+                  disabled={selectedPayment.paymentStatus !== 'UNDER_REVIEW' || busy}
                 />
               </div>
 
@@ -516,11 +557,20 @@ export default function AdminPaymentsPage() {
                   placeholder="Optional audit note…"
                   value={verificationNotes}
                   onChange={(e) => setVerificationNotes(e.target.value)}
-                  disabled={selectedPayment.paymentStatus === 'VERIFIED' || busy}
+                  disabled={selectedPayment.paymentStatus !== 'UNDER_REVIEW' || busy}
                 />
               </div>
 
-              {selectedPayment.paymentStatus !== 'VERIFIED' ? (
+              {selectedPayment.paymentStatus === 'SUBMITTED' ? (
+                <button
+                  type="button"
+                  className="btn btn--primary btn--full"
+                  disabled={busy}
+                  onClick={handleStartPaymentReview}
+                >
+                  {busy ? 'Starting review via FastAPI…' : 'Start Independent Bank Review'}
+                </button>
+              ) : selectedPayment.paymentStatus === 'UNDER_REVIEW' ? (
                 <button
                   type="button"
                   className="btn btn--primary btn--full"
@@ -531,17 +581,21 @@ export default function AdminPaymentsPage() {
                     ? 'Verifying with FastAPI…'
                     : 'Approve Payment (Sets Order → Awaiting Confirmation)'}
                 </button>
-              ) : (
+              ) : selectedPayment.paymentStatus === 'VERIFIED' ? (
                 <Notice tone="success" title="Payment Verified">
                   Verified by {selectedPayment.bankCredit?.verifiedByAdmin ?? 'Owner Admin'} on{' '}
                   {selectedPayment.bankCredit?.verifiedAt}. Bank Credit Ref:{' '}
                   <code>{selectedPayment.bankCredit?.bankCreditReference}</code>.
                 </Notice>
+              ) : (
+                <Notice tone="warning" title="Payment action unavailable">
+                  This payment is no longer eligible for bank-credit approval.
+                </Notice>
               )}
             </section>
 
             {/* Reject or Request Corrected Proof */}
-            {selectedPayment.paymentStatus !== 'VERIFIED' && (
+            {['SUBMITTED', 'UNDER_REVIEW'].includes(selectedPayment.paymentStatus) && (
               <section className="card" style={{ marginBottom: 20 }}>
                 <h3 style={{ fontSize: 18, marginBottom: 8 }}>
                   Reject Payment or Request Corrected Proof

@@ -51,43 +51,28 @@ export function evaluateAdminRouteAccess(params: {
     };
   }
 
-  // Verified Owner Admin via FastAPI /api/me or trusted Supabase app_metadata
+  // Verified Owner Admin via FastAPI /api/me, public.user_profiles RLS, or trusted Supabase app_metadata
   if (isAuthorizedOwnerAdmin({ role: serverRole, appMetadataRole: appRole })) {
     return {
       allowed: true,
-      status: 'AUTHORIZED_ADMIN',
-    };
-  }
-
-  // When FastAPI is connected, server verification of OWNER_ADMIN is mandatory
-  if (apiConnected) {
-    return {
-      allowed: false,
-      status: 'DENIED_CUSTOMER',
-      reason: 'Your account does not have Owner Admin permissions verified by the server.',
-    };
-  }
-
-  // When FastAPI is not connected yet, allow read-only design preview only if not a CUSTOMER role
-  if (devPreviewAcknowledged) {
-    return {
-      allowed: true,
-      status: 'DEV_REFERENCE_PREVIEW',
+      status: apiConnected || !devPreviewAcknowledged ? 'AUTHORIZED_ADMIN' : 'DEV_REFERENCE_PREVIEW',
     };
   }
 
   return {
     allowed: false,
     status: 'DENIED_CUSTOMER',
-    reason: 'Owner Admin role verification (/api/me) is required to unlock administrative routes.',
+    reason: apiConnected
+      ? 'Your account does not have Owner Admin permissions verified by the server.'
+      : 'Owner Admin role verification is required to unlock administrative routes.',
   };
 }
 
 export default function AdminRouteGuard({ children }: { children: ReactNode }) {
   const { session, loading: authLoading } = useSession();
   const [serverRole, setServerRole] = useState<string | null>(null);
-  const [checkingRole, setCheckingRole] = useState(Boolean(env.apiBaseUrl));
-  const [devPreviewAck, setDevPreviewAck] = useState(!env.apiBaseUrl);
+  const [checkingRole, setCheckingRole] = useState(Boolean(env.apiBaseUrl || supabase));
+  const [devPreviewAck] = useState(!env.apiBaseUrl);
 
   // Inline Admin Login state
   const [email, setEmail] = useState('');
@@ -97,21 +82,58 @@ export default function AdminRouteGuard({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let active = true;
-    if (!session || !env.apiBaseUrl) {
+    if (!session) {
+      setServerRole(null);
       setCheckingRole(false);
       return;
     }
-    setCheckingRole(true);
-    getAdminMe()
-      .then((profile) => {
-        if (active) setServerRole(profile.role);
-      })
-      .catch(() => {
-        if (active) setServerRole(null);
-      })
-      .finally(() => {
-        if (active) setCheckingRole(false);
-      });
+
+    if (env.apiBaseUrl) {
+      setCheckingRole(true);
+      getAdminMe()
+        .then((profile) => {
+          if (active) setServerRole(profile.isActive === false ? 'CUSTOMER' : profile.role);
+        })
+        .catch(() => {
+          if (active) setServerRole(null);
+        })
+        .finally(() => {
+          if (active) setCheckingRole(false);
+        });
+      return () => {
+        active = false;
+      };
+    }
+
+    if (supabase && typeof (supabase as { from?: unknown }).from === 'function') {
+      setCheckingRole(true);
+      supabase
+        .from('user_profiles')
+        .select('role, is_active')
+        .eq('id', session.user.id)
+        .maybeSingle()
+        .then(
+          ({ data, error }) => {
+            if (!active) return;
+            if (error || !data || data.is_active === false) {
+              setServerRole('CUSTOMER');
+            } else {
+              setServerRole(typeof data.role === 'string' ? data.role : 'CUSTOMER');
+            }
+            setCheckingRole(false);
+          },
+          () => {
+            if (!active) return;
+            setServerRole(null);
+            setCheckingRole(false);
+          },
+        );
+      return () => {
+        active = false;
+      };
+    }
+
+    setCheckingRole(false);
     return () => {
       active = false;
     };

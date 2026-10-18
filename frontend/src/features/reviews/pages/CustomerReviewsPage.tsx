@@ -1,122 +1,184 @@
-import { useRef, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { Link } from 'react-router-dom';
 import Notice from '../../../components/common/Notice';
-import type { CustomerReview } from '../../../types/orders';
+import { formatPackSize, getErrorMessage } from '../../../lib/api';
+import { useSession } from '../../../lib/supabase';
+import { getMyOrders } from '../../orders/api/ordersApi';
+import type { Order } from '../../../types/orders';
+import {
+  getPublishedReviews,
+  submitReview,
+  type PublishedReview,
+  type ReviewProduct,
+} from '../reviewsApi';
 
-// Reference examples only; replace with authenticated FastAPI review data.
-const SAMPLE_REVIEWS: CustomerReview[] = [
-  { id: '1', customerName: 'Hetal P.', area: 'Kalawad Road, Rajkot', rating: 5, feedback: 'Ordered online, paid by QR and got my confirmation quickly. Packing was neat.', product: 'Faki', packSize: '500 g', verified: false, createdAt: '12 Oct 2026' },
-  { id: '2', customerName: 'Rahul M.', area: 'University Road, Rajkot', rating: 5, feedback: 'Easy order form, and tracking showed every step until delivery.', product: 'Supari', packSize: '250 g', verified: false, createdAt: '9 Oct 2026' },
-  { id: '3', customerName: 'Jignesh S.', area: 'Raiya Road, Rajkot', rating: 4, feedback: 'Good quality. Payment verification took a little while, but the team called me.', product: 'Faki', packSize: '1 kg', verified: false, createdAt: '3 Oct 2026' },
-  { id: '4', customerName: 'Pooja D.', area: 'Mavdi, Rajkot', rating: 5, feedback: 'Reordering from My Orders was simple. Will order again.', product: 'Faki', packSize: '250 g', verified: false, createdAt: '28 Sep 2026' },
-  { id: '5', customerName: 'Nilesh B.', area: 'Gondal Road, Rajkot', rating: 5, feedback: 'Visited the store first, then ordered online for my family.', product: 'Supari', packSize: '500 g', verified: false, createdAt: '21 Sep 2026' },
-  { id: '6', customerName: 'Dipti K.', area: '150 Feet Ring Road, Rajkot', rating: 4, feedback: 'Delivery was on time. I\'d like to see more pack sizes.', product: 'Faki', packSize: '500 g', verified: false, createdAt: '15 Sep 2026' },
-];
+type ProductFilter = 'all' | ReviewProduct;
+type ReviewSort = 'newest' | 'highest' | 'lowest';
 
-const AREAS = ['All areas', 'University Road', 'Kalawad Road', 'Raiya Road', 'Mavdi', 'Gondal Road', '150 Feet Ring Road'];
-
-function getInitials(name: string) {
-  return name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
-}
-
-type FeedbackFields = { name: string; area: string; feedback: string };
-
-export function validateFeedback(fields: FeedbackFields): Partial<Record<keyof FeedbackFields, string>> {
-  const errors: Partial<Record<keyof FeedbackFields, string>> = {};
-  if (fields.name.trim().length < 2) errors.name = 'Enter your name (at least 2 characters).';
-  if (fields.area.trim().length < 2) errors.area = 'Enter your area (at least 2 characters).';
-  if (fields.feedback.trim().length < 10) errors.feedback = 'Write at least 10 characters of feedback.';
-  return errors;
+export function validateReviewText(reviewText: string): string | null {
+  return reviewText.trim().length >= 10 ? null : 'Write at least 10 characters about your purchase.';
 }
 
 function Stars({ rating }: { rating: number }) {
   return <span className="stars" role="img" aria-label={`${rating} out of 5 stars`}>
-    {[1, 2, 3, 4, 5].map(star => <svg key={star} className="icon icon--sm" viewBox="0 0 24 24" aria-hidden="true" style={{ fill: star <= rating ? 'currentColor' : 'none' }}><path d="M12 3.5l2.6 5.4 5.9.8-4.3 4.1 1 5.9L12 16.9 6.8 19.7l1-5.9L3.5 9.7l5.9-.8z" /></svg>)}
+    {[1, 2, 3, 4, 5].map((star) => <svg key={star} className="icon icon--sm" viewBox="0 0 24 24" aria-hidden="true" style={{ fill: star <= rating ? 'currentColor' : 'none' }}><path d="M12 3.5l2.6 5.4 5.9.8-4.3 4.1 1 5.9L12 16.9 6.8 19.7l1-5.9L3.5 9.7l5.9-.8z" /></svg>)}
   </span>;
 }
 
-export default function CustomerReviewsPage() {
-  const [areaFilter, setAreaFilter] = useState('All areas');
-  const [formRating, setFormRating] = useState(5);
-  const [errors, setErrors] = useState<ReturnType<typeof validateFeedback>>({});
-  const [notice, setNotice] = useState('');
-  const nameRef = useRef<HTMLInputElement>(null);
-  const avgRating = (SAMPLE_REVIEWS.reduce((sum, review) => sum + review.rating, 0) / SAMPLE_REVIEWS.length).toFixed(1);
-  const filtered = SAMPLE_REVIEWS.filter(review => areaFilter === 'All areas' || review.area === `${areaFilter}, Rajkot`);
-  const distribution = [5, 4, 3, 2, 1].map(star => ({ star, count: SAMPLE_REVIEWS.filter(review => review.rating === star).length }));
+function productLabel(product: ProductFilter): string {
+  return product === 'all' ? 'All products' : product === 'faki' ? 'Faki' : 'Supari';
+}
 
-  function handleFeedback(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = event.currentTarget;
-    const data = new FormData(form);
-    const found = validateFeedback({ name: String(data.get('name') ?? ''), area: String(data.get('area') ?? ''), feedback: String(data.get('feedback') ?? '') });
-    setErrors(found);
-    setNotice('');
-    const firstInvalid = Object.keys(found)[0];
-    if (firstInvalid) {
-      (form.elements.namedItem(firstInvalid) as HTMLElement | null)?.focus();
+export default function CustomerReviewsPage() {
+  const { session, loading: authLoading } = useSession();
+  const [productFilter, setProductFilter] = useState<ProductFilter>('all');
+  const [sort, setSort] = useState<ReviewSort>('newest');
+  const [reviews, setReviews] = useState<PublishedReview[]>([]);
+  const [eligibleOrders, setEligibleOrders] = useState<Order[]>([]);
+  const [selectedOrderId, setSelectedOrderId] = useState('');
+  const [rating, setRating] = useState(5);
+  const [reviewText, setReviewText] = useState('');
+  const [loadingReviews, setLoadingReviews] = useState(true);
+  const [loadingOrders, setLoadingOrders] = useState(false);
+  const [pageError, setPageError] = useState('');
+  const [formError, setFormError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    setLoadingReviews(true);
+    setPageError('');
+    getPublishedReviews(productFilter === 'all' ? undefined : productFilter)
+      .then((items) => { if (active) setReviews(items); })
+      .catch((error) => { if (active) setPageError(getErrorMessage(error)); })
+      .finally(() => { if (active) setLoadingReviews(false); });
+    return () => { active = false; };
+  }, [productFilter]);
+
+  useEffect(() => {
+    if (!session) {
+      setEligibleOrders([]);
+      setSelectedOrderId('');
       return;
     }
-    setNotice('Feedback has not been sent. Review submission is not connected yet. Your entered details remain here; please contact the store to share feedback.');
+    let active = true;
+    setLoadingOrders(true);
+    getMyOrders()
+      .then((orders) => {
+        if (!active) return;
+        const delivered = orders.filter((order) => order.status === 'DELIVERED');
+        setEligibleOrders(delivered);
+        setSelectedOrderId((current) => current || delivered[0]?.id || '');
+      })
+      .catch((error) => { if (active) setFormError(getErrorMessage(error)); })
+      .finally(() => { if (active) setLoadingOrders(false); });
+    return () => { active = false; };
+  }, [session?.user.id]);
+
+  const sortedReviews = useMemo(() => [...reviews].sort((left, right) => {
+    if (sort === 'highest') return right.rating - left.rating || Date.parse(right.createdAt) - Date.parse(left.createdAt);
+    if (sort === 'lowest') return left.rating - right.rating || Date.parse(right.createdAt) - Date.parse(left.createdAt);
+    return Date.parse(right.createdAt) - Date.parse(left.createdAt);
+  }), [reviews, sort]);
+  const average = reviews.length ? (reviews.reduce((sum, review) => sum + review.rating, 0) / reviews.length).toFixed(1) : '0.0';
+  const distribution = [5, 4, 3, 2, 1].map((star) => ({ star, count: reviews.filter((review) => review.rating === star).length }));
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const validationError = validateReviewText(reviewText);
+    if (!selectedOrderId) {
+      setFormError('Choose a delivered order to review.');
+      return;
+    }
+    if (validationError) {
+      setFormError(validationError);
+      return;
+    }
+    setSubmitting(true);
+    setFormError('');
+    setNotice('');
+    try {
+      await submitReview(selectedOrderId, rating, reviewText.trim());
+      setEligibleOrders((current) => current.filter((order) => order.id !== selectedOrderId));
+      setSelectedOrderId('');
+      setReviewText('');
+      setNotice('Thanks. Your verified-purchase review was submitted for moderation.');
+    } catch (error) {
+      setFormError(getErrorMessage(error));
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
     <div className="wrapper reviews-page">
       <h1 className="page__header">Customer reviews</h1>
-      <p className="page__subtitle">Feedback from our customers, with the area they order from.</p>
-      <Notice title="Development reference examples">The reviews, ratings and names below come from the supplied design. They are sample content, not actual customer reviews or verified orders. Live reviews are not connected yet.</Notice>
+      <p className="page__subtitle">Verified-purchase feedback for Faki and Supari.</p>
 
       <div className="reviews-layout">
-        <aside className="card card--tinted review-summary" aria-label="Sample review summary">
-          <div className="amount-display">{avgRating}</div>
-          <div className="review-meta"><Stars rating={Math.round(Number(avgRating))} /><span className="text-small text-secondary">out of 5</span></div>
-          <p className="text-small text-secondary">Based on {SAMPLE_REVIEWS.length} reference examples</p>
+        <aside className="card card--tinted review-summary" aria-label="Customer review summary">
+          <div className="amount-display">{average}</div>
+          <div className="review-meta"><Stars rating={Math.round(Number(average))} /><span className="text-small text-secondary">out of 5</span></div>
+          <p className="text-small text-secondary">Based on {reviews.length} published {productLabel(productFilter).toLowerCase()} review{reviews.length === 1 ? '' : 's'}</p>
           <div className="rating-bars">
-            {distribution.map(item => <div className="rating-bar" key={item.star}>
+            {distribution.map((item) => <div className="rating-bar" key={item.star}>
               <span>{item.star} stars</span>
-              <div className="rating-bar__track"><div className="rating-bar__fill" style={{ width: `${item.count / SAMPLE_REVIEWS.length * 100}%` }} /></div>
+              <div className="rating-bar__track"><div className="rating-bar__fill" style={{ width: `${reviews.length ? item.count / reviews.length * 100 : 0}%` }} /></div>
               <span>{item.count}</span>
             </div>)}
           </div>
-          <h2 style={{ fontSize: 22, marginTop: 24, marginBottom: 8 }}>Filter by location</h2>
-          <div className="customer-filter-chips">
-            {AREAS.map(area => <button key={area} type="button" className={`chip${areaFilter === area ? ' chip--active' : ''}`} aria-pressed={areaFilter === area} onClick={() => setAreaFilter(area)}>{area}</button>)}
+          <h2 style={{ fontSize: 22, marginTop: 24, marginBottom: 8 }}>Filter reviews</h2>
+          <div className="customer-filter-chips" aria-label="Product filters">
+            {(['all', 'faki', 'supari'] as const).map((product) => <button key={product} type="button" className={`chip${productFilter === product ? ' chip--active' : ''}`} aria-pressed={productFilter === product} onClick={() => setProductFilter(product)}>{productLabel(product)}</button>)}
           </div>
-          <button type="button" className="btn btn--primary btn--full" style={{ marginTop: 16 }} onClick={() => nameRef.current?.focus()}>Write a review</button>
+          <label htmlFor="review-sort" style={{ marginTop: 18 }}>Sort by</label>
+          <select id="review-sort" className="input" value={sort} onChange={(event) => setSort(event.target.value as ReviewSort)}>
+            <option value="newest">Most recent</option>
+            <option value="highest">Highest rated</option>
+            <option value="lowest">Lowest rated</option>
+          </select>
         </aside>
+
         <div className="reviews-grid" aria-live="polite">
-          {filtered.map(review => <article className="review-card" key={review.id}>
+          {loadingReviews && <p className="text-secondary">Loading published reviews…</p>}
+          {pageError && <Notice tone="warning" title="Reviews are unavailable">{pageError}</Notice>}
+          {!loadingReviews && !pageError && sortedReviews.length === 0 && <p className="text-secondary">No published reviews for this product yet.</p>}
+          {sortedReviews.map((review) => <article className="review-card" key={review.id}>
             <div className="review-card__header">
-              <span className="review-avatar">{getInitials(review.customerName)}</span>
-              <div><strong>{review.customerName}</strong><p className="review-location text-small text-secondary"><svg className="icon icon--sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s7-6 7-11a7 7 0 10-14 0c0 5 7 11 7 11z" /><circle cx="12" cy="10" r="2.5" /></svg>{review.area}</p></div>
+              <span className="review-avatar">{review.customerName.split(' ').map((part) => part[0]).join('').slice(0, 2)}</span>
+              <div><strong>{review.customerName}</strong><p className="review-location text-small text-secondary">{review.area || 'Rajkot'}</p></div>
             </div>
-            <div className="review-meta"><Stars rating={review.rating} /><strong>{review.rating}.0</strong><span className="text-small text-secondary">· {review.createdAt}</span></div>
-            <p style={{ margin: '12px 0' }}>{review.feedback}</p>
-            <div className="review-footer"><span className="text-small text-secondary">{review.product} · {review.packSize}</span><span className="badge">Reference example</span></div>
+            <div className="review-meta"><Stars rating={review.rating} /><strong>{review.rating}.0</strong><span className="text-small text-secondary">· {new Date(review.createdAt).toLocaleDateString('en-IN')}</span></div>
+            <p style={{ margin: '12px 0' }}>{review.reviewText}</p>
+            <div className="review-footer"><span className="text-small text-secondary">{review.productName} · {formatPackSize(review.packSize)}</span>{review.verifiedPurchase && <span className="badge">Verified purchase</span>}</div>
+            {review.adminReply && <div className="card card--tinted" style={{ marginTop: 12 }}><strong>Balaji Faki Point</strong><p className="text-small" style={{ marginTop: 4 }}>{review.adminReply}</p></div>}
           </article>)}
-          {filtered.length === 0 && <p className="text-secondary">No reference examples for this area.</p>}
         </div>
       </div>
 
       <section className="card card--tinted review-feedback" aria-labelledby="feedback-heading">
-        <h2 id="feedback-heading" style={{ fontSize: 24 }}>Share your feedback</h2>
-        <p className="text-secondary" style={{ margin: '8px 0 20px' }}>Tell us about your order — it helps other customers and helps us improve.</p>
-        <form noValidate onSubmit={handleFeedback}>
-          <div className="review-form-grid">
-            <div><label htmlFor="rev-name">Your name</label><input ref={nameRef} id="rev-name" name="name" className={`input${errors.name ? ' input--error' : ''}`} autoComplete="name" maxLength={100} placeholder="e.g. Hetal Patel" required aria-invalid={!!errors.name} aria-describedby={errors.name ? 'rev-name-error' : undefined} />{errors.name && <p className="field-error" id="rev-name-error">{errors.name}</p>}</div>
-            <div><label htmlFor="rev-area">Your area</label><input id="rev-area" name="area" className={`input${errors.area ? ' input--error' : ''}`} maxLength={120} placeholder="e.g. Kalawad Road" required aria-invalid={!!errors.area} aria-describedby={errors.area ? 'rev-area-error' : undefined} />{errors.area && <p className="field-error" id="rev-area-error">{errors.area}</p>}</div>
-            <div><label htmlFor="rev-order">Order ID (optional)</label><input id="rev-order" name="orderId" className="input" maxLength={80} placeholder="#BFP-1042" /></div>
-          </div>
+        <h2 id="feedback-heading" style={{ fontSize: 24 }}>Write a review</h2>
+        <p className="text-secondary" style={{ margin: '8px 0 20px' }}>Only delivered orders can be reviewed. Reviews are published after store moderation.</p>
+        {authLoading && <p role="status">Checking your sign-in…</p>}
+        {!authLoading && !session && <Notice title="Sign in to review a purchase">Open <Link to="/my-orders">My Orders</Link> to sign in and choose a delivered order.</Notice>}
+        {!authLoading && session && loadingOrders && <p role="status">Checking your delivered orders…</p>}
+        {!authLoading && session && !loadingOrders && eligibleOrders.length === 0 && <Notice title="No delivered order available">A review becomes available after an order is marked Delivered.</Notice>}
+        {!authLoading && session && !loadingOrders && eligibleOrders.length > 0 && <form noValidate onSubmit={handleSubmit}>
+          <label htmlFor="review-order">Delivered order</label>
+          <select id="review-order" className="input" value={selectedOrderId} onChange={(event) => setSelectedOrderId(event.target.value)} required>
+            {eligibleOrders.map((order) => <option value={order.id} key={order.id}>{order.orderNumber} · {order.productName} · {formatPackSize(order.packSize)}</option>)}
+          </select>
           <fieldset style={{ margin: '20px 0 16px' }}>
             <legend>Your rating (5 = excellent)</legend>
-            <div className="rating-selector">{[1, 2, 3, 4, 5].map(rating => <button key={rating} type="button" className={`rating-btn${formRating === rating ? ' rating-btn--selected' : ''}`} aria-label={`${rating} ${rating === 1 ? 'star' : 'stars'}`} aria-pressed={formRating === rating} onClick={() => setFormRating(rating)}>{rating}</button>)}</div>
+            <div className="rating-selector">{[1, 2, 3, 4, 5].map((value) => <button key={value} type="button" className={`rating-btn${rating === value ? ' rating-btn--selected' : ''}`} aria-label={`${value} ${value === 1 ? 'star' : 'stars'}`} aria-pressed={rating === value} onClick={() => setRating(value)}>{value}</button>)}</div>
           </fieldset>
-          <label htmlFor="rev-feedback">Your feedback</label>
-          <textarea id="rev-feedback" name="feedback" className={`input${errors.feedback ? ' input--error' : ''}`} maxLength={2000} placeholder="What did you like? What can we do better?" required aria-invalid={!!errors.feedback} aria-describedby={errors.feedback ? 'rev-feedback-error' : undefined} />
-          {errors.feedback && <p className="field-error" id="rev-feedback-error">{errors.feedback}</p>}
-          <div className="checkbox-row"><input type="checkbox" id="rev-show-name" name="showName" defaultChecked /><label htmlFor="rev-show-name" style={{ marginBottom: 0, fontWeight: 400 }}>Show my first name and area with my review</label></div>
-          {notice && <Notice tone="warning" title="Review submission is not connected">{notice}</Notice>}
-          <button type="submit" className="btn btn--primary">Submit feedback</button>
-        </form>
+          <label htmlFor="review-text">Your review</label>
+          <textarea id="review-text" className="input" value={reviewText} onChange={(event) => setReviewText(event.target.value)} maxLength={2000} placeholder="What did you like? What can we do better?" required aria-invalid={!!validateReviewText(reviewText)} />
+          {formError && <Notice tone="warning" title="Review not submitted">{formError}</Notice>}
+          {notice && <Notice title="Review submitted">{notice}</Notice>}
+          <button type="submit" className="btn btn--primary" disabled={submitting}>{submitting ? 'Submitting…' : 'Submit review'}</button>
+        </form>}
       </section>
     </div>
   );

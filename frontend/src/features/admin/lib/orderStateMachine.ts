@@ -282,10 +282,10 @@ export function validatePaymentApproval(
     };
   }
 
-  if (!['SUBMITTED', 'UNDER_REVIEW'].includes(currentPaymentStatus)) {
+  if (currentPaymentStatus !== 'UNDER_REVIEW') {
     return {
       allowed: false,
-      reason: `Payment in ${currentPaymentStatus} state cannot be approved before proof submission.`,
+      reason: `Payment in ${currentPaymentStatus} state must enter UNDER_REVIEW before approval.`,
     };
   }
 

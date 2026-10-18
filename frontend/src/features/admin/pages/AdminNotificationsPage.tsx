@@ -329,7 +329,7 @@ export default function AdminNotificationsPage() {
             <div>
               <strong>In-Website Order Status Updates</strong>
               <p className="text-small text-secondary">
-                Updates customer My Orders and Order Tracking timeline immediately upon backend commit.
+                Updates the customer My Orders timeline immediately after the backend commits the change.
               </p>
             </div>
             <span className="badge badge--green">Enabled</span>
