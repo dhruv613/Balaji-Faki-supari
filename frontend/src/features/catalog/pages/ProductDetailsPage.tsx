@@ -61,14 +61,14 @@ export default function ProductDetailsPage() {
       <div className="two-col">
         <section className="two-col__main" aria-label="Product images">
           {current
-            ? <img className="product-card__image" src={current.url} alt={current.alt} style={{ width: '100%', height: 'auto' }} />
+            ? <img className="product-gallery__main" src={current.url} alt={current.alt} decoding="async" />
             : <div className="card card--tinted">No product photo has been added yet.</div>}
           {gallery.length > 1 && (
-            <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }} role="group" aria-label="Choose product photo">
+            <div className="product-gallery__thumbs" role="group" aria-label="Choose product photo">
               {gallery.map((image, index) => (
-                <button key={image.id} type="button" className="btn btn--sm" aria-pressed={index === imageIndex}
-                  onClick={() => setImageIndex(index)} style={{ padding: 2 }}>
-                  <img src={image.url} alt={image.alt} width="64" height="48" style={{ objectFit: 'cover' }} />
+                <button key={image.id} type="button" className="btn btn--sm product-gallery__thumb" aria-pressed={index === imageIndex}
+                  aria-label={`Show photo ${index + 1} of ${gallery.length}: ${image.alt}`} onClick={() => setImageIndex(index)}>
+                  <img src={image.url} alt="" loading="lazy" decoding="async" />
                 </button>
               ))}
             </div>

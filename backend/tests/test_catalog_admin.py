@@ -52,7 +52,7 @@ class CatalogAdminTests(unittest.TestCase):
             faki.shelf_life = "Test-confirmed shelf life."
             faki.packaging = "Test-confirmed packaging."
             faki.safety_disclosures = "Test-confirmed disclosure."
-            db.add(ProductImage(product_id=faki.id, storage_path="faki/front.png", alt_text="Front of pack", position=0))
+            db.add(ProductImage(product_id=faki.id, storage_path="faki/front.png", alt_text="Front of pack", position=2))
             db.commit()
 
             detail = get_public_product("faki", db)
@@ -60,8 +60,10 @@ class CatalogAdminTests(unittest.TestCase):
             self.assertEqual(detail["information"]["packaging"], "Test-confirmed packaging.")
             self.assertEqual(detail["information"]["safetyDisclosures"], "Test-confirmed disclosure.")
             self.assertEqual(detail["information"]["ingredients"], "")  # not supplied -> empty, never invented
-            self.assertEqual(detail["images"][0]["alt"], "Front of pack")
-            self.assertTrue(detail["images"][0]["url"].endswith("/product-images/faki/front.png"))
+            # Seeded Faki gallery: the two bundled packet photographs (front first), then a Storage-backed image.
+            self.assertEqual([i["url"] for i in detail["images"][:2]], ["/images/products/balaji-faki-packet-front.webp", "/images/products/balaji-faki-packet-back.webp"])
+            self.assertEqual([i["alt"] for i in detail["images"]], ["Faki packet, front", "Faki packet, back", "Front of pack"])
+            self.assertTrue(detail["images"][2]["url"].endswith("/product-images/faki/front.png"))
             self.assertEqual(detail["priceConfirmed"], {"250g": False, "500g": False, "1kg": True})
             self.assertEqual(detail["prices"]["1kg"], 1000)
             self.assertIsNone(detail["averageRating"])

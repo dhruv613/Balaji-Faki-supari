@@ -233,11 +233,24 @@ def _public_storage_url(bucket: str, path: str) -> str:
     return f"{settings.supabase_url.rstrip('/')}/storage/v1/object/public/{bucket}/{path}"
 
 
+def _product_image_url(path: str) -> str:
+    # A path starting with "/" is a bundled frontend asset (e.g. /images/products/...); anything else is a Storage object.
+    return path if path.startswith("/") else _public_storage_url(settings.product_images_bucket, path)
+
+
+def _primary_product_image_url(product: Product | None) -> str | None:
+    """First gallery image, else the catalogue image: the same rule the storefront uses for product cards."""
+    if product is None:
+        return None
+    first = product.images[0] if product.images else None
+    return (_product_image_url(first.storage_path) if first else product.image_url) or None
+
+
 def _serialize_product_images(product: Product) -> list[dict[str, Any]]:
     return [
         {
             "id": image.id,
-            "url": _public_storage_url(settings.product_images_bucket, image.storage_path),
+            "url": _product_image_url(image.storage_path),
             "alt": image.alt_text or product.name,
             "position": image.position,
         }
@@ -343,10 +356,7 @@ def _serialize_customer_order(db: Session, order: Order, store: StoreSettings) -
     first_item = order.items[0] if order.items else None
     latest_attempt = order.payment_attempts[0] if order.payment_attempts else None
     total_inr = paise_to_inr(order.total_paise) or 0
-    product_image_url = None
-    if first_item is not None:
-        product = db.get(Product, first_item.product_id)
-        product_image_url = product.image_url or None if product is not None else None
+    product_image_url = _primary_product_image_url(db.get(Product, first_item.product_id)) if first_item is not None else None
 
     payment_instructions: dict[str, Any] | None = None
     if order.status == "PENDING_PAYMENT" and order.payment_status in ("PENDING", "REJECTED") and store.upi_id:
@@ -564,7 +574,7 @@ def _serialize_admin_order_detail(db: Session, order: Order) -> dict[str, Any]:
                 "productType": item.product_slug,
                 "productName": item.product_name,
                 "productNameGu": product.name_gu if product else "",
-                "productImage": product.image_url if product else "/images/hero-product.jpg",
+                "productImage": _primary_product_image_url(product) or "/images/hero-product.jpg",
                 "packSize": item.pack_size,
                 "quantity": item.quantity,
                 "unitPrice": paise_to_inr(item.unit_price_paise),
@@ -3448,7 +3458,8 @@ def delete_admin_product_image(
         )
     )
     db.commit()
-    delete_storage_objects(settings.product_images_bucket, [path])
+    if not path.startswith("/"):  # bundled assets are not Storage objects
+        delete_storage_objects(settings.product_images_bucket, [path])
     db.refresh(product)
     return _serialize_admin_product(product)
 

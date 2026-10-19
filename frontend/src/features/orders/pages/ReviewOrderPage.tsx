@@ -13,6 +13,7 @@ import {
 import { formatINR, formatPackSize, getErrorMessage, isNetworkError } from '../../../lib/api';
 import { env } from '../../../lib/env';
 import { createOrder } from '../api/ordersApi';
+import { primaryImage } from '../../catalog/components/ProductParts';
 import { useSession } from '../../../lib/supabase';
 import EmailSignIn from '../../../components/common/EmailSignIn';
 
@@ -23,6 +24,8 @@ export default function ReviewOrderPage() {
   const dispatch = useOrderDispatch();
   const navigate = useNavigate();
   const summary = buildSummary(state);
+  const reviewProduct = state.products.find((item) => item.type === state.product);
+  const reviewImage = reviewProduct ? primaryImage(reviewProduct) : null;
   const { session } = useSession();
   const mounted = useRef(true);
   const requestScope = JSON.stringify({ draft: toOrderFormData(state), userId: session?.user.id });
@@ -141,8 +144,9 @@ export default function ReviewOrderPage() {
               </Link>
             </div>
             <div className="summary-row">
-              <span>
-                {summary.productName} · {formatPackSize(summary.packSize)} × {summary.quantity}
+              <span style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                {reviewImage && <img className="product-thumb" src={reviewImage.url} alt={reviewImage.alt} loading="lazy" decoding="async" />}
+                <span>{summary.productName} · {formatPackSize(summary.packSize)} × {summary.quantity}</span>
               </span>
               <strong>{formatINR(summary.subtotal)}</strong>
             </div>

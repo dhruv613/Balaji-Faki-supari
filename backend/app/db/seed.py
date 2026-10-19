@@ -23,7 +23,7 @@ from urllib.parse import urlparse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .models import Product, ProductVariant, StoreSettings
+from .models import Product, ProductImage, ProductVariant, StoreSettings
 
 LOCAL_TEST_UPI_ID = "local-test@upi"
 LOCAL_TEST_PAYEE = "LOCAL TEST - do not pay"
@@ -37,7 +37,12 @@ INITIAL_PRODUCTS = (
         "name_gu": "ફાકી",
         "category": "Faki",
         "description": "",
-        "image_url": "/images/hero-product.jpg",
+        "image_url": "/images/products/balaji-faki-packet-front.webp",
+        # Bundled gallery (front, back). Alt text only describes the photo: no weight, ingredients or claims.
+        "images": (
+            ("/images/products/balaji-faki-packet-front.webp", "Faki packet, front"),
+            ("/images/products/balaji-faki-packet-back.webp", "Faki packet, back"),
+        ),
         "variants": (
             ("250g", "BFP-FAKI-250G", 10000, 25000, 50, False),
             ("500g", "BFP-FAKI-500G", 18000, 50000, 50, False),
@@ -106,6 +111,8 @@ def seed_development_data(db: Session, *, with_default_prices: bool = True) -> N
             )
             db.add(product)
             db.flush()
+            for position, (path, alt) in enumerate(spec.get("images", ())):  # new products only: admin edits are never undone
+                db.add(ProductImage(product_id=product.id, storage_path=path, alt_text=alt, position=position))
         for pack_size, sku, cost_paise, price_paise, stock, confirmed in spec["variants"]:
             existing = db.scalar(select(ProductVariant).where(ProductVariant.sku == sku))
             if existing is not None:

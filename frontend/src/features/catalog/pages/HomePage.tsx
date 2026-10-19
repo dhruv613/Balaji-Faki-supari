@@ -50,7 +50,7 @@ export default function HomePage() {
               const image = primaryImage(product);
               return (
                 <div className="product-card" key={product.type}>
-                  {image && <img className="product-card__image" src={image.url} alt={image.alt} width="640" height="360" />}
+                  {image && <img className="product-card__image" src={image.url} alt={image.alt} loading="lazy" decoding="async" />}
                   <div className="product-card__name">{product.name}</div>
                   <RatingLine average={product.averageRating} count={product.reviewCount} />
                   {product.description?.trim() && <p className="product-card__details">{product.description.trim()}</p>}

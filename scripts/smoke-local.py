@@ -176,10 +176,15 @@ def main() -> int:
     check("inventory adjustment", adj.status_code == 201 and adj.json()["newAvailable"] == adj.json()["previousAvailable"] + 5, adj.text[:150])
     pr = http.patch(f"{API}/admin/products/faki", headers=admin, json={"description": "", "variants": [{"packSize": "500g", "isAvailable": True}]})
     check("partial product update keeps prices", pr.status_code == 200 and next(v for v in pr.json()["variants"] if v["packSize"] == "500g")["price"] == 500, pr.text[:150])
-    img = http.post(f"{API}/admin/products/faki/images", headers=admin, data={"altText": "Front"}, files={"image": ("f.png", PNG, "image/png")})
-    check("product image stored in the public catalogue bucket", img.status_code == 201 and img.json()["images"], img.text[:150])
-    pub_img = http.get(img.json()["images"][0]["url"])
-    check("public product image URL is served by local Storage", pub_img.status_code == 200 and pub_img.content == PNG, str(pub_img.status_code))
+    img = http.post(f"{API}/admin/products/faki/images", headers=admin, data={"altText": "Smoke photo"}, files={"image": ("f.png", PNG, "image/png")})
+    uploaded = next((i for i in img.json().get("images", []) if i["alt"] == "Smoke photo"), None) if img.status_code == 201 else None
+    check("product image stored in the public catalogue bucket", uploaded is not None, img.text[:150])
+    pub_img = http.get(uploaded["url"]) if uploaded else None
+    check("public product image URL is served by local Storage", pub_img is not None and pub_img.status_code == 200 and pub_img.content == PNG, str(pub_img and pub_img.status_code))
+    if uploaded:  # leave the gallery as it was
+        http.delete(f"{API}/admin/products/faki/images/{uploaded['id']}", headers=admin)
+    gallery = http.get(f"{API}/products/faki").json()["images"]
+    check("Faki gallery is the bundled packet front then back", [i["url"] for i in gallery[:2]] == ["/images/products/balaji-faki-packet-front.webp", "/images/products/balaji-faki-packet-back.webp"] and all(i["alt"] != "Smoke photo" for i in gallery), str(gallery)[:200])
     qr = http.post(f"{API}/admin/settings/qr", headers=admin, files={"qr": ("qr.png", PNG, "image/png")})
     check("payment QR stored in the PRIVATE bucket", qr.status_code == 200 and qr.json()["officialUpiQrImageUrl"], qr.text[:150])
     o3 = http.post(f"{API}/orders", headers={**cust, "Idempotency-Key": uuid.uuid4().hex}, json=body).json()

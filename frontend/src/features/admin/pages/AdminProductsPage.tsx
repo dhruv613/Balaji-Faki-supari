@@ -343,7 +343,7 @@ export default function AdminProductsPage() {
               <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))' }}>
                 {editing.images.map((image) => (
                   <figure key={image.id} style={{ margin: 0 }}>
-                    <img src={image.url} alt={image.alt} style={{ width: '100%', height: 'auto' }} />
+                    <img src={image.url} alt={image.alt} loading="lazy" style={{ width: '100%', aspectRatio: '4 / 5', objectFit: 'contain', background: '#fff', border: '1px solid var(--color-border)' }} />
                     <button type="button" className="btn btn--sm" disabled={busy} onClick={() => void removeImage(image.id)}>Remove</button>
                   </figure>
                 ))}

@@ -154,3 +154,13 @@ Source of truth for this phase: `docs/CLAUDE_PROJECT_AUDIT.md`, `docs/CLAUDE_FIN
 - Refunds still record a bank transfer (not changed; confirm with the owner).
 - Verification: `npm run verify` PASS (62 backend tests); `check-db-security.py` 51/51; `smoke-local.py` 58/58 (re-runnable now); browser pass covered customer upload, admin approval, review hide-with-reason.
 - Gotcha: Vite on Windows can serve a stale transform after two quick writes; `touch` the file or restart Vite if the page shows an old error.
+
+### Real Faki packet photographs (2026-10-19, owner request)
+- Files: `frontend/public/images/products/balaji-faki-packet-front.webp` and `...-back.webp` (1122x1402, lossless WebP converted from the supplied PNGs, pixel-identical, about 1.6 MB each). They were not at those paths when the task started, so they were created from the two attachments (first = front, second = back).
+- Data: Faki only (`slug = faki`). `products.image_url` = front; gallery = two `product_images` rows (front position 0, back position 1) whose `storage_path` is the bundled path (a path starting with `/` is served as-is; anything else is a Storage object). Migration `20261020000004_faki_packet_images.sql` (guarded: only if `image_url` is still the old default and the product has no gallery). Dev seed adds the same gallery to a NEW Faki product. Supari and every other image are untouched.
+- UI: object-fit contain on a white background everywhere; Product Details has a front/back thumbnail switcher (aria-pressed, labelled); thumbnails added to Order Form, Review Order, My Orders; Order Details and the admin order and product editors use contain. Non-critical images are lazy.
+- Nothing assumed: no weight or pack size is tied to the photographed packet, and ingredients, manufacturer, shelf life and certifications stay empty and editable in Admin Product Management. Alt text only says "Faki packet, front/back".
+- Check with the owner: the front reads "Soft Cucing of Dry Arecanut" and shows pale slices, while the back shows an orange product. They may be two different packets.
+- Verification: `npm run verify` PASS (62 backend tests); smoke 59/59 (new Faki gallery check; the script now removes the photo it uploads); browser desktop and 375 px mobile pass on Home, Product Details (front/back switch), Order Form, Review, My Orders, Order Details, Admin Products and Admin Orders: all image requests 200/304, no horizontal overflow.
+- Cleaned up local test data: six leftover 1x1 smoke-test photos on the local Faki record were removed.
+

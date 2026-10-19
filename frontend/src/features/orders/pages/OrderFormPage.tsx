@@ -11,6 +11,7 @@ import {
   MAX_QUANTITY,
 } from '../../../context/OrderContext';
 import { formatINR, formatPackSize } from '../../../lib/api';
+import { primaryImage } from '../../catalog/components/ProductParts';
 import type { ProductType, PackSize, OrderFormData } from '../../../types/orders';
 
 const FIELD_IDS: Partial<Record<keyof OrderFormData, string>> = {
@@ -104,7 +105,9 @@ export default function OrderFormPage() {
             <fieldset>
               <legend>1. Choose product</legend>
 
-              {products.map((prod) => (
+              {products.map((prod) => {
+                const image = primaryImage(prod);
+                return (
                 <label
                   key={prod.type}
                   className={`radio-option${state.product === prod.type ? ' radio-option--selected' : ''}`}
@@ -118,9 +121,11 @@ export default function OrderFormPage() {
                     checked={state.product === prod.type}
                     onChange={() => dispatch({ type: 'SET_PRODUCT', payload: prod.type })}
                   />
+                  {image && <img className="product-thumb" src={image.url} alt="" loading="lazy" decoding="async" />}
                   {prod.name}
                 </label>
-              ))}
+                );
+              })}
 
               <div className="form-row" style={{ marginTop: 16 }}>
                 <div>

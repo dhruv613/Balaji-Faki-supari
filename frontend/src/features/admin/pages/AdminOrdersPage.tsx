@@ -554,9 +554,10 @@ export default function AdminOrdersPage() {
                     src={item.productImage}
                     alt={item.productName}
                     style={{
-                      width: 64,
+                      width: 52,
                       height: 64,
-                      objectFit: 'cover',
+                      objectFit: 'contain',
+                      background: '#fff',
                       borderRadius: 10,
                       border: '1px solid var(--color-border)',
                     }}

@@ -24,7 +24,7 @@ os.environ["BFP_ENV"] = "local"
 import app.db.session as db_session
 import app.main as main_module
 from app.core.security import AuthenticatedPrincipal
-from app.db.models import AdminAuditLog, Customer, InventoryMovement, Order, ProductVariant, StoreSettings, UserProfile
+from app.db.models import AdminAuditLog, Customer, InventoryMovement, Order, Product, ProductVariant, StoreSettings, UserProfile
 from app.db.seed import seed_development_data
 from app.schemas import (
     ConfirmBusinessSettingsRequestSchema,
@@ -269,6 +269,13 @@ class AdminModuleTests(unittest.TestCase):
 
     def test_product_and_shop_images(self) -> None:
         with db_session.SessionLocal() as db:
+            # The seeded Faki gallery is two bundled frontend assets: removing them must not touch Storage.
+            bundled = [(image.id, image.storage_path) for image in db.scalar(select(Product).where(Product.slug == "faki")).images]
+            self.assertEqual([path for _, path in bundled], ["/images/products/balaji-faki-packet-front.webp", "/images/products/balaji-faki-packet-back.webp"])
+            for bundled_id, _ in bundled:
+                main_module.delete_admin_product_image("faki", bundled_id, self.admin, db)
+            self.assertEqual(OBJECTS, {})
+
             product = main_module.add_admin_product_image("faki", upload(), "Front of the pack", self.admin, db)
             self.assertEqual(len(product["images"]), 1)
             self.assertEqual(product["images"][0]["alt"], "Front of the pack")

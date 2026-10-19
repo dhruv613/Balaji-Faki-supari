@@ -105,7 +105,7 @@ export default function OrderDetailsPage() {
           <aside className="two-col__side card card--tinted">
             <h3>Delivery details</h3>
             <div className="order-detail__product">
-              {order.productImageUrl && <img className="order-detail__product-image" src={order.productImageUrl} alt={order.productName} width="96" height="72" />}
+              {order.productImageUrl && <img className="order-detail__product-image" src={order.productImageUrl} alt={order.productName} width="72" height="90" decoding="async" />}
               <strong>{order.productName}</strong>
             </div>
             <div className="summary-row"><span>Items</span><strong>{order.productName} · {formatPackSize(order.packSize)} × {order.quantity}</strong></div>

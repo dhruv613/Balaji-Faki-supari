@@ -74,7 +74,7 @@ export default function MyOrdersPage() {
             return (
               <article className="order-card" key={order.id}>
                 <div><div className="order-card__id">{order.orderNumber}</div><div className="order-card__date">{new Date(order.createdAt).toLocaleDateString('en-IN', {day:'numeric', month:'short', year:'numeric'})}</div></div>
-                <div className="order-card__details"><span className="order-card__product">{order.productName} · {formatPackSize(order.packSize)} × {order.quantity}</span><span className="order-card__amount">{formatINR(order.total)}</span></div>
+                <div className="order-card__details"><span className="order-card__product" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>{order.productImageUrl && <img className="product-thumb" src={order.productImageUrl} alt={order.productName} loading="lazy" decoding="async" />}<span>{order.productName} · {formatPackSize(order.packSize)} × {order.quantity}</span></span><span className="order-card__amount">{formatINR(order.total)}</span></div>
                 <span className={`badge ${PENDING_STATUSES.includes(order.status) ? '' : 'badge--dark'}`}>{ORDER_STATUS_DISPLAY_LABELS[order.status]}</span>
                 <Link className="btn" to={`/my-orders/${encodeURIComponent(order.id)}`}>View order</Link>
               </article>
