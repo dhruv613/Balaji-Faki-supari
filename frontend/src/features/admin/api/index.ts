@@ -285,9 +285,11 @@ export async function getAdminInventory(): Promise<AdminInventoryResponse> {
 export async function createStockAdjustment(
   payload: StockAdjustmentRequest,
 ): Promise<StockMovementRecord> {
+  // The server validates strictly (extra fields are refused), so only the fields it defines are sent.
+  const { inventoryItemId, adjustmentType, quantity, reason } = payload;
   return apiFetch<StockMovementRecord>(resolveApiPath('/api/admin/inventory/adjustments'), {
     method: 'POST',
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ inventoryItemId, adjustmentType, quantity, reason }),
   });
 }
 

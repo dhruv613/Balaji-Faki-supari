@@ -2612,8 +2612,6 @@ def update_admin_product(
         product.category = payload.category.strip()
     if payload.description is not None:
         product.description = payload.description.strip()
-    if payload.image_url is not None:
-        product.image_url = payload.image_url.strip()
     if payload.active is not None:
         product.is_active = bool(payload.active)
     if payload.information is not None:

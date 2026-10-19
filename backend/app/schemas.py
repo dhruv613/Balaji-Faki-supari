@@ -185,8 +185,6 @@ class UpdateAdminProductRequestSchema(CamelModel):
     name_gu: Optional[str] = Field(default=None, alias="nameGu")
     category: Optional[str] = None
     description: Optional[str] = None
-    description_gu: Optional[str] = Field(default=None, alias="descriptionGu")
-    image_url: Optional[str] = Field(default=None, alias="imageUrl")
     active: Optional[bool] = None
     information: Optional[ProductInformationSchema] = None
     variants: Optional[list[UpdateProductVariantInputSchema]] = None

@@ -119,11 +119,9 @@ export default function AdminInventoryPage() {
 
     setBusy(true);
     try {
-      const movement = await createStockAdjustment(requestPayload);
-      setInventory((prev) => ({
-        ...prev,
-        movements: [movement, ...prev.movements],
-      }));
+      await createStockAdjustment(requestPayload);
+      // Reload so stock levels, alerts and the movement log all reflect the server state.
+      setInventory(await getAdminInventory());
       showToast(
         `Adjusted stock for ${adjustingItem.productName} (${adjustingItem.packSize}).`,
         'success',

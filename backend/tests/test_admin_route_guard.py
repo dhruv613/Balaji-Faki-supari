@@ -22,7 +22,6 @@ TMP = Path(tempfile.mkdtemp(prefix="bfp_guard_test_"))
 DB_URL = f"sqlite:///{(TMP / 'guard.sqlite3').as_posix()}"
 os.environ["DATABASE_URL"] = DB_URL
 os.environ["SUPABASE_URL"] = "http://127.0.0.1:54321"
-os.environ["SUPABASE_JWT_SECRET"] = SECRET
 os.environ["BFP_ENV"] = "local"
 
 import app.db.session as db_session  # noqa: E402
