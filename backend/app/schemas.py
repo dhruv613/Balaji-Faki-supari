@@ -91,6 +91,8 @@ class ApprovePaymentRequestSchema(CamelModel):
     verified_utr: str = Field(alias="verifiedUtr", min_length=12, max_length=12)
     transaction_status: str = Field(alias="transactionStatus")
     bank_credit_reference: str = Field(alias="bankCreditReference", min_length=4, max_length=128)
+    evidence_kind: Literal["BANK_STATEMENT", "LOCAL_TEST"] = Field(default="BANK_STATEMENT", alias="evidenceKind")
+    bank_statement_checked: bool = Field(default=False, alias="bankStatementChecked")
     notes: Optional[str] = None
 
 

@@ -358,7 +358,8 @@ class FastApiWorkflowIntegrationTests(unittest.TestCase):
                 "verifiedAmount": 500,
                 "verifiedUtr": "412345678901",
                 "transactionStatus": "CREDITED",
-                "bankCreditReference": "AXIS-CR-20261018-0001",
+                "bankCreditReference": "TEST-CR-20261018-0001",
+                "evidenceKind": "LOCAL_TEST",
             },
         )
         self.assertEqual(direct_approve.status_code, 409)
@@ -388,7 +389,8 @@ class FastApiWorkflowIntegrationTests(unittest.TestCase):
                 "verifiedAmount": 500,
                 "verifiedUtr": "412345678901",
                 "transactionStatus": "CREDITED",
-                "bankCreditReference": "AXIS-CR-20261018-0001",
+                "bankCreditReference": "TEST-CR-20261018-0001",
+                "evidenceKind": "LOCAL_TEST",
             },
         )
         self.assertEqual(mismatch_approve.status_code, 400)
@@ -403,7 +405,8 @@ class FastApiWorkflowIntegrationTests(unittest.TestCase):
                 "verifiedAmount": 520,
                 "verifiedUtr": "412345678901",
                 "transactionStatus": "CREDITED",
-                "bankCreditReference": "AXIS-CR-20261018-0001",
+                "bankCreditReference": "TEST-CR-20261018-0001",
+                "evidenceKind": "LOCAL_TEST",
                 "notes": "Matched Axis Bank credit statement entry",
             },
         )
@@ -420,7 +423,8 @@ class FastApiWorkflowIntegrationTests(unittest.TestCase):
                 "verifiedAmount": 520,
                 "verifiedUtr": "412345678901",
                 "transactionStatus": "CREDITED",
-                "bankCreditReference": "AXIS-CR-20261018-0001",
+                "bankCreditReference": "TEST-CR-20261018-0001",
+                "evidenceKind": "LOCAL_TEST",
             },
         )
         self.assertEqual(approval_retry.status_code, 200)
@@ -557,6 +561,12 @@ class FastApiWorkflowIntegrationTests(unittest.TestCase):
         self.assertEqual(reject_res.json()["paymentStatus"], "REJECTED")
         self.assertEqual(reject_res.json()["orderStatus"], "PENDING_PAYMENT")
 
+        status_after_reject = self.client.get(f"/api/payments/{order2_id}/status", headers=c2_headers).json()
+        self.assertEqual(status_after_reject["latestAttemptStatus"], "REJECTED")
+        self.assertIn("blurry", status_after_reject["rejectionReason"])
+        self.assertTrue(status_after_reject["canSubmitProof"])
+        self.assertEqual([a["status"] for a in status_after_reject["attempts"]], ["REJECTED"])  # history retained
+
         retry_res = self.client.post(
             f"/api/payments/{order2_id}/submit",
             headers={**c2_headers, "Idempotency-Key": "pay-idem-002-retry"},
@@ -567,6 +577,20 @@ class FastApiWorkflowIntegrationTests(unittest.TestCase):
         self.assertNotEqual(retry_res.json()["paymentId"], payment2_id)
         self.assertEqual(retry_res.json()["paymentStatus"], "SUBMITTED")
         self.assertEqual(retry_res.json()["orderStatus"], "PAYMENT_REVIEW")
+
+        # Replaying the same attempt (same Idempotency-Key) never creates a second attempt.
+        replay = self.client.post(
+            f"/api/payments/{order2_id}/submit",
+            headers={**c2_headers, "Idempotency-Key": "pay-idem-002-retry"},
+            data={"utr": "488877776666"},
+            files={"screenshot": ("proof3.png", VALID_PNG_BYTES, "image/png")},
+        )
+        self.assertEqual(replay.status_code, 200)
+        self.assertEqual(replay.json()["paymentId"], retry_res.json()["paymentId"])
+        status_pending = self.client.get(f"/api/payments/{order2_id}/status", headers=c2_headers).json()
+        self.assertFalse(status_pending["canSubmitProof"])
+        self.assertIsNone(status_pending["rejectionReason"])
+        self.assertEqual([a["status"] for a in status_pending["attempts"]].count("SUBMITTED"), 1)
 
         # A unique UTR is still insufficient: a reused bank-credit reference is blocked.
         payment2_retry_id = retry_res.json()["paymentId"]
@@ -584,7 +608,8 @@ class FastApiWorkflowIntegrationTests(unittest.TestCase):
                 "verifiedAmount": 180,
                 "verifiedUtr": "488877776666",
                 "transactionStatus": "CREDITED",
-                "bankCreditReference": "AXIS-CR-20261018-0001",
+                "bankCreditReference": "TEST-CR-20261018-0001",
+                "evidenceKind": "LOCAL_TEST",
             },
         )
         self.assertEqual(duplicate_credit_ref.status_code, 409)

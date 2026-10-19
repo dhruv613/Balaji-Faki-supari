@@ -487,6 +487,7 @@ def _serialize_admin_payment(db: Session, payment: PaymentAttempt) -> dict[str, 
             "bankTimestamp": _iso(bc.verified_at),
             "verifiedByAdmin": verifier.email if verifier else bc.verified_by,
             "verifiedAt": _iso(bc.verified_at),
+            "evidenceKind": bc.evidence_kind,
         }
 
     history: list[dict[str, Any]] = [
@@ -1527,6 +1528,9 @@ def get_payment_status(
     else:
         msg = "Payment proof submitted successfully. Waiting for admin verification."
 
+    rejected_awaiting_retry = (
+        latest_attempt is not None and latest_attempt.status == "REJECTED" and order.status == "PENDING_PAYMENT"
+    )
     return {
         "orderId": order.id,
         "orderNumber": order.order_number,
@@ -1534,6 +1538,20 @@ def get_payment_status(
         "orderStatus": order.status,
         "utrMasked": mask_utr(latest_attempt.submitted_utr) if latest_attempt else None,
         "message": msg,
+        # Rejected proofs keep their history; the customer may submit a new attempt while the order awaits payment.
+        "latestAttemptStatus": latest_attempt.status if latest_attempt else None,
+        "rejectionReason": (latest_attempt.rejection_reason or "Payment proof was rejected.") if rejected_awaiting_retry else None,
+        "canSubmitProof": order.status == "PENDING_PAYMENT" and order.payment_status == "PENDING",
+        "attempts": [
+            {
+                "id": attempt.id,
+                "status": attempt.status,
+                "utrMasked": mask_utr(attempt.submitted_utr),
+                "submittedAt": _iso(attempt.submitted_at),
+                "rejectionReason": attempt.rejection_reason if attempt.status == "REJECTED" else None,
+            }
+            for attempt in order.payment_attempts
+        ],
     }
 
 
@@ -1805,6 +1823,23 @@ def approve_admin_payment(
             detail="Payment cannot be approved unless bank transaction status is CREDITED.",
         )
 
+    # A screenshot or a typed reference is not proof of settlement. Real approvals require the owner to attest
+    # that the credit was found on the actual bank statement; local development uses clearly labelled TEST evidence.
+    bank_ref_input = payload.bank_credit_reference.strip()
+    if payload.evidence_kind == "LOCAL_TEST":
+        if not settings.is_local_env:
+            raise HTTPException(status_code=422, detail="TEST bank-credit evidence is only accepted in local development.")
+        if not bank_ref_input.upper().startswith("TEST-"):
+            raise HTTPException(status_code=422, detail="TEST bank-credit references must start with TEST-.")
+    else:
+        if not payload.bank_statement_checked:
+            raise HTTPException(
+                status_code=422,
+                detail="Confirm that you found this credit on the actual bank statement before approving.",
+            )
+        if bank_ref_input.upper().startswith("TEST-"):
+            raise HTTPException(status_code=422, detail="TEST references cannot be used as real bank-credit evidence.")
+
     cleaned_utr = payload.verified_utr.strip()
     if not UTR_REGEX.match(cleaned_utr):
         raise HTTPException(status_code=422, detail="Verified UTR must be a valid 12-digit number.")
@@ -1854,7 +1889,8 @@ def approve_admin_payment(
         transaction_status="CREDITED",
         verified_by=admin.id,
         verified_at=now,
-        verification_note=payload.notes,
+        verification_note=(f"LOCAL TEST EVIDENCE. {payload.notes}" if payload.evidence_kind == "LOCAL_TEST" else payload.notes),
+        evidence_kind=payload.evidence_kind,
     )
     db.add(bank_credit)
 
