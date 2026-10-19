@@ -1,3 +1,5 @@
+project_id = "balaji-faki-local"
+
 [api]
 enabled = true
 port = 54321
@@ -16,4 +18,4 @@ enable_signup = true
 [auth.email]
 enable_signup = true
 double_confirm_changes = true
-enable_confirmations = true
+enable_confirmations = false

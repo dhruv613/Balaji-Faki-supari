@@ -9,6 +9,7 @@ function step(label, command, cwd = rootDir) {
   execSync(command, { cwd, stdio: 'inherit' });
 }
 
+step('0. Local-only isolation check', 'node scripts/check-local-only.mjs');
 step('1. Frontend TypeScript Validation', 'npm run typecheck');
 step('2. Automated Test Suites (Checkout, Secondary Pages, Auth, Admin & DB Schema)', 'npm test');
 step('3. Backend FastAPI Security & JWT Verification Tests', 'python -m unittest discover -s backend/tests -v');
