@@ -46,10 +46,10 @@ export default function AdminRefundsPage() {
 
   // Verified transfer form inputs
   const [refundTxRef, setRefundTxRef] = useState('');
-  const [refundBankAccount, setRefundBankAccount] = useState(
-    'Axis Bank Merchant A/C · 8000961030@okbizaxis',
-  );
-  const [refundDate, setRefundDate] = useState('2026-10-17');
+  const [refundBankAccount, setRefundBankAccount] = useState('');
+  const [refundDate, setRefundDate] = useState('');
+  const [refundEvidence, setRefundEvidence] = useState<'BANK_TRANSFER' | 'LOCAL_TEST'>('BANK_TRANSFER');
+  const [settlementChecked, setSettlementChecked] = useState(false);
   const [verifiedAmountInput, setVerifiedAmountInput] = useState('');
   const [refundNotes, setRefundNotes] = useState('');
   const [validationError, setValidationError] = useState('');
@@ -91,10 +91,10 @@ export default function AdminRefundsPage() {
   function openRefundDrawer(record: AdminRefundRecord) {
     setSelectedRefund(record);
     setRefundTxRef(record.refundTransactionReference ?? '');
-    setRefundBankAccount(
-      record.refundBankAccount ?? 'Axis Bank Merchant A/C · 8000961030@okbizaxis',
-    );
-    setRefundDate(record.refundDate ?? '2026-10-17');
+    setRefundBankAccount(record.refundBankAccount ?? '');
+    setRefundDate(record.refundDate ?? new Date().toISOString().slice(0, 10));
+    setRefundEvidence('BANK_TRANSFER');
+    setSettlementChecked(false);
     setVerifiedAmountInput(
       record.refundAmount !== null ? String(record.refundAmount) : '',
     );
@@ -153,8 +153,19 @@ export default function AdminRefundsPage() {
       refundBankAccount: refundBankAccount.trim(),
       refundDate: refundDate.trim(),
       verifiedAmount: Number(verifiedAmountInput),
+      evidenceKind: refundEvidence,
+      transferSettlementChecked: refundEvidence === 'BANK_TRANSFER' ? settlementChecked : undefined,
       notes: refundNotes.trim() || undefined,
     };
+
+    if (refundEvidence === 'BANK_TRANSFER' && !settlementChecked) {
+      setValidationError('Confirm that the refund transfer is visible as settled on the actual bank statement. A typed reference alone is not proof.');
+      return;
+    }
+    if (refundEvidence === 'LOCAL_TEST' && !transferPayload.refundTransactionReference.toUpperCase().startsWith('TEST-')) {
+      setValidationError('LOCAL TEST evidence must use a reference that starts with TEST-.');
+      return;
+    }
 
     const check = validateRefundCompletion({
       currentRefundStatus: selectedRefund.refundStatus,
@@ -470,6 +481,30 @@ export default function AdminRefundsPage() {
                   disabled={selectedRefund.refundStatus === 'COMPLETED' || busy}
                 />
               </div>
+
+              {selectedRefund.refundStatus !== 'COMPLETED' && (
+                <fieldset style={{ marginBottom: 14 }} disabled={busy}>
+                  <legend>Evidence that the transfer settled</legend>
+                  <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontWeight: 400 }}>
+                    <input type="radio" name="refund-evidence" checked={refundEvidence === 'BANK_TRANSFER'} onChange={() => setRefundEvidence('BANK_TRANSFER')} />
+                    <span>Real bank transfer, visible as settled on the bank statement.</span>
+                  </label>
+                  {!env.isProd && (
+                    <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontWeight: 400 }}>
+                      <input type="radio" name="refund-evidence" checked={refundEvidence === 'LOCAL_TEST'} onChange={() => setRefundEvidence('LOCAL_TEST')} />
+                      <span>LOCAL TEST evidence (development only; reference must start with TEST-).</span>
+                    </label>
+                  )}
+                  {refundEvidence === 'BANK_TRANSFER' ? (
+                    <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontWeight: 600, marginTop: 8 }}>
+                      <input type="checkbox" checked={settlementChecked} onChange={(e) => setSettlementChecked(e.target.checked)} />
+                      <span>I found this refund transfer settled on the actual bank statement. A typed reference alone is not proof.</span>
+                    </label>
+                  ) : (
+                    <Notice tone="warning" title="TEST evidence">Recorded as LOCAL TEST evidence; the server refuses it outside local development.</Notice>
+                  )}
+                </fieldset>
+              )}
 
               {selectedRefund.refundStatus !== 'COMPLETED' ? (
                 <button type="submit" className="btn btn--dark btn--full" disabled={busy}>

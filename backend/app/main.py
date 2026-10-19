@@ -2764,7 +2764,23 @@ def record_admin_refund_transfer(
     if duplicate is not None:
         raise HTTPException(status_code=409, detail="Refund bank-transfer reference is already recorded.")
 
+    if payload.evidence_kind == "LOCAL_TEST":
+        if not settings.is_local_env:
+            raise HTTPException(status_code=422, detail="TEST refund evidence is only accepted in local development.")
+        if not reference.upper().startswith("TEST-"):
+            raise HTTPException(status_code=422, detail="TEST refund references must start with TEST-.")
+    else:
+        if not payload.transfer_settlement_checked:
+            raise HTTPException(
+                status_code=422,
+                detail="Confirm that the refund transfer is visible as settled on the actual bank statement. A typed reference alone is not proof.",
+            )
+        if reference.upper().startswith("TEST-"):
+            raise HTTPException(status_code=422, detail="TEST references cannot be used as real refund evidence.")
+
     notes = (payload.notes or "").strip() or "Actual bank refund transfer independently verified."
+    if payload.evidence_kind == "LOCAL_TEST":
+        notes = f"LOCAL TEST EVIDENCE. {notes}"
     previous_status = refund.status
     refund.status = "COMPLETED"
     refund.refund_transaction_reference = reference

@@ -123,6 +123,38 @@ npm run verify
 
 ---
 
+## 3a. Full local stack (React + FastAPI + local Supabase)
+
+Everything runs on this machine. **Never** run `supabase link`, `db push`, `--linked` or any command against the online project;
+`npm run verify` includes `scripts/check-local-only.mjs`, which fails if any active config could reach it.
+
+```powershell
+# 0. Docker Desktop (Linux engine) must be running.
+supabase start                         # local Postgres 54322, Auth/API 54321, Storage; prints local keys (do not paste them anywhere public)
+supabase db reset                      # LOCAL database only: applies supabase/migrations in order
+# Put the local keys from `supabase status` into backend/.env and frontend/.env (they are gitignored).
+python -m pip install -r backend/requirements.txt
+python scripts/check-db-security.py    # private-data vs public-access assertions on the local database (rolled back)
+cd backend; python -m app.db.seed --dev --dev-admin   # explicit DEVELOPMENT data + a local Owner Admin (credentials -> .local-dev-credentials.json, gitignored)
+cd backend; python -m uvicorn app.main:app --port 8000
+npm run dev                            # http://localhost:5173
+```
+
+Rules the code enforces:
+
+- Request handlers never create prices, stock, products or settings. Only `python -m app.db.seed --dev` does, and it never overwrites
+  existing rows. Only **Faki 1 kg = Rs 1,000** is an owner-confirmed price; every other seeded price is a development price shown with a badge.
+- `BFP_ENV=local` (set in `backend/.env`) enables development-only conveniences (TEST bank-credit evidence, a per-process signing key).
+  Any other value fails closed, and checkout stays closed until the owner confirms prices and payment settings in Admin → Settings.
+- Payment settings seeded for development are LOCAL TEST values, not a real receiving account.
+- Admin access needs a successful `GET /api/me` with `OWNER_ADMIN`; the browser never decides.
+
+Tests: `npm run typecheck`, `npm test`, `python -m unittest discover -s backend/tests`, `node scripts/check-local-only.mjs`.
+The backend suite runs on SQLite; **PostgreSQL, RLS, Auth and Storage behaviour is only proven by running `scripts/check-db-security.py` and the
+smoke checks against the local Supabase stack** (see `docs/CLAUDE_CHANGE_PLAN.md` for what has and has not been verified).
+
+---
+
 ## 4. Environment Configuration
 
 Keep your existing `.env` / `frontend/.env` or copy `.env.example` to `.env`:

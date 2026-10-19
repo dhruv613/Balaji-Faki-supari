@@ -124,7 +124,9 @@ export default function EmailSignIn({ signInOnly = false, initialMode = 'signin'
     <p className="text-secondary">
       {registering
         ? 'Create an account to place orders and follow them in My Orders.'
-        : 'Sign in with your email and password to place orders and follow your deliveries.'}
+        : signInOnly
+          ? 'Sign in with the Owner Admin email and password.'
+          : 'Sign in with your email and password to place orders and follow your deliveries.'}
     </p>
     {!supabase && <Notice title="Sign-in is not connected">Email sign-in is not configured yet. Please contact the store for help.</Notice>}
     <form noValidate onSubmit={submit}>

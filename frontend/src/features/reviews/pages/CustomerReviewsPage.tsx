@@ -166,7 +166,7 @@ export default function CustomerReviewsPage() {
         <aside className="card card--tinted review-summary" aria-label="Customer review summary">
           <div className="amount-display">{average}</div>
           <div className="review-meta">{summary.average !== null && <Stars rating={summary.average} />}<span className="text-small text-secondary">out of 5</span></div>
-          <p className="text-small text-secondary">Based on {summary.count} genuine {productLabel(productFilter).toLowerCase()} review{summary.count === 1 ? '' : 's'}</p>
+          <p className="text-small text-secondary">Based on {summary.count} genuine {productFilter === 'all' ? '' : `${productLabel(productFilter)} `}review{summary.count === 1 ? '' : 's'}</p>
           <div className="rating-bars">
             {distribution.map((item) => <div className="rating-bar" key={item.star}>
               <span>{item.star} stars</span>

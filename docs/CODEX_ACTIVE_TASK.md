@@ -119,3 +119,22 @@ Critical rules:
 ## Next exact action
 
 Run the local migration and workflow suite on a Windows environment that permits AnyIO sockets, then smoke-test the local Supabase Storage upload. Next implementation work is customer review-photo storage and moderation, followed by adding only owner-confirmed store/product facts.
+
+
+---
+
+## Claude Code handoff (appended 2026-10-19; earlier content above is preserved)
+
+Source of truth for this phase: `docs/CLAUDE_PROJECT_AUDIT.md`, `docs/CLAUDE_FINAL_REQUIREMENTS.md`, `docs/CLAUDE_CHANGE_PLAN.md` (section 0 decisions, section 10 progress log), `docs/PRODUCTION_REMEDIATION_RUNBOOK.md` (written, never executed).
+
+**Done (all local commits on `dev/antigravity`, nothing pushed):** local-only isolation; forward-only security migrations (unverified on Postgres); backend P0 fixes; reviews and photos; product details and shop content; public browsing with explicit sign-in/create-account; five-stage order timeline; idempotent payment retry and rejection UI; TEST-vs-real bank evidence; admin guard, dashboard, settings, price management, inventory, customers, feedback moderation; refund-completion safeguard.
+
+**Open items**
+1. **Start Docker Desktop (Linux engine), then run the local integration pass**: `supabase start`, `supabase db reset`, `python scripts/check-db-security.py`, backend against Postgres with `python -m app.db.seed --dev --dev-admin`, then the manual walkthrough in README section 3a. Until then Postgres/RLS/Auth/Storage results are NOT VERIFIED and the three `20261020...` migrations must not be called safe.
+2. Fill the local Supabase keys into `backend/.env` and `frontend/.env` (empty today); add `SUPABASE_JWT_SECRET` if the local Auth signs HS256 (see `.env.example`).
+3. WP11b is blocked on owner decisions (cancellation, refund, reservation expiry, late payments).
+4. Owner content still needed before go-live: approved prices (only Faki 1 kg = Rs 1,000 is confirmed), delivery charge, PIN list, real UPI/QR and receiving account, ingredients/production/manufacturer/shelf-life/safety facts, store photos, shop introduction.
+5. The archived handoff says the online project may still hold the insecure `simple_db_auth` migration. Not inspected; see the runbook.
+6. Cleanup candidates: `frontend/src/features/admin/lib/referenceData.ts` samples (still used as test fixtures and by the hidden Reports/Notifications pages), tracked `backend/New Microsoft Excel Worksheet.xlsx` (contents not inspected).
+
+**Verification at handoff:** `npm run typecheck` PASS; `npm test` (5 suites) PASS; `python -m unittest discover -s backend/tests` 63 tests PASS (SQLite); `node scripts/check-local-only.mjs` PASS. Public pages smoke-tested in the in-app browser against a throwaway SQLite backend (desktop and 375 px). **Not tested:** anything needing local Supabase (sign-up/login, order creation through real Auth, Storage upload, RLS) and the admin screens in a browser.

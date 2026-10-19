@@ -1,5 +1,10 @@
 # System Architecture — Balaji Faki Point
 
+> **Historical document (written before the local-only phase).** It describes the previous online/staging setup, including the retired
+> database-password login and commands that target the online Supabase project. Do **not** run any command from it.
+> Current instructions: README section 3a and `docs/CLAUDE_CHANGE_PLAN.md`.
+
+
 ## 1. Overview
 
 **Balaji Faki Point** is a full-stack e-commerce ordering and administration platform for traditional Kathiyawadi Faki and Supari, featuring a manual UPI QR payment verification workflow and a 12-module Owner Admin Management Panel.

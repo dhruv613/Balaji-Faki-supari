@@ -155,6 +155,10 @@ class RecordRefundTransferRequestSchema(CamelModel):
     refund_bank_account: str = Field(alias="refundBankAccount", min_length=4, max_length=128)
     refund_date: str = Field(alias="refundDate", min_length=8, max_length=32)
     verified_amount: float = Field(alias="verifiedAmount", gt=0)
+    # A refund is COMPLETED only against an actually settled bank transfer. BANK_TRANSFER needs the owner's attestation;
+    # LOCAL_TEST is clearly labelled development evidence and is refused outside local development.
+    evidence_kind: Literal["BANK_TRANSFER", "LOCAL_TEST"] = Field(default="BANK_TRANSFER", alias="evidenceKind")
+    transfer_settlement_checked: bool = Field(default=False, alias="transferSettlementChecked")
     notes: Optional[str] = Field(default=None, max_length=500)
 
 

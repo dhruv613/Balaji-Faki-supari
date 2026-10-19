@@ -1,5 +1,10 @@
 # Deployment Guide — Vercel & Supabase
 
+> **Historical document (written before the local-only phase).** It describes the previous online/staging setup, including the retired
+> database-password login and commands that target the online Supabase project. Do **not** run any command from it.
+> Current instructions: README section 3a and `docs/CLAUDE_CHANGE_PLAN.md`.
+
+
 ## 1. Frontend Deployment on Vercel
 
 - **Root Directory**: `./` (workspace root)

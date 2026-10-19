@@ -624,6 +624,9 @@ export interface RecordRefundTransferRequest {
   refundBankAccount: string;
   refundDate: string;
   verifiedAmount: number;
+  /** BANK_TRANSFER = settled transfer seen on the real bank statement; LOCAL_TEST = labelled development evidence. */
+  evidenceKind: 'BANK_TRANSFER' | 'LOCAL_TEST';
+  transferSettlementChecked?: boolean;
   notes?: string;
 }
 

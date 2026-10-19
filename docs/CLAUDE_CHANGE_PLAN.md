@@ -313,3 +313,33 @@ Owner-supplied content still needed before go-live (not blocking local work): ap
 
 ## 10. Work-package progress log
 - **WP0 — done (2026-10-19):** `.mcp.json` emptied (production server removed); CLI link files moved outside the repo; `supabase/config.toml` has `project_id = "balaji-faki-local"` and local email confirmation off; `scripts/check-local-only.mjs` added and wired into `scripts/verify-all.mjs` (positive and negative tests passed).
+
+- **WP1 — BLOCKED (environment):** Docker Desktop could not be started from this session (its service stays stopped; no native PostgreSQL exists either). No local Supabase stack was started, so **no Postgres, RLS, Auth or Storage behaviour has been verified**. `psycopg` is now installed.
+- **WP2 — written, NOT verified on PostgreSQL:** `20261020000000_final_security_state.sql`, `20261020000001_catalog_store_content.sql`, `20261020000002_least_privilege_grants.sql`, and `scripts/check-db-security.py` (separate private-data and public-access assertions). The three migrations are *not* claimed safe until that script passes on a local `supabase db reset`.
+- **WP3 — done (SQLite-tested):** no request-time seeding (`python -m app.db.seed --dev [--dev-admin]` only); JSON PIN type; SQLite-only `create_all`; ordering guard outside local mode; fail-closed signed-URL secret; delivery transition 409; LOCAL TEST payment values; JWKS client cached.
+- **WP4-WP9 — done (unit/contract tested; public pages smoke-tested in the browser):** public browsing; explicit Sign in / Create account; guest draft survives sign-in; product details; shop page; reviews (multipart photos, auto-publish, hidden reviews excluded from public stats, signed/proxied photo access); five-stage timeline; idempotent payment attempts; rejection explanation and resubmission; TEST vs real bank evidence.
+- **WP10 — done:** server-verified admin guard (claims never unlock the UI); three-element dashboard (Net Profit shows "Not configured" without costs); Price Management (partial updates, approval flag, photos); Order Management single-request list; Feedback moderation with audit reasons; Inventory, Customers and Settings on real endpoints; Reports/Notifications routes redirect to the dashboard (files and data kept).
+- **WP11a — done (policy-free):** refund completion requires an attested settled transfer (or labelled LOCAL TEST evidence); investigation below.
+- **WP11b — BLOCKED:** awaiting the owner decisions on cancellation, refund and expiry.
+- **WP12 — partly done:** stale docs marked historical, README local-stack section, production remediation runbook written (not executed). Remaining items are listed in `docs/CODEX_ACTIVE_TASK.md`.
+
+### WP11a investigation: expiry, cancellation, payment and refund states (analysis only; no policy implemented)
+
+Facts about the code as it stands (verified by reading it):
+- `orders.stock_reservation_expires_at` is written at order creation (now + `store_settings.stock_reservation_expiry_minutes`, default 30) and shown to the customer as a countdown. **Nothing releases stock or cancels an order when it passes.** A customer who already paid can still upload proof after the countdown; the QR page tells them so.
+- Customer self-cancel is allowed from `PENDING_PAYMENT` through `PACKED`; a verified payment creates a `PENDING` refund. Admin can cancel any non-delivered order. Stock is released or restored exactly once.
+- A refund is completed only through `record-transfer` (approved first, exact amount, unique reference, and now an attested settled transfer).
+- A rejected proof returns the order to `PENDING_PAYMENT`; every attempt is kept.
+
+A safe distinction the owner can approve (none of this is built):
+
+| Situation | What the system knows | Proposed safe handling (needs approval) |
+|---|---|---|
+| Stock reservation window ends, no proof yet | Order unpaid in the system; the customer may already have paid | **Release the reservation only** (free the stock), keep the order open and visible, mark it "reservation lapsed". Never cancel. |
+| Payment verification pending | Proof submitted, bank credit unchecked | No timer. Stays until an admin approves or rejects. Stock stays held while proof is under review. |
+| Paid but no proof uploaded | Invisible to the system | The customer keeps the order, the QR page and a clear recovery route (upload proof at any time; support link). |
+| Late payment evidence (after the reservation lapsed) | Proof arrives for an order whose stock was released | Accept the proof (never discard evidence). If stock exists, re-reserve; if not, flag "stock unavailable" for the admin, who verifies the credit and either fulfils later or starts a refund. |
+| Order cancellation | Customer request or admin action | Unchanged until approved; see the earlier proposal for who may cancel at each stage. |
+| Refund required | Verified payment on a cancelled or failed order | `PENDING` refund, admin approval, transfer recorded with attestation, then `COMPLETED`. Never completed without settlement evidence. |
+
+Decisions needed from the owner before WP11b: (1) reservation window length and whether a lapse should only release stock; (2) who may self-cancel at which stage; (3) refund rules (full amount, delivery fee, partial refunds, delivery-failed cases); (4) how late payments are handled when stock is gone.
