@@ -138,3 +138,12 @@ Source of truth for this phase: `docs/CLAUDE_PROJECT_AUDIT.md`, `docs/CLAUDE_FIN
 6. Cleanup candidates: `frontend/src/features/admin/lib/referenceData.ts` samples (still used as test fixtures and by the hidden Reports/Notifications pages), tracked `backend/New Microsoft Excel Worksheet.xlsx` (contents not inspected).
 
 **Verification at handoff:** `npm run typecheck` PASS; `npm test` (5 suites) PASS; `python -m unittest discover -s backend/tests` 63 tests PASS (SQLite); `node scripts/check-local-only.mjs` PASS. Public pages smoke-tested in the in-app browser against a throwaway SQLite backend (desktop and 375 px). **Not tested:** anything needing local Supabase (sign-up/login, order creation through real Auth, Storage upload, RLS) and the admin screens in a browser.
+
+
+### Local integration pass (2026-10-19, after Docker started)
+- Supabase ports moved to 55320-55329 (Windows reserves 54231-54730). `supabase start` and `supabase db reset` (local) apply all 9 migrations.
+- scripts/check-db-security.py: 51/51 PASS on real PostgreSQL (found and fixed: anon policy calling a private function; recursive profile-update policy).
+- ORM fixed for PostgreSQL (uuid, jsonb, timestamptz/date types). scripts/smoke-local.py: 57/57 PASS against real local Auth, Postgres and Storage.
+- Browser pass: guest draft, create account (no email confirmation), return to review, order creation, QR page with LOCAL TEST notice, admin sign-in, dashboard with real figures and all admin pages rendering.
+- NOT done: browser walkthrough of admin actions (approve/confirm/review moderation clicks), WP11b (blocked on owner), re-running npm run verify after the ORM changes (backend suite 63 PASS, frontend suites passed before them).
+- Local stack is still running in Docker; stop with `npx supabase stop`. Local admin credentials are in .local-dev-credentials.json (gitignored).
