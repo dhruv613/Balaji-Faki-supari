@@ -27,11 +27,13 @@ TEST_TMP_DIR = Path(tempfile.mkdtemp(prefix="bfp_api_test_"))
 TEST_DB_URL = f"sqlite:///{(TEST_TMP_DIR / 'test_bfp.sqlite3').as_posix()}"
 TEST_SUPABASE_URL = "http://127.0.0.1:54321"
 os.environ["DATABASE_URL"] = TEST_DB_URL
+os.environ["BFP_ENV"] = "local"
 os.environ["SUPABASE_URL"] = TEST_SUPABASE_URL
 os.environ["SUPABASE_JWT_SECRET"] = TEST_JWT_SECRET
 
 import app.db.session as db_session  # noqa: E402
 from app.db.models import UserProfile  # noqa: E402
+from app.db.seed import seed_development_data  # noqa: E402
 from app.main import app  # noqa: E402
 
 # Minimal valid PNG header + IHDR + IEND (67 bytes)
@@ -120,6 +122,7 @@ class FastApiWorkflowIntegrationTests(unittest.TestCase):
         )
 
         with db_session.SessionLocal() as db:
+            seed_development_data(db)  # explicit development data; request handlers never seed
             db.add(
                 UserProfile(
                     id=cls.admin_id,

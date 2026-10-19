@@ -84,9 +84,21 @@ class Settings:
     cors_origins: tuple[str, ...] = field(
         default_factory=_default_cors_origins
     )
+    proof_signing_secret: str = field(
+        default_factory=lambda: os.getenv("PROOF_SIGNING_SECRET", "")
+    )
+    # "local" enables explicit development-only conveniences (random per-process signing key, TEST bank evidence).
+    # Anything else (including unset) is treated as non-local and fails closed.
+    app_env: str = field(
+        default_factory=lambda: os.getenv("BFP_ENV", "production").strip().lower() or "production"
+    )
     payment_proofs_bucket: str = "payment-proofs"
     review_photos_bucket: str = "review-photos"
     signed_url_ttl_seconds: int = 300
+
+    @property
+    def is_local_env(self) -> bool:
+        return self.app_env == "local"
 
 
 settings = Settings()

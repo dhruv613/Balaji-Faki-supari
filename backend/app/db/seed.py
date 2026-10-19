@@ -1,12 +1,35 @@
-"""Idempotent catalog and store settings seed matching 20261017000000_balaji_faki_point_schema.sql."""
+"""Explicit DEVELOPMENT data initialisation. Request handlers must never import or call this module.
+
+Usage (local stack only):
+    python -m app.db.seed --dev                # store settings row + Faki/Supari products and variants
+    python -m app.db.seed --dev --dev-admin    # additionally create a local Owner Admin in local Supabase Auth
+
+Rules:
+* Only Faki 1 kg = Rs 1,000 is an owner-confirmed price. Every other price below is DEVELOPMENT DATA
+  (`price_confirmed = false`) until the owner approves it in Price Management.
+* Existing rows are never overwritten: an admin-cleared price stays cleared.
+* Payment details are LOCAL TEST values, not a real receiving account.
+"""
 
 from __future__ import annotations
+
+import argparse
+import json
+import secrets
+import sys
+from pathlib import Path
+from urllib.parse import urlparse
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .models import Product, ProductVariant, StoreSettings
 
+LOCAL_TEST_UPI_ID = "local-test@upi"
+LOCAL_TEST_PAYEE = "LOCAL TEST - do not pay"
+DEV_SERVICEABLE_PINS = ["360001", "360002", "360003", "360004", "360005", "360006", "360007"]
+
+# (pack_size, sku, cost_paise, price_paise, stock, price_confirmed)
 INITIAL_PRODUCTS = (
     {
         "slug": "faki",
@@ -16,9 +39,9 @@ INITIAL_PRODUCTS = (
         "description": "",
         "image_url": "/images/hero-product.jpg",
         "variants": (
-            ("250g", "BFP-FAKI-250G", 10000, 25000, 50),
-            ("500g", "BFP-FAKI-500G", 18000, 50000, 50),
-            ("1kg", "BFP-FAKI-1KG", 35000, 100000, 50),
+            ("250g", "BFP-FAKI-250G", 10000, 25000, 50, False),
+            ("500g", "BFP-FAKI-500G", 18000, 50000, 50, False),
+            ("1kg", "BFP-FAKI-1KG", 35000, 100000, 50, True),
         ),
     },
     {
@@ -29,85 +52,135 @@ INITIAL_PRODUCTS = (
         "description": "",
         "image_url": "/images/supari-reference.png",
         "variants": (
-            ("250g", "BFP-SUPARI-250G", 9000, 20000, 50),
-            ("500g", "BFP-SUPARI-500G", 18000, 40000, 50),
-            ("1kg", "BFP-SUPARI-1KG", 36000, 80000, 50),
+            ("250g", "BFP-SUPARI-250G", 9000, 20000, 50, False),
+            ("500g", "BFP-SUPARI-500G", 18000, 40000, 50, False),
+            ("1kg", "BFP-SUPARI-1KG", 36000, 80000, 50, False),
         ),
     },
 )
 
 
-def ensure_catalog_seeded(db: Session, *, with_default_prices: bool = True) -> None:
-    """Ensures `faki` and `supari` products, pack variants, and singleton `store_settings` exist."""
-    settings_row = db.get(StoreSettings, 1)
-    if settings_row is None:
-        settings_row = StoreSettings(
-            id=1,
-            store_name="Balaji Faki Point",
-            store_name_gu="બાલાજી ફાકી પોઈન્ટ",
-            store_address="Riddhi Siddhi Complex, University Rd., nr. Bhagat Singh Garden, Rajkot, Gujarat 360005",
-            opening_hours="Call the store to confirm opening hours",
-            upi_payee_name="Balaji Faki Point",
-            upi_id="8000961030@okbizaxis",
-            qr_code_storage_path=None,
-            delivery_charge_paise=0,
-            free_delivery_threshold_paise=0,
-            serviceable_pin_codes_json='["360001","360002","360003","360004","360005","360006","360007"]',
-            low_stock_default_threshold=10,
-            stock_reservation_expiry_minutes=30,
+def seed_development_data(db: Session, *, with_default_prices: bool = True) -> None:
+    """Creates MISSING store settings, products and variants. Never updates or restores existing rows."""
+    if db.get(StoreSettings, 1) is None:
+        db.add(
+            StoreSettings(
+                id=1,
+                store_name="Balaji Faki Point",
+                store_name_gu="બાલાજી ફાકી પોઈન્ટ",
+                store_address="Riddhi Siddhi Complex, University Rd., nr. Bhagat Singh Garden, Rajkot, Gujarat 360005",
+                opening_hours="Call the store to confirm opening hours",
+                upi_payee_name=LOCAL_TEST_PAYEE,
+                upi_id=LOCAL_TEST_UPI_ID,
+                qr_code_storage_path=None,
+                delivery_charge_paise=0,
+                free_delivery_threshold_paise=0,
+                serviceable_pin_codes=list(DEV_SERVICEABLE_PINS),
+                low_stock_default_threshold=10,
+                stock_reservation_expiry_minutes=30,
+            )
         )
-        db.add(settings_row)
         db.flush()
-    else:
-        # Move the existing public page's confirmed location into the canonical settings row.
-        if settings_row.store_address == "Rajkot, Gujarat":
-            settings_row.store_address = "Riddhi Siddhi Complex, University Rd., nr. Bhagat Singh Garden, Rajkot, Gujarat 360005"
-        if settings_row.opening_hours == "9:00 AM – 9:00 PM":
-            settings_row.opening_hours = "Call the store to confirm opening hours"
 
-    for p_spec in INITIAL_PRODUCTS:
-        product = db.scalar(select(Product).where(Product.slug == p_spec["slug"]))
+    for spec in INITIAL_PRODUCTS:
+        product = db.scalar(select(Product).where(Product.slug == spec["slug"]))
         if product is None:
             product = Product(
-                slug=p_spec["slug"],
-                name=p_spec["name"],
-                name_gu=p_spec["name_gu"],
-                category=p_spec["category"],
-                description=p_spec["description"],
-                image_url=p_spec["image_url"],
+                slug=spec["slug"],
+                name=spec["name"],
+                name_gu=spec["name_gu"],
+                category=spec["category"],
+                description=spec["description"],
+                image_url=spec["image_url"],
                 is_active=True,
             )
             db.add(product)
             db.flush()
-        elif (
-            (p_spec["slug"] == "faki" and product.description == "Signature freshly blended Kathiyawadi Faki prepared with traditional spices.")
-            or (p_spec["slug"] == "supari" and product.description == "Cleaned, aromatic roasted Supari cut and packed for consistent freshness.")
-        ):
-            # Replace only the old bundled copy; store-authored product data remains untouched.
-            product.name = p_spec["name"]
-            product.name_gu = p_spec["name_gu"]
-            product.category = p_spec["category"]
-            product.description = p_spec["description"]
-
-        for pack_size, sku, cost_paise, price_paise, stock in p_spec["variants"]:
-            variant = db.scalar(select(ProductVariant).where(ProductVariant.sku == sku))
-            if variant is None:
-                variant = ProductVariant(
+        for pack_size, sku, cost_paise, price_paise, stock, confirmed in spec["variants"]:
+            exists = db.scalar(select(ProductVariant.id).where(ProductVariant.sku == sku))
+            if exists is not None:
+                continue
+            db.add(
+                ProductVariant(
                     product_id=product.id,
                     pack_size=pack_size,
                     sku=sku,
                     cost_price_paise=cost_paise if with_default_prices else None,
                     price_paise=price_paise if with_default_prices else None,
+                    price_confirmed=bool(confirmed and with_default_prices),
                     is_available=True,
                     total_stock=stock,
                     reserved_stock=0,
                     low_stock_threshold=10,
                 )
-                db.add(variant)
-            elif with_default_prices and variant.price_paise is None:
-                # Temporary local prices fill only missing values; Owner Admin edits remain authoritative.
-                variant.cost_price_paise = cost_paise
-                variant.price_paise = price_paise
-                variant.is_available = True
-
+            )
     db.commit()
+
+
+# --------------------------------------------------------------------------------------------------
+# CLI (local only)
+# --------------------------------------------------------------------------------------------------
+_LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
+
+
+def _require_local(url: str, label: str) -> None:
+    host = urlparse(url.replace("postgresql+psycopg://", "postgresql://", 1)).hostname
+    if url.startswith("sqlite"):
+        return
+    if host not in _LOCAL_HOSTS:
+        raise SystemExit(f"REFUSED: {label} is not a local address; nothing was changed.")
+
+
+def create_dev_admin(supabase_url: str, secret_key: str, db: Session) -> Path:
+    """Creates (or reuses) a LOCAL Owner Admin through the local Supabase Auth admin API.
+
+    Credentials are written to a gitignored file and never printed.
+    """
+    import httpx
+
+    _require_local(supabase_url, "SUPABASE_URL")
+    if not secret_key:
+        raise SystemExit("BLOCKED: SUPABASE_SECRET_KEY (local) is not configured.")
+    creds_path = Path(__file__).resolve().parents[3] / ".local-dev-credentials.json"
+    email = "owner@local.test"
+    password = secrets.token_urlsafe(18)
+    response = httpx.post(
+        f"{supabase_url.rstrip('/')}/auth/v1/admin/users",
+        headers={"apikey": secret_key, "Authorization": f"Bearer {secret_key}"},
+        json={
+            "email": email,
+            "password": password,
+            "email_confirm": True,
+            "app_metadata": {"role": "OWNER_ADMIN"},
+            "user_metadata": {"fullName": "Local Owner", "phone": "+919999900000"},
+        },
+        timeout=15,
+    )
+    if response.status_code not in (200, 201):
+        raise SystemExit(f"Local Auth refused admin creation (HTTP {response.status_code}); it may already exist.")
+    creds_path.write_text(json.dumps({"email": email, "password": password}), encoding="utf-8")
+    return creds_path
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--dev", action="store_true", required=True, help="acknowledge this writes development data")
+    parser.add_argument("--dev-admin", action="store_true", help="also create a local Owner Admin in local Supabase Auth")
+    args = parser.parse_args(argv)
+
+    from ..core.config import settings
+    from .session import SessionLocal, engine, init_db, resolve_database_url
+
+    _require_local(resolve_database_url(), "DATABASE_URL")
+    init_db(engine)
+    with SessionLocal() as db:
+        seed_development_data(db)
+        print("Development catalogue and store settings are present (existing rows untouched).")
+        if args.dev_admin:
+            path = create_dev_admin(settings.supabase_url, settings.supabase_secret_key, db)
+            print(f"Local Owner Admin created; credentials saved to {path.name} (gitignored, not printed).")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -13,11 +13,13 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    JSON,
     SmallInteger,
     String,
     Text,
     UniqueConstraint,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -85,6 +87,9 @@ class Product(Base):
     production_packaging: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     provider_manufacturer: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     safety_storage: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    shelf_life: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    packaging: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    safety_disclosures: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     image_url: Mapped[str] = mapped_column(String(512), nullable=False, default="")
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
@@ -95,6 +100,35 @@ class Product(Base):
     variants: Mapped[list["ProductVariant"]] = relationship(
         "ProductVariant", back_populates="product", cascade="all, delete-orphan", order_by="ProductVariant.pack_size"
     )
+    images: Mapped[list["ProductImage"]] = relationship(
+        "ProductImage", back_populates="product", cascade="all, delete-orphan", order_by="ProductImage.position"
+    )
+
+
+class ProductImage(Base):
+    __tablename__ = "product_images"
+    __table_args__ = (UniqueConstraint("product_id", "position", name="product_images_product_id_position_key"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid_str)
+    product_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("products.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    storage_path: Mapped[str] = mapped_column(String(512), unique=True, nullable=False)
+    alt_text: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    position: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
+
+    product: Mapped["Product"] = relationship("Product", back_populates="images")
+
+
+class StorePhoto(Base):
+    __tablename__ = "store_photos"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid_str)
+    storage_path: Mapped[str] = mapped_column(String(512), unique=True, nullable=False)
+    caption: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    position: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=0, unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
 
 
 class ProductVariant(Base):
@@ -109,6 +143,7 @@ class ProductVariant(Base):
     sku: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     cost_price_paise: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     price_paise: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    price_confirmed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_available: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     total_stock: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     reserved_stock: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -267,6 +302,7 @@ class BankCredit(Base):
     )
     verified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
     verification_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    evidence_kind: Mapped[str] = mapped_column(String(32), nullable=False, default="BANK_STATEMENT")
 
     payment_attempt: Mapped["PaymentAttempt"] = relationship("PaymentAttempt", back_populates="bank_credit")
 
@@ -385,7 +421,7 @@ class Review(Base):
     rating: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     review_text: Mapped[str] = mapped_column(Text, nullable=False)
     is_verified_purchase: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    moderation_status: Mapped[str] = mapped_column(String(32), nullable=False, default="PENDING_MODERATION")
+    moderation_status: Mapped[str] = mapped_column(String(32), nullable=False, default="PUBLISHED")
     moderation_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     admin_reply: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     admin_replied_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -485,24 +521,34 @@ class StoreSettings(Base):
     tagline: Mapped[str] = mapped_column(String(255), nullable=False, default="Freshly Prepared Faki & Supari")
     support_phone: Mapped[str] = mapped_column(String(32), nullable=False, default="+91 80009 61030")
     support_whatsapp: Mapped[str] = mapped_column(String(32), nullable=False, default="918000961030")
-    support_email: Mapped[str] = mapped_column(String(255), nullable=False, default="support@balajifakipoint.com")
+    support_email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     store_address: Mapped[str] = mapped_column(String(255), nullable=False, default="Rajkot, Gujarat")
-    opening_hours: Mapped[str] = mapped_column(String(120), nullable=False, default="9:00 AM – 9:00 PM")
-    upi_payee_name: Mapped[Optional[str]] = mapped_column(String(120), nullable=True, default="Balaji Faki Point")
-    upi_id: Mapped[Optional[str]] = mapped_column(String(120), nullable=True, default="8000961030@okbizaxis")
+    opening_hours: Mapped[str] = mapped_column(
+        String(120), nullable=False, default="Call the store to confirm opening hours"
+    )
+    shop_intro: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    production_info: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    provider_manufacturer: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    packaging_info: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    upi_payee_name: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    upi_id: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
     qr_code_storage_path: Mapped[Optional[str]] = mapped_column(
         String(512), nullable=True
     )
     delivery_charge_paise: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True, default=0)
     free_delivery_threshold_paise: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True, default=0)
-    serviceable_pin_codes_json: Mapped[str] = mapped_column(
-        "serviceable_pin_codes",
-        Text,
+    # JSON on SQLite, jsonb on PostgreSQL: always a Python list of PIN strings.
+    serviceable_pin_codes: Mapped[list] = mapped_column(
+        JSON().with_variant(JSONB(), "postgresql"),
         nullable=False,
-        default='["360001","360002","360004","360005","360007"]',
+        default=list,
     )
     low_stock_default_threshold: Mapped[int] = mapped_column(Integer, nullable=False, default=10)
     stock_reservation_expiry_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=30)
+    business_settings_confirmed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    business_settings_confirmed_by: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("user_profiles.id", ondelete="SET NULL"), nullable=True
+    )
     updated_by: Mapped[Optional[str]] = mapped_column(
         String(36), ForeignKey("user_profiles.id", ondelete="SET NULL"), nullable=True
     )

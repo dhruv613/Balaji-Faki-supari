@@ -17,7 +17,7 @@ os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 
 import app.db.session as db_session
 from app.db.models import Customer, Order, OrderItem, Product, ProductVariant, StoreSettings, UserProfile
-from app.db.seed import ensure_catalog_seeded
+from app.db.seed import seed_development_data
 from app.main import _serialize_customer_order, _serialize_store_profile, list_public_products
 
 
@@ -28,7 +28,7 @@ class CatalogDetailsTests(unittest.TestCase):
 
     def test_public_catalog_keeps_admin_product_details_and_temporary_prices(self) -> None:
         with db_session.SessionLocal() as db:
-            ensure_catalog_seeded(db)
+            seed_development_data(db)
             faki = db.scalar(select(Product).where(Product.slug == "faki"))
             assert faki is not None
             faki.description = "Store-confirmed packaging information."
@@ -50,7 +50,7 @@ class CatalogDetailsTests(unittest.TestCase):
 
     def test_order_details_include_the_current_product_image(self) -> None:
         with db_session.SessionLocal() as db:
-            ensure_catalog_seeded(db)
+            seed_development_data(db)
             product = db.scalar(select(Product).where(Product.slug == "faki"))
             variant = db.scalar(select(ProductVariant).where(ProductVariant.sku == "BFP-FAKI-250G"))
             assert product is not None and variant is not None
@@ -95,7 +95,7 @@ class CatalogDetailsTests(unittest.TestCase):
 
     def test_public_store_profile_uses_settings_without_exposing_payment_destination(self) -> None:
         with db_session.SessionLocal() as db:
-            ensure_catalog_seeded(db)
+            seed_development_data(db)
             store = db.get(StoreSettings, 1)
             assert store is not None
             store.store_name = "Confirmed Test Store"

@@ -38,6 +38,7 @@ from .core.security import (
 )
 from .core.storage import (
     PaymentProofStorageError,
+    PrivateImageStorageError,
     ReviewPhotoStorageError,
     create_signed_proof_query,
     delete_private_review_photos,
@@ -70,7 +71,6 @@ from .db.models import (
     UserProfile,
     utcnow,
 )
-from .db.seed import ensure_catalog_seeded
 from .db.session import get_db, init_db
 from .schemas import (
     ApproveRefundRequestSchema,
@@ -171,12 +171,35 @@ def _resolve_order_by_id_or_number(db: Session, order_identifier: str) -> Order 
 
 
 def _get_store_settings(db: Session) -> StoreSettings:
+    """Read-only. Store settings come from the database migration or the explicit development seed, never from a request."""
     s = db.get(StoreSettings, 1)
     if s is None:
-        ensure_catalog_seeded(db)
-        s = db.get(StoreSettings, 1)
-    assert s is not None
+        raise HTTPException(
+            status_code=503,
+            detail="Store settings are not initialised. Apply the database migrations or run the development seed.",
+        )
     return s
+
+
+def _serviceable_pins(store: StoreSettings) -> list[str]:
+    raw = store.serviceable_pin_codes
+    if isinstance(raw, str):  # tolerate legacy text values
+        try:
+            raw = json.loads(raw or "[]")
+        except ValueError:
+            raw = []
+    return [str(pin) for pin in (raw or [])]
+
+
+def _assert_ordering_open(variant: ProductVariant, store: StoreSettings) -> None:
+    """Outside local development, checkout stays closed until the owner confirmed prices and payment/delivery settings."""
+    if settings.is_local_env:
+        return
+    if not variant.price_confirmed or store.business_settings_confirmed_at is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Ordering is not open yet: prices and payment details are awaiting owner confirmation.",
+        )
 
 
 def _serialize_product_information(product: Product) -> dict[str, str]:
@@ -199,8 +222,15 @@ def _serialize_store_profile(store: StoreSettings) -> dict[str, str]:
         "openingHours": store.opening_hours,
         "supportPhone": store.support_phone,
         "supportWhatsapp": store.support_whatsapp,
-        "supportEmail": store.support_email,
+        "supportEmail": store.support_email or "",
     }
+
+
+def _signed_proof_query(payment: PaymentAttempt) -> tuple[str, int]:
+    try:
+        return create_signed_proof_query(payment.id, payment.screenshot_storage_path)
+    except PrivateImageStorageError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 def _serialize_customer_order(db: Session, order: Order, store: StoreSettings) -> dict[str, Any]:
@@ -213,14 +243,16 @@ def _serialize_customer_order(db: Session, order: Order, store: StoreSettings) -
         product_image_url = product.image_url or None if product is not None else None
 
     payment_instructions: dict[str, Any] | None = None
-    if order.status == "PENDING_PAYMENT" and order.payment_status in ("PENDING", "REJECTED"):
+    if order.status == "PENDING_PAYMENT" and order.payment_status in ("PENDING", "REJECTED") and store.upi_id:
         expires_dt = order.stock_reservation_expires_at or (order.created_at + timedelta(minutes=30))
         payment_instructions = {
             "amount": total_inr,
-            "payeeName": store.upi_payee_name or "Balaji Faki Point",
-            "upiId": store.upi_id or "8000961030@okbizaxis",
+            "payeeName": store.upi_payee_name or store.store_name,
+            "upiId": store.upi_id,
             "qrImageUrl": store.qr_code_storage_path or None,
             "expiresAt": _iso(expires_dt),
+            # Payment settings the owner has not confirmed are LOCAL TEST values: the UI must say so.
+            "settingsConfirmed": store.business_settings_confirmed_at is not None,
         }
 
     return {
@@ -296,7 +328,7 @@ def _serialize_admin_review(db: Session, review: Review) -> dict[str, Any]:
 
 
 def _build_signed_proof_url(payment: PaymentAttempt) -> str:
-    sig, exp = create_signed_proof_query(payment.id, payment.screenshot_storage_path)
+    sig, exp = _signed_proof_query(payment)
     return f"/api/admin/payments/{payment.id}/proof?sig={sig}&exp={exp}&raw=1"
 
 
@@ -683,7 +715,6 @@ def get_me(
 
 @router.get("/products")
 def list_public_products(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
-    ensure_catalog_seeded(db)
     products = db.scalars(
         select(Product).where(Product.is_active.is_(True)).order_by(Product.slug.asc())
     ).all()
@@ -723,15 +754,11 @@ def create_checkout_quote(
     payload: CheckoutQuoteRequestSchema,
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    ensure_catalog_seeded(db)
     if not PIN_CODE_REGEX.match(payload.pin_code):
         raise HTTPException(status_code=422, detail="Enter a valid 6-digit PIN code.")
 
     store = _get_store_settings(db)
-    try:
-        serviceable_pins = json.loads(store.serviceable_pin_codes_json or "[]")
-    except Exception:
-        serviceable_pins = []
+    serviceable_pins = _serviceable_pins(store)
     if serviceable_pins and payload.pin_code not in serviceable_pins:
         raise HTTPException(
             status_code=422,
@@ -757,6 +784,7 @@ def create_checkout_quote(
             status_code=400,
             detail="Price for this pack size has not been configured by the store yet.",
         )
+    _assert_ordering_open(variant, store)
     if variant.available_stock < payload.quantity:
         raise HTTPException(
             status_code=409,
@@ -788,7 +816,6 @@ def create_customer_order(
     principal: AuthenticatedPrincipal = Depends(get_current_principal),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    ensure_catalog_seeded(db)
     cleaned_idem = (idempotency_key or "").strip() or None
     store = _get_store_settings(db)
 
@@ -807,10 +834,7 @@ def create_customer_order(
     if not PIN_CODE_REGEX.match(payload.pin_code):
         raise HTTPException(status_code=422, detail="Enter a valid 6-digit PIN code.")
 
-    try:
-        serviceable_pins = json.loads(store.serviceable_pin_codes_json or "[]")
-    except Exception:
-        serviceable_pins = []
+    serviceable_pins = _serviceable_pins(store)
     if serviceable_pins and payload.pin_code not in serviceable_pins:
         raise HTTPException(
             status_code=422,
@@ -836,6 +860,7 @@ def create_customer_order(
             status_code=400,
             detail="Price for this pack size has not been configured by the store yet.",
         )
+    _assert_ordering_open(variant, store)
     if variant.available_stock < payload.quantity:
         raise HTTPException(
             status_code=409,
@@ -1363,7 +1388,6 @@ def get_admin_dashboard(
     _admin: AuthenticatedPrincipal = Depends(get_owner_admin_principal),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    ensure_catalog_seeded(db)
     orders = db.scalars(select(Order).order_by(Order.created_at.desc())).all()
     payments = db.scalars(select(PaymentAttempt).order_by(PaymentAttempt.submitted_at.desc())).all()
     variants = db.scalars(select(ProductVariant)).all()
@@ -1546,7 +1570,7 @@ def get_admin_payment_proof(
             headers={"Cache-Control": "private, no-store, max-age=0"},
         )
 
-    new_sig, new_exp = create_signed_proof_query(payment.id, payment.screenshot_storage_path)
+    new_sig, new_exp = _signed_proof_query(payment)
     return JSONResponse(
         content={
             "paymentId": payment.id,
@@ -2233,11 +2257,14 @@ def update_admin_delivery(
                 status_code=409,
                 detail=f"Invalid delivery transition from {current_status} to {requested_status}.",
             )
-        validate_order_transition(
-            current_status=order.status,
-            next_status=requested_status,
-            payment_status=order.payment_status,
-        )
+        try:
+            validate_order_transition(
+                current_status=order.status,
+                next_status=requested_status,
+                payment_status=order.payment_status,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         if requested_status == "DELIVERY_FAILED":
             failure_reason = (payload.failure_reason or "").strip()
             if len(failure_reason) < 5:
@@ -2355,7 +2382,6 @@ def list_admin_products(
     _admin: AuthenticatedPrincipal = Depends(get_owner_admin_principal),
     db: Session = Depends(get_db),
 ) -> list[dict[str, Any]]:
-    ensure_catalog_seeded(db)
     products = db.scalars(select(Product).order_by(Product.slug.asc())).all()
     return [
         {

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import secrets
 import time
 from urllib.parse import quote
 
@@ -252,13 +253,17 @@ def delete_private_review_photos(
             continue
 
 
+_LOCAL_PROCESS_SIGNING_KEY = secrets.token_bytes(32)  # local development only; changes on every restart
+
+
 def _signing_secret(app_settings: Settings = settings) -> bytes:
-    raw = (
-        app_settings.supabase_jwt_secret
-        or app_settings.supabase_secret_key
-        or "bfp-local-dev-proof-signing-secret-do-not-expose"
-    )
-    return raw.encode("utf-8")
+    """Domain-separated key for short-lived signed image URLs. Never falls back to a fixed string."""
+    base = app_settings.proof_signing_secret or app_settings.supabase_jwt_secret or app_settings.supabase_secret_key
+    if base:
+        return hmac.new(base.encode("utf-8"), b"bfp-signed-image-url-v1", hashlib.sha256).digest()
+    if app_settings.is_local_env:
+        return _LOCAL_PROCESS_SIGNING_KEY
+    raise PrivateImageStorageError("Signed image URLs are not configured on this server.")
 
 
 def create_signed_proof_query(

@@ -59,12 +59,20 @@ def configure_database(database_url: str) -> Engine:
     engine = build_engine(database_url)
     SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False, class_=Session)
     previous_engine.dispose()
-    Base.metadata.create_all(bind=engine)
+    init_db(engine)
     return engine
 
 
 def init_db(target_engine: Engine | None = None) -> None:
-    Base.metadata.create_all(bind=target_engine or engine)
+    """Creates tables for SQLite (local fixtures/tests) only.
+
+    On PostgreSQL the schema is owned by `supabase/migrations`; creating tables from the ORM there could
+    silently drift from the migrated schema (types, CHECKs, RLS), so it is never done automatically.
+    """
+    eng = target_engine or engine
+    if eng.dialect.name == "postgresql":
+        return
+    Base.metadata.create_all(bind=eng)
 
 
 def get_db() -> Generator[Session, None, None]:
