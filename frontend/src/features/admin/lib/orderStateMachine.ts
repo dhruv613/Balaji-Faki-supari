@@ -483,15 +483,6 @@ export function validateStockAdjustment(params: {
 /*  6. AUTHORIZATION & ROLE PERMISSION CHECKS (SECTION 5)             */
 /* ================================================================== */
 
-export function isAuthorizedOwnerAdmin(user: {
-  role?: UserRole | string | null;
-  appMetadataRole?: string | null;
-} | null): boolean {
-  if (!user) return false;
-  if (user.role === 'CUSTOMER' || user.appMetadataRole === 'CUSTOMER') return false;
-  return user.role === 'OWNER_ADMIN' || user.appMetadataRole === 'OWNER_ADMIN';
-}
-
 /* ================================================================== */
 /*  7. DASHBOARD METRIC CALCULATIONS (PRODUCTS SOLD & NET PROFIT)     */
 /* ================================================================== */

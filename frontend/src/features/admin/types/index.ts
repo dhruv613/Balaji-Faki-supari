@@ -133,49 +133,30 @@ export interface AdminAuditEntry {
 /*  4. MODULE 01 — DASHBOARD                                          */
 /* ================================================================== */
 
-export interface AdminDashboardMetrics {
-  totalOrders: number;
-  todaysOrders: number;
-  verifiedPaymentReceiptsCount: number;
-  verifiedPaymentReceiptsAmount: number;
-  pendingPaymentsCount: number;
-  ordersAwaitingConfirmation: number;
-  packingOrders: number;
-  packedOrders: number;
-  outForDeliveryOrders: number;
-  deliveredOrdersCount: number;
-  deliveredOrderSalesAmount: number;
-  pendingRefundsCount: number;
-  completedRefundsAmount: number;
-  lowStockProductsCount: number;
-  /** Total product units sold across delivered/completed orders */
-  productsSoldCount?: number;
-  /** Actual calculated net profit in INR, or null when cost prices are not configured */
-  netProfitAmount?: number | null;
+export type NetProfitStatus = 'OK' | 'NOT_CONFIGURED';
+
+export interface AdminPendingConfirmation {
+  paymentId: string;
+  orderId: string;
+  orderNumber: string;
+  customerName: string;
+  amount: number | null;
+  utr: string;
+  status: 'SUBMITTED' | 'UNDER_REVIEW';
+  submittedAt: string;
 }
 
-export interface SalesChartPoint {
-  date: string;
-  label: string;
-  deliveredSalesAmount: number;
-  verifiedReceiptsAmount: number;
-  refundedAmount: number;
-  orderCount: number;
-}
-
-export interface StatusDistributionItem {
-  status: AdminOrderStatus;
-  count: number;
-}
-
+/** The dashboard shows exactly three things; every figure is computed from real orders. */
 export interface AdminDashboardResponse {
-  metrics: AdminDashboardMetrics;
-  recentOrders: AdminOrderSummary[];
-  recentPayments: AdminPaymentSubmission[];
-  salesOverview: SalesChartPoint[];
-  statusDistribution: StatusDistributionItem[];
-  recentActivity: AdminAuditEntry[];
-  ordersRequiringAttention: AdminOrderSummary[];
+  productsSold: number;
+  netProfit: {
+    /** INR, or null when a required cost price is missing. */
+    amount: number | null;
+    status: NetProfitStatus;
+    reason: string | null;
+    note: string | null;
+  };
+  pendingPaymentConfirmations: AdminPendingConfirmation[];
 }
 
 /* ================================================================== */

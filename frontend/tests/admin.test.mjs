@@ -38,7 +38,6 @@ const {
   computePostPaymentApprovalState,
   validateRefundCompletion,
   validateStockAdjustment,
-  isAuthorizedOwnerAdmin,
 } = stateMachine;
 
 /* ================================================================== */
@@ -64,71 +63,35 @@ const adminApi = load('src/features/admin/api/index.ts', {
 const routeGuard = load('src/features/admin/components/AdminRouteGuard.tsx', {
   '../../../lib/supabase': authStub,
   '../../../lib/env': { env },
+  '../../../components/common/EmailSignIn': { default: () => null },
   '../../../components/common/Notice': { default: () => null },
   '../api': adminApi,
-  '../lib/orderStateMachine': stateMachine,
 });
+const evaluate = routeGuard.evaluateAdminRouteAccess;
 
-// Unauthenticated user cannot access admin routes
-assert.equal(isAuthorizedOwnerAdmin(null), false);
-assert.equal(
-  routeGuard.evaluateAdminRouteAccess({
-    user: null,
-    serverRole: null,
-    apiConnected: true,
-  }).allowed,
-  false,
-);
-assert.equal(
-  routeGuard.evaluateAdminRouteAccess({
-    user: null,
-    serverRole: null,
-    apiConnected: true,
-  }).status,
-  'DENIED_UNAUTHENTICATED',
-);
+// Unauthenticated user cannot access admin routes.
+assert.equal(evaluate({ user: null, serverRole: null, apiConnected: true }).allowed, false);
+assert.equal(evaluate({ user: null, serverRole: null, apiConnected: true }).status, 'DENIED_UNAUTHENTICATED');
 
-// Customer cannot access admin routes even if devPreviewAcknowledged is true
-assert.equal(isAuthorizedOwnerAdmin({ role: 'CUSTOMER' }), false);
-assert.equal(
-  routeGuard.evaluateAdminRouteAccess({
-    user: { id: 'cust-1', email: 'customer@example.com', user_metadata: { role: 'CUSTOMER' } },
-    serverRole: 'CUSTOMER',
-    apiConnected: false,
-    devPreviewAcknowledged: true,
-  }).allowed,
-  false,
-);
-assert.equal(
-  routeGuard.evaluateAdminRouteAccess({
-    user: { id: 'cust-1', email: 'customer@example.com' },
-    serverRole: 'CUSTOMER',
-    apiConnected: true,
-  }).status,
-  'DENIED_CUSTOMER',
-);
+// Customers are denied.
+assert.equal(evaluate({ user: { id: 'cust-1' }, serverRole: 'CUSTOMER', apiConnected: true }).status, 'DENIED_CUSTOMER');
+assert.equal(evaluate({ user: { id: 'cust-1' }, serverRole: 'CUSTOMER', apiConnected: false }).allowed, false);
 
-// Owner Admin verified by server is allowed
-assert.equal(isAuthorizedOwnerAdmin({ role: 'OWNER_ADMIN' }), true);
-assert.equal(
-  routeGuard.evaluateAdminRouteAccess({
-    user: { id: 'admin-1', email: 'owner@balajifaki.com' },
-    serverRole: 'OWNER_ADMIN',
-    apiConnected: true,
-  }).allowed,
-  true,
-);
+// Only a successful server check (GET /api/me -> OWNER_ADMIN) opens the Admin Panel.
+assert.equal(evaluate({ user: { id: 'admin-1' }, serverRole: 'OWNER_ADMIN', apiConnected: true }).allowed, true);
+assert.equal(evaluate({ user: { id: 'admin-1' }, serverRole: 'OWNER_ADMIN', apiConnected: true }).status, 'AUTHORIZED_ADMIN');
 
-// Self-assigned user_metadata.role = OWNER_ADMIN without serverRole/app_metadata is strictly denied
-assert.equal(
-  routeGuard.evaluateAdminRouteAccess({
-    user: { id: 'attacker-1', email: 'attacker@example.com', user_metadata: { role: 'OWNER_ADMIN' } },
-    serverRole: null,
-    apiConnected: false,
-    devPreviewAcknowledged: true,
-  }).allowed,
-  false,
-);
+// If /api/me failed (no server role) or the API is not configured, the panel stays locked even for a user whose
+// browser-held claims say OWNER_ADMIN: claims never unlock the UI.
+const forged = { id: 'attacker-1', email: 'attacker@example.com', app_metadata: { role: 'OWNER_ADMIN' }, user_metadata: { role: 'OWNER_ADMIN' } };
+assert.equal(evaluate({ user: forged, serverRole: null, apiConnected: true }).allowed, false);
+assert.equal(evaluate({ user: forged, serverRole: null, apiConnected: true }).status, 'DENIED_UNVERIFIED');
+assert.equal(evaluate({ user: forged, serverRole: 'OWNER_ADMIN', apiConnected: false }).allowed, false);
+assert.equal(evaluate({ user: forged, serverRole: 'CUSTOMER', apiConnected: true }).allowed, false);
+assert.equal(typeof stateMachine.isAuthorizedOwnerAdmin, 'undefined', 'claim-based admin shortcut must not exist');
+const guardSource = readFileSync(new URL('../src/features/admin/components/AdminRouteGuard.tsx', import.meta.url), 'utf8');
+assert.doesNotMatch(guardSource, /user_profiles|app_metadata|user_metadata/, 'the guard reads no browser claims or tables');
+assert.doesNotMatch(guardSource, /@gmail\.com|@example\./, 'no personal e-mail placeholder');
 
 /* ================================================================== */
 /*  2. ORDER & PAYMENT SEPARATION INVARIANTS                          */
@@ -616,6 +579,8 @@ const adminComponentsBarrel = {
   ImagePreview: ImagePreviewMod.default,
   AdminTimeline: AdminTimelineMod.default,
   LoadingSkeleton: AdminStatesMod.LoadingSkeleton,
+  EmptyState: AdminStatesMod.EmptyState,
+  ErrorState: AdminStatesMod.ErrorState,
   useAdminToast: () => ({ showToast: () => {} }),
   AdminToastProvider: AdminToastMod.AdminToastProvider,
 };
@@ -659,28 +624,36 @@ for (const pagePath of [
 const dashboardHtml = renderToStaticMarkup(
   React.createElement(MemoryRouter, { initialEntries: ['/admin/dashboard'] }, React.createElement(DashboardPage)),
 );
-assert.match(dashboardHtml, /Products Sold/);
-assert.match(dashboardHtml, /Unavailable/);
-assert.match(dashboardHtml, /Net Profit/);
-assert.match(dashboardHtml, /Pending Payment Confirmations/);
-assert.match(dashboardHtml, /No sample orders, payments, or financial figures are shown/);
-assert.match(dashboardHtml, /No pending payment proofs currently require verification/);
-for (const col of [
-  'Order ID',
-  'Customer Name',
-  'Product',
-  'Total Amount',
-  'Payment UTR',
-  'Payment Screenshot',
-  'Submitted Date',
-  'Payment Status',
-  'Review Payment Action',
-]) {
-  assert.match(dashboardHtml, new RegExp(col), `Dashboard table missing column: ${col}`);
+assert.match(dashboardHtml, /Dashboard/);
+assert.match(dashboardHtml, /Connect the local FastAPI server to see live figures\. No sample figures are shown/);
+assert.doesNotMatch(dashboardHtml, /#BFP-|Products Sold/, 'offline dashboard shows no figures at all');
+const { DashboardView } = load('src/features/admin/pages/AdminDashboardPage.tsx', commonPageStubs);
+const view = (data) => renderToStaticMarkup(React.createElement(MemoryRouter, null, React.createElement(DashboardView, { data })));
+const liveData = {
+  productsSold: 12,
+  netProfit: { amount: 3400, status: 'OK', reason: null, note: null },
+  pendingPaymentConfirmations: [
+    { paymentId: 'p1', orderId: 'o1', orderNumber: '#BFP-1001', customerName: 'Hetal Patel', amount: 1040, utr: '412399887766', status: 'UNDER_REVIEW', submittedAt: '2026-10-19T10:00:00Z' },
+  ],
+};
+const liveHtml = view(liveData);
+for (const label of ['Products Sold', 'Net Profit', 'Pending Payment Confirmations', '#BFP-1001', 'Hetal Patel', '412399887766']) {
+  assert.match(liveHtml, new RegExp(label), `Dashboard missing: ${label}`);
 }
-assert.doesNotMatch(dashboardHtml, /Sales &amp; Order Volume Overview/);
-assert.doesNotMatch(dashboardHtml, /Recent Admin Audit Activity/);
-assert.doesNotMatch(dashboardHtml, /#BFP-/);
+assert.match(liveHtml, />12</);
+assert.ok(liveHtml.includes('/admin/payments?payment=p1'), 'each row links to payment review');
+assert.match(liveHtml, /₹3,400/);
+// Exactly three elements: no charts, extra metric cards or activity feeds.
+assert.equal((liveHtml.match(/stat-card__label/g) ?? []).length, 2, 'two metric cards only');
+assert.equal((liveHtml.match(/<table/g) ?? []).length, 1, 'one table only');
+assert.doesNotMatch(liveHtml, /Sales|Recent|chart|Low stock|Pending refunds/i);
+// Missing costs: never a fictional profit.
+const unconfigured = view({ ...liveData, netProfit: { amount: null, status: 'NOT_CONFIGURED', reason: 'Cost price is not configured for: Faki 500g.', note: null } });
+assert.match(unconfigured, /Not configured/);
+assert.match(unconfigured, /Faki 500g/);
+assert.doesNotMatch(unconfigured, /₹0/);
+assert.match(view({ ...liveData, netProfit: { ...liveData.netProfit, note: 'Includes products whose prices or costs are development data not yet approved by the owner.' } }), /development data/);
+assert.match(view({ ...liveData, pendingPaymentConfirmations: [] }), /No payment screenshots are waiting/);
 
 const pricesHtml = renderToStaticMarkup(
   React.createElement(MemoryRouter, { initialEntries: ['/admin/prices'] }, React.createElement(PricesPage)),
