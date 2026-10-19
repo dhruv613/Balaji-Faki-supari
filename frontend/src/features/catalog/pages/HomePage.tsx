@@ -14,6 +14,7 @@ const HERO_SLIDES: HeroSlide[] = [
   { url: '/images/hero/hero-faki-box.webp', alt: 'Balaji Faki Point box' },
   { url: '/images/hero/hero-water-bottle.webp', alt: 'Balaji Faki Point water bottle' },
   { url: '/images/hero/hero-parcel-sachets.webp', alt: 'Balaji Faki Point orange parcel sachets' },
+  { url: '/images/hero/hero-mitho-mavo.webp', alt: 'Balaji Mitho Mavo sachet with the mavo mixture' },
 ];
 
 export default function HomePage() {

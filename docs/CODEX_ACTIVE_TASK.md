@@ -204,3 +204,6 @@ Source of truth for this phase: `docs/CLAUDE_PROJECT_AUDIT.md`, `docs/CLAUDE_FIN
 - **Compliance to confirm before enabling it for real orders:** India restricts advertising and online sale of tobacco (COTPA: minimum age, mandatory health warnings, advertising limits), and payment providers may refuse tobacco. Nothing in the site enforces an age check or shows a warning today.
 - Verification: `npm run verify` PASS (66 backend tests), DB security 51/51, smoke 66/66 (Tamaku last in the catalogue with two photos), browser: six cards, Tamaku dialog, order handoff preselects Tamaku 250 g; hero cycles in order and wraps, dots and pause-on-hover work, phone width 343x300 with no overflow.
 
+### Hero queue: Mitho Mavo added (2026-10-19, owner request)
+- The Mitho Mavo sachet photo (`hero-mitho-mavo.webp`) is the fifth and last slide: Chuno, Faki box, water bottle, parcel sachets, Mitho Mavo, then back to Chuno. Edit `HERO_SLIDES` in `HomePage.tsx` to reorder. Browser-checked: five dots, full cycle and wrap, all photos load.
+
