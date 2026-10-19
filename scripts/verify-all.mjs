@@ -12,8 +12,7 @@ function step(label, command, cwd = rootDir) {
 step('1. Frontend TypeScript Validation', 'npm run typecheck');
 step('2. Automated Test Suites (Checkout, Secondary Pages, Auth, Admin & DB Schema)', 'npm test');
 step('3. Backend FastAPI Security & JWT Verification Tests', 'python -m unittest discover -s backend/tests -v');
-step('4. Production Vite Build', 'npm run build');
-step('5. Live Staging Services & Real Supabase Auth Integration', 'python scripts/test-staging-services.py');
+step('4. Local Vite Build', 'npm run build');
 
 const requiredPaths = [
   'frontend/src/app/App.tsx',

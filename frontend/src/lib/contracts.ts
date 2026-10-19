@@ -12,6 +12,14 @@ const money = (value: unknown): value is number =>
 const text = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0;
 const products = ['faki', 'supari'];
 const sizes = ['250g', '500g', '1kg'];
+const productInformationKeys = [
+  'ingredients',
+  'popularity',
+  'characteristics',
+  'productionPackaging',
+  'providerManufacturer',
+  'safetyStorage',
+];
 const paymentStatuses = [
   'PENDING',
   'SUBMITTED',
@@ -57,6 +65,10 @@ function invalid(): never {
   throw new Error('The server returned incomplete order or payment information. Please contact the store before paying.');
 }
 
+function productInformation(value: unknown): boolean {
+  return record(value) && productInformationKeys.every((key) => typeof value[key] === 'string');
+}
+
 export function readQuote(value: unknown): CheckoutQuote {
   if (!record(value) || !totals(value) || value.currency !== 'INR') return invalid();
   return value as unknown as CheckoutQuote;
@@ -73,6 +85,7 @@ export function readProducts(value: unknown): Product[] {
       (product.category !== undefined && typeof product.category !== 'string') ||
       (product.description !== undefined && typeof product.description !== 'string') ||
       (product.imageUrl !== undefined && typeof product.imageUrl !== 'string') ||
+      (product.information !== undefined && !productInformation(product.information)) ||
       !Array.isArray(product.packSizes) ||
       !product.packSizes.length ||
       !record(product.prices)

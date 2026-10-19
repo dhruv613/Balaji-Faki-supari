@@ -10,6 +10,7 @@ import type {
   PaymentStatus as CustomerPaymentStatus,
   ProductType,
   PackSize,
+  ProductInformation,
   AdminCustomer,
 } from '../../../types/orders';
 
@@ -18,6 +19,7 @@ export type {
   CustomerPaymentStatus,
   ProductType,
   PackSize,
+  ProductInformation,
   AdminCustomer,
 };
 
@@ -363,6 +365,7 @@ export interface AdminProduct {
   description: string;
   descriptionGu?: string;
   imageUrl: string;
+  information?: ProductInformation;
   active: boolean;
   variants: AdminProductVariant[];
   updatedAt: string;
@@ -376,6 +379,7 @@ export interface CreateAdminProductRequest {
   description: string;
   descriptionGu?: string;
   imageUrl: string;
+  information?: ProductInformation;
   active: boolean;
   variants: Array<{
     packSize: PackSize;
@@ -394,6 +398,7 @@ export interface UpdateAdminProductRequest {
   description?: string;
   descriptionGu?: string;
   imageUrl?: string;
+  information?: ProductInformation;
   active?: boolean;
   variants?: Array<{
     id?: string;
@@ -583,6 +588,8 @@ export interface AdminReviewRecord {
   adminReply?: string;
   adminRepliedAt?: string;
   moderatedBy?: string;
+  /** Short-lived FastAPI proxy paths for review photo moderation. */
+  photoUrls?: string[];
 }
 
 export interface AdminReviewsQueryParams extends PaginationParams {

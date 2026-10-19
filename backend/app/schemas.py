@@ -164,6 +164,15 @@ class UpdateProductVariantInputSchema(CamelModel):
     is_available: bool = Field(default=True, alias="isAvailable")
 
 
+class ProductInformationSchema(CamelModel):
+    ingredients: Optional[str] = Field(default=None, max_length=2000)
+    popularity: Optional[str] = Field(default=None, max_length=2000)
+    characteristics: Optional[str] = Field(default=None, max_length=2000)
+    production_packaging: Optional[str] = Field(default=None, alias="productionPackaging", max_length=2000)
+    provider_manufacturer: Optional[str] = Field(default=None, alias="providerManufacturer", max_length=2000)
+    safety_storage: Optional[str] = Field(default=None, alias="safetyStorage", max_length=2000)
+
+
 class UpdateAdminProductRequestSchema(CamelModel):
     name: Optional[str] = None
     name_gu: Optional[str] = Field(default=None, alias="nameGu")
@@ -172,6 +181,7 @@ class UpdateAdminProductRequestSchema(CamelModel):
     description_gu: Optional[str] = Field(default=None, alias="descriptionGu")
     image_url: Optional[str] = Field(default=None, alias="imageUrl")
     active: Optional[bool] = None
+    information: Optional[ProductInformationSchema] = None
     variants: Optional[list[UpdateProductVariantInputSchema]] = None
 
 

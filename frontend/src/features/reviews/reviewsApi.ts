@@ -14,6 +14,8 @@ export interface PublishedReview {
   reviewText: string;
   verifiedPurchase: boolean;
   createdAt: string;
+  /** Public FastAPI proxy paths for moderated customer photos. */
+  photoUrls: string[];
   adminReply?: string | null;
   adminRepliedAt?: string | null;
 }
@@ -35,7 +37,14 @@ function readReview(value: unknown): PublishedReview {
   ) {
     throw new Error('The server returned an unreadable review.');
   }
-  return review as unknown as PublishedReview;
+  const photoUrls = review.photoUrls ?? [];
+  if (
+    !Array.isArray(photoUrls) ||
+    !photoUrls.every((photoUrl) => typeof photoUrl === 'string' && photoUrl.startsWith('/api/'))
+  ) {
+    throw new Error('The server returned an unreadable review photo.');
+  }
+  return { ...review, photoUrls } as unknown as PublishedReview;
 }
 
 export async function getPublishedReviews(product?: ReviewProduct): Promise<PublishedReview[]> {
@@ -51,9 +60,14 @@ export async function submitReview(
   orderId: string,
   rating: number,
   reviewText: string,
+  photos: readonly File[] = [],
 ): Promise<PublishedReview> {
+  const formData = new FormData();
+  formData.append('rating', String(rating));
+  formData.append('reviewText', reviewText);
+  photos.forEach((photo) => formData.append('photos', photo));
   return readReview(await apiFetch<unknown>(`/orders/${encodeURIComponent(orderId)}/review`, {
     method: 'POST',
-    body: JSON.stringify({ rating, reviewText }),
+    body: formData,
   }));
 }

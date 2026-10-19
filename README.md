@@ -1,15 +1,15 @@
 # Balaji Faki Point — E-Commerce Store & 12-Module Admin Management Panel
 
-Production-oriented e-commerce ordering website and Owner Admin Management Panel for **Balaji Faki Point** (online Faki & Supari ordering), built with React 19, TypeScript, Vite 6, React Router v7, and Supabase PostgreSQL.
+Local-development e-commerce ordering website and Owner Admin Management Panel for **Balaji Faki Point** (online Faki & Supari ordering), built with React 19, TypeScript, Vite 6, React Router v7, and Supabase PostgreSQL.
 
 ---
 
 ## 1. Technology Stack
 
 - **Frontend**: React 19 + TypeScript + Vite 6 + React Router v7 + custom CSS design tokens (`#FF7420`, `#B93C06`, `#141210`, `#5C534B`, `#FFF4EA`, `#EADFD3`, `#1F7A4D`, `Gloock` headings, `Hind Vadodara` body, Gujarati support).
-- **Database & Platform**: PostgreSQL hosted on Supabase (`zyzkoolgwbczvvetjnwf`) with Row-Level Security (RLS), private Storage bucket (`payment-proofs`), and 18 operational tables.
+- **Database & Platform**: Local Supabase PostgreSQL with Row-Level Security (RLS), private Storage bucket (`payment-proofs`), and operational tables.
 - **Target Backend**: Python FastAPI + SQLAlchemy 2.0 + Pydantic v2 + Alembic (contracts defined in [`docs/api/api-contracts.md`](docs/api/api-contracts.md)).
-- **Deployment**: Vercel (`vercel.json` & `frontend/vercel.json` SPA rewrites).
+- **Deployment**: Not part of this local-development workflow.
 
 ---
 
@@ -87,7 +87,7 @@ Balaji Faki Website/
 ├── scripts/
 │   └── verify-all.mjs          # End-to-end verification script (typecheck + tests + build + structure)
 ├── supabase/
-│   ├── config.toml             # Linked to Supabase project zyzkoolgwbczvvetjnwf
+│   ├── config.toml             # Local Supabase configuration
 │   └── migrations/             # 3 applied PostgreSQL schema, RLS & DB-login migrations
 ├── .env.example                # Public frontend & server environment variable template
 ├── .gitignore
@@ -128,10 +128,10 @@ npm run verify
 Keep your existing `.env` / `frontend/.env` or copy `.env.example` to `.env`:
 
 ```ini
-VITE_API_BASE_URL=
-VITE_SUPABASE_URL=https://zyzkoolgwbczvvetjnwf.supabase.co
-VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_phYXIe4ZP9RTX4Gx1cM26w_8agJ2Ug7
-VITE_SUPABASE_ANON_KEY=sb_publishable_phYXIe4ZP9RTX4Gx1cM26w_8agJ2Ug7
+VITE_API_BASE_URL=http://127.0.0.1:8000/api
+VITE_SUPABASE_URL=http://127.0.0.1:54321
+VITE_SUPABASE_PUBLISHABLE_KEY=
+VITE_SUPABASE_ANON_KEY=
 VITE_SUPPORT_WHATSAPP=918000961030
 ```
 

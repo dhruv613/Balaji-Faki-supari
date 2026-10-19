@@ -37,10 +37,16 @@ from .core.security import (
     verify_supabase_access_token,
 )
 from .core.storage import (
+    PaymentProofStorageError,
+    ReviewPhotoStorageError,
     create_signed_proof_query,
+    delete_private_review_photos,
     read_private_payment_proof,
+    read_private_review_photo,
     store_private_payment_proof,
+    store_private_review_photo,
     validate_payment_screenshot,
+    validate_review_photo,
     verify_signed_proof_query,
 )
 from .db.models import (
@@ -58,6 +64,7 @@ from .db.models import (
     ProductVariant,
     Refund,
     Review,
+    ReviewPhoto,
     Shipment,
     StoreSettings,
     UserProfile,
@@ -172,6 +179,30 @@ def _get_store_settings(db: Session) -> StoreSettings:
     return s
 
 
+def _serialize_product_information(product: Product) -> dict[str, str]:
+    return {
+        "ingredients": product.ingredients or "",
+        "popularity": product.popularity or "",
+        "characteristics": product.characteristics or "",
+        "productionPackaging": product.production_packaging or "",
+        "providerManufacturer": product.provider_manufacturer or "",
+        "safetyStorage": product.safety_storage or "",
+    }
+
+
+def _serialize_store_profile(store: StoreSettings) -> dict[str, str]:
+    """Returns only customer-facing store information; payment settings stay server-side."""
+    return {
+        "storeName": store.store_name,
+        "tagline": store.tagline,
+        "storeAddress": store.store_address,
+        "openingHours": store.opening_hours,
+        "supportPhone": store.support_phone,
+        "supportWhatsapp": store.support_whatsapp,
+        "supportEmail": store.support_email,
+    }
+
+
 def _serialize_customer_order(db: Session, order: Order, store: StoreSettings) -> dict[str, Any]:
     first_item = order.items[0] if order.items else None
     latest_attempt = order.payment_attempts[0] if order.payment_attempts else None
@@ -188,8 +219,7 @@ def _serialize_customer_order(db: Session, order: Order, store: StoreSettings) -
             "amount": total_inr,
             "payeeName": store.upi_payee_name or "Balaji Faki Point",
             "upiId": store.upi_id or "8000961030@okbizaxis",
-            "qrImageUrl": store.qr_code_storage_path
-            or "https://balaji-faki-point.vercel.app/images/balaji-logo.png",
+            "qrImageUrl": store.qr_code_storage_path or None,
             "expiresAt": _iso(expires_dt),
         }
 
@@ -675,11 +705,17 @@ def list_public_products(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
                 "category": product.category,
                 "description": product.description,
                 "imageUrl": product.image_url,
+                "information": _serialize_product_information(product),
                 "packSizes": ["250g", "500g", "1kg"],
                 "prices": prices,
             }
         )
     return result
+
+
+@router.get("/store")
+def get_public_store_profile(db: Session = Depends(get_db)) -> dict[str, str]:
+    return _serialize_store_profile(_get_store_settings(db))
 
 
 @router.post("/checkout/quote")
@@ -1203,13 +1239,20 @@ async def submit_payment_proof(
     db.add(payment_attempt)
     db.flush()
 
-    storage_path = store_private_payment_proof(
-        user_id=principal.id,
-        order_id=order.id,
-        payment_id=payment_attempt.id,
-        content=raw_bytes,
-        mime_type=verified_mime,
-    )
+    try:
+        storage_path = store_private_payment_proof(
+            user_id=principal.id,
+            order_id=order.id,
+            payment_id=payment_attempt.id,
+            content=raw_bytes,
+            mime_type=verified_mime,
+        )
+    except PaymentProofStorageError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=503,
+            detail="Payment proof storage is unavailable. Your proof was not submitted; please retry.",
+        ) from exc
     payment_attempt.screenshot_storage_path = storage_path
 
     now = utcnow()
@@ -1495,6 +1538,8 @@ def get_admin_payment_proof(
             content, mime_type = read_private_payment_proof(payment.screenshot_storage_path)
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except PaymentProofStorageError as exc:
+            raise HTTPException(status_code=503, detail="Payment proof storage is unavailable.") from exc
         return Response(
             content=content,
             media_type=mime_type,
@@ -2321,6 +2366,7 @@ def list_admin_products(
             "category": p.category,
             "description": p.description,
             "imageUrl": p.image_url,
+            "information": _serialize_product_information(p),
             "active": p.is_active,
             "updatedAt": _iso(p.updated_at),
             "variants": [
@@ -2366,6 +2412,18 @@ def update_admin_product(
         product.image_url = payload.image_url.strip()
     if payload.active is not None:
         product.is_active = bool(payload.active)
+    if payload.information is not None:
+        for attribute in (
+            "ingredients",
+            "popularity",
+            "characteristics",
+            "production_packaging",
+            "provider_manufacturer",
+            "safety_storage",
+        ):
+            value = getattr(payload.information, attribute)
+            if value is not None:
+                setattr(product, attribute, value.strip() or None)
 
     if payload.variants:
         for v_in in payload.variants:
@@ -2409,6 +2467,7 @@ def update_admin_product(
         "category": product.category,
         "description": product.description,
         "imageUrl": product.image_url,
+        "information": _serialize_product_information(product),
         "active": product.is_active,
         "updatedAt": _iso(product.updated_at),
         "variants": [

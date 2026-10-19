@@ -10,6 +10,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -28,7 +29,6 @@ TEST_SUPABASE_URL = "http://127.0.0.1:54321"
 os.environ["DATABASE_URL"] = TEST_DB_URL
 os.environ["SUPABASE_URL"] = TEST_SUPABASE_URL
 os.environ["SUPABASE_JWT_SECRET"] = TEST_JWT_SECRET
-os.environ["PRIVATE_STORAGE_ROOT"] = (TEST_TMP_DIR / "private_storage").as_posix()
 
 import app.db.session as db_session  # noqa: E402
 from app.db.models import UserProfile  # noqa: E402
@@ -41,6 +41,22 @@ VALID_PNG_BYTES = (
     b"\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01\r\n-\xb4"
     b"\x00\x00\x00\x00IEND\xaeB`\x82"
 )
+
+TEST_PROOF_OBJECTS: dict[str, tuple[bytes, str]] = {}
+
+
+def _store_test_payment_proof(*, user_id: str, order_id: str, payment_id: str, content: bytes, mime_type: str) -> str:
+    extension = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}[mime_type]
+    storage_path = f"{user_id}/{order_id}/{payment_id}{extension}"
+    TEST_PROOF_OBJECTS[storage_path] = (content, mime_type)
+    return storage_path
+
+
+def _read_test_payment_proof(storage_path: str) -> tuple[bytes, str]:
+    try:
+        return TEST_PROOF_OBJECTS[storage_path]
+    except KeyError as exc:
+        raise FileNotFoundError("Payment proof object not found in private storage.") from exc
 
 
 def _mint_jwt(
@@ -71,8 +87,11 @@ class FastApiWorkflowIntegrationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         os.environ["SUPABASE_JWT_SECRET"] = TEST_JWT_SECRET
-        os.environ["PRIVATE_STORAGE_ROOT"] = (TEST_TMP_DIR / "private_storage").as_posix()
         db_session.configure_database(TEST_DB_URL)
+        cls._store_proof_patch = patch("app.main.store_private_payment_proof", side_effect=_store_test_payment_proof)
+        cls._read_proof_patch = patch("app.main.read_private_payment_proof", side_effect=_read_test_payment_proof)
+        cls._store_proof_patch.start()
+        cls._read_proof_patch.start()
         cls.client = TestClient(app)
 
         cls.admin_id = "11111111-1111-4111-8111-111111111111"
@@ -116,6 +135,8 @@ class FastApiWorkflowIntegrationTests(unittest.TestCase):
     @classmethod
     def tearDownClass(cls) -> None:
         cls.client.close()
+        cls._read_proof_patch.stop()
+        cls._store_proof_patch.stop()
         db_session.engine.dispose()
         shutil.rmtree(TEST_TMP_DIR, ignore_errors=True)
 
@@ -155,6 +176,11 @@ class FastApiWorkflowIntegrationTests(unittest.TestCase):
             "/api/admin/products/faki",
             headers=admin_headers,
             json={
+                "information": {
+                    "ingredients": "Test-confirmed ingredients.",
+                    "productionPackaging": "Test-confirmed packaging.",
+                    "safetyStorage": "Test-confirmed storage guidance.",
+                },
                 "variants": [
                     {"packSize": "250g", "costPrice": 90, "price": 140, "availableQuantity": 50, "isAvailable": True},
                     {"packSize": "500g", "costPrice": 170, "price": 260, "availableQuantity": 50, "isAvailable": True},
@@ -163,6 +189,8 @@ class FastApiWorkflowIntegrationTests(unittest.TestCase):
             },
         )
         self.assertEqual(update_faki.status_code, 200)
+        self.assertEqual(update_faki.json()["information"]["ingredients"], "Test-confirmed ingredients.")
+        self.assertEqual(update_faki.json()["information"]["productionPackaging"], "Test-confirmed packaging.")
 
         update_supari = self.client.patch(
             "/api/admin/products/supari",
@@ -211,6 +239,7 @@ class FastApiWorkflowIntegrationTests(unittest.TestCase):
         self.assertEqual(order["paymentStatus"], "PENDING")
         self.assertEqual(order["total"], 520)
         self.assertEqual(order["payment"]["amount"], 520)
+        self.assertIsNone(order["payment"]["qrImageUrl"])
 
         # Duplicate retry with same Idempotency-Key returns same order without double reservation
         retry_res = self.client.post(

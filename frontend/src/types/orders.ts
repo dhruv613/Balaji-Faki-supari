@@ -3,6 +3,15 @@
 export type ProductType = 'faki' | 'supari';
 export type PackSize = '250g' | '500g' | '1kg';
 
+export interface ProductInformation {
+  ingredients: string;
+  popularity: string;
+  characteristics: string;
+  productionPackaging: string;
+  providerManufacturer: string;
+  safetyStorage: string;
+}
+
 export type CanonicalOrderStatus =
   | 'PENDING_PAYMENT'
   | 'PAYMENT_REVIEW'
@@ -68,6 +77,7 @@ export interface Product {
   category?: string;
   description?: string;
   imageUrl?: string;
+  information?: ProductInformation;
   packSizes: PackSize[];
   /** Display-only placeholder prices — real prices come from the server */
   prices: Record<PackSize, number | null>;

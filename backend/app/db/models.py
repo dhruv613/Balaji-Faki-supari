@@ -79,6 +79,12 @@ class Product(Base):
     name_gu: Mapped[str] = mapped_column(String(120), nullable=False, default="")
     category: Mapped[str] = mapped_column(String(120), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    ingredients: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    popularity: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    characteristics: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    production_packaging: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    provider_manufacturer: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    safety_storage: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     image_url: Mapped[str] = mapped_column(String(512), nullable=False, default="")
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
@@ -390,6 +396,28 @@ class Review(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow
     )
+    photos: Mapped[list["ReviewPhoto"]] = relationship(
+        "ReviewPhoto",
+        back_populates="review",
+        cascade="all, delete-orphan",
+        order_by="ReviewPhoto.position",
+    )
+
+
+class ReviewPhoto(Base):
+    __tablename__ = "review_photos"
+    __table_args__ = (UniqueConstraint("review_id", "position", name="review_photos_review_position_key"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid_str)
+    review_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("reviews.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    storage_path: Mapped[str] = mapped_column(String(512), unique=True, nullable=False)
+    mime_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    position: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
+
+    review: Mapped["Review"] = relationship("Review", back_populates="photos")
 
 
 class Refund(Base):
@@ -463,7 +491,7 @@ class StoreSettings(Base):
     upi_payee_name: Mapped[Optional[str]] = mapped_column(String(120), nullable=True, default="Balaji Faki Point")
     upi_id: Mapped[Optional[str]] = mapped_column(String(120), nullable=True, default="8000961030@okbizaxis")
     qr_code_storage_path: Mapped[Optional[str]] = mapped_column(
-        String(512), nullable=True, default="https://balaji-faki-point.vercel.app/images/balaji-logo.png"
+        String(512), nullable=True
     )
     delivery_charge_paise: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True, default=0)
     free_delivery_threshold_paise: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True, default=0)

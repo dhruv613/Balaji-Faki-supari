@@ -1,6 +1,16 @@
 import { Link } from 'react-router-dom';
 import { formatINR, formatPackSize } from '../../../lib/api';
 import { useOrder } from '../../../context/OrderContext';
+import type { ProductInformation } from '../../../types/orders';
+
+const PRODUCT_INFORMATION_LABELS: Array<[keyof ProductInformation, string]> = [
+  ['ingredients', 'Ingredients / composition'],
+  ['popularity', 'Why customers choose it'],
+  ['characteristics', 'Characteristics'],
+  ['productionPackaging', 'Production / packaging'],
+  ['providerManufacturer', 'Provider / manufacturer'],
+  ['safetyStorage', 'Safety / storage'],
+];
 
 export default function HomePage() {
   const { products, catalogStatus } = useOrder();
@@ -71,6 +81,7 @@ export default function HomePage() {
                 {product.imageUrl && <img className="product-card__image" src={product.imageUrl} alt={product.name} width="640" height="360" />}
                 <div className="product-card__name">{product.name}</div>
                 <p className="product-card__details">{product.description?.trim() || 'Ask the store for current product details, packaging, and storage information.'}</p>
+                <ProductInformationDetails information={product.information} />
                 <p className="product-card__packs">
                   Packs: {product.packSizes.map(formatPackSize).join(' · ')}
                 </p>
@@ -117,6 +128,23 @@ export default function HomePage() {
         </div>
       </section>
     </>
+  );
+}
+
+function ProductInformationDetails({ information }: { information?: ProductInformation }) {
+  const rows = information
+    ? PRODUCT_INFORMATION_LABELS.filter(([key]) => information[key].trim()).map(([key, label]) => [label, information[key]] as const)
+    : [];
+  if (!rows.length) return null;
+  return (
+    <dl className="product-card__details" style={{ marginTop: 12 }}>
+      {rows.map(([label, value]) => (
+        <div key={label} style={{ marginTop: 6 }}>
+          <dt><strong>{label}</strong></dt>
+          <dd style={{ margin: 0 }}>{value}</dd>
+        </div>
+      ))}
+    </dl>
   );
 }
 

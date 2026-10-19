@@ -5,7 +5,9 @@ from __future__ import annotations
 import hashlib
 import hmac
 import time
-from pathlib import Path
+from urllib.parse import quote
+
+import httpx
 
 from .config import Settings, settings
 from .security import AuthError
@@ -16,9 +18,19 @@ ALLOWED_IMAGE_MIMES: dict[str, str] = {
     "image/webp": ".webp",
 }
 MAX_SCREENSHOT_BYTES = 5 * 1024 * 1024  # 5 MB
+MAX_REVIEW_PHOTO_BYTES = 5 * 1024 * 1024  # 5 MB
 
-_BACKEND_DIR = Path(__file__).resolve().parents[2]
-_PRIVATE_STORAGE_ROOT = _BACKEND_DIR / ".private_storage" / "payment-proofs"
+
+class PrivateImageStorageError(RuntimeError):
+    """Private Supabase Storage is unavailable or rejected an image object."""
+
+
+class PaymentProofStorageError(PrivateImageStorageError):
+    """Private Supabase Storage is unavailable or rejected a proof object."""
+
+
+class ReviewPhotoStorageError(PrivateImageStorageError):
+    """Private Supabase Storage is unavailable or rejected a review photo."""
 
 
 def detect_image_mime(content: bytes) -> str | None:
@@ -32,15 +44,17 @@ def detect_image_mime(content: bytes) -> str | None:
     return None
 
 
-def validate_payment_screenshot(content: bytes, declared_content_type: str | None) -> str:
-    """
-    Validates screenshot size, declared MIME type, and actual image magic bytes.
-    Returns the verified MIME type or raises ValueError with a user-safe message.
-    """
+def _validate_image_upload(
+    content: bytes,
+    declared_content_type: str | None,
+    *,
+    label: str,
+    max_bytes: int,
+) -> str:
     if not content:
-        raise ValueError("The screenshot file is empty.")
-    if len(content) > MAX_SCREENSHOT_BYTES:
-        raise ValueError("Screenshot must be smaller than 5 MB.")
+        raise ValueError(f"The {label} file is empty.")
+    if len(content) > max_bytes:
+        raise ValueError(f"{label.capitalize()} must be smaller than 5 MB.")
 
     normalized_mime = (declared_content_type or "").split(";")[0].strip().lower()
     if normalized_mime not in ALLOWED_IMAGE_MIMES:
@@ -55,15 +69,46 @@ def validate_payment_screenshot(content: bytes, declared_content_type: str | Non
     return detected_mime
 
 
-def _resolve_storage_root(storage_root: Path | None = None) -> Path:
-    import os
+def validate_payment_screenshot(content: bytes, declared_content_type: str | None) -> str:
+    """Validates a payment screenshot's size, declared MIME type, and image bytes."""
+    return _validate_image_upload(
+        content,
+        declared_content_type,
+        label="screenshot",
+        max_bytes=MAX_SCREENSHOT_BYTES,
+    )
 
-    if storage_root is not None:
-        return storage_root
-    env_root = os.getenv("PRIVATE_STORAGE_ROOT", "").strip()
-    if env_root:
-        return Path(env_root) / "payment-proofs"
-    return _PRIVATE_STORAGE_ROOT
+
+def validate_review_photo(content: bytes, declared_content_type: str | None) -> str:
+    """Validates a review photo's size, declared MIME type, and image bytes."""
+    return _validate_image_upload(
+        content,
+        declared_content_type,
+        label="review photo",
+        max_bytes=MAX_REVIEW_PHOTO_BYTES,
+    )
+
+
+def _storage_headers(
+    app_settings: Settings,
+    mime_type: str | None = None,
+    *,
+    error_type: type[PrivateImageStorageError] = PaymentProofStorageError,
+) -> dict[str, str]:
+    secret = app_settings.supabase_secret_key.strip()
+    if not secret:
+        raise error_type("Private image storage is not configured.")
+    headers = {"Authorization": f"Bearer {secret}", "apikey": secret}
+    if mime_type:
+        headers["Content-Type"] = mime_type
+    return headers
+
+
+def _storage_object_url(storage_path: str, app_settings: Settings, bucket_name: str) -> str:
+    base_url = app_settings.supabase_url.rstrip("/")
+    bucket = quote(bucket_name, safe="")
+    object_path = quote(storage_path.lstrip("/"), safe="/")
+    return f"{base_url}/storage/v1/object/{bucket}/{object_path}"
 
 
 def store_private_payment_proof(
@@ -73,7 +118,7 @@ def store_private_payment_proof(
     payment_id: str,
     content: bytes,
     mime_type: str,
-    storage_root: Path | None = None,
+    app_settings: Settings = settings,
 ) -> str:
     """
     Saves a validated screenshot inside the private `payment-proofs` storage namespace.
@@ -81,31 +126,130 @@ def store_private_payment_proof(
     """
     ext = ALLOWED_IMAGE_MIMES.get(mime_type, ".png")
     relative_path = f"{user_id}/{order_id}/{payment_id}{ext}"
-    root = _resolve_storage_root(storage_root)
-    target = (root / relative_path).resolve()
-    root_resolved = root.resolve()
-    if root_resolved not in target.parents:
-        raise ValueError("Invalid storage object path.")
-
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_bytes(content)
+    try:
+        response = httpx.request(
+            "POST",
+            _storage_object_url(relative_path, app_settings, app_settings.payment_proofs_bucket),
+            headers={**_storage_headers(app_settings, mime_type), "x-upsert": "false"},
+            content=content,
+            timeout=10,
+        )
+        response.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise PaymentProofStorageError("Private payment proof storage is unavailable.") from exc
     return relative_path
 
 
 def read_private_payment_proof(
     storage_path: str,
     *,
-    storage_root: Path | None = None,
+    app_settings: Settings = settings,
 ) -> tuple[bytes, str]:
     """Reads private screenshot bytes and returns `(bytes, content_type)`."""
-    root = _resolve_storage_root(storage_root).resolve()
-    target = (root / storage_path.lstrip("/")).resolve()
-    if root not in target.parents or not target.is_file():
+    try:
+        response = httpx.request(
+            "GET",
+            _storage_object_url(storage_path, app_settings, app_settings.payment_proofs_bucket),
+            headers=_storage_headers(app_settings),
+            timeout=10,
+        )
+    except httpx.HTTPError as exc:
+        raise PaymentProofStorageError("Private payment proof storage is unavailable.") from exc
+    if response.status_code == 404:
         raise FileNotFoundError("Payment proof object not found in private storage.")
+    try:
+        response.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise PaymentProofStorageError("Private payment proof storage is unavailable.") from exc
 
-    content = target.read_bytes()
-    mime = detect_image_mime(content) or "image/png"
-    return content, mime
+    mime = detect_image_mime(response.content)
+    if mime is None:
+        raise PaymentProofStorageError("Stored payment proof is not a valid image.")
+    return response.content, mime
+
+
+def store_private_review_photo(
+    *,
+    user_id: str,
+    review_id: str,
+    photo_id: str,
+    content: bytes,
+    mime_type: str,
+    app_settings: Settings = settings,
+) -> str:
+    """Saves a validated review photo in the private `review-photos` bucket."""
+    ext = ALLOWED_IMAGE_MIMES.get(mime_type, ".png")
+    relative_path = f"{user_id}/{review_id}/{photo_id}{ext}"
+    try:
+        response = httpx.request(
+            "POST",
+            _storage_object_url(relative_path, app_settings, app_settings.review_photos_bucket),
+            headers={
+                **_storage_headers(app_settings, mime_type, error_type=ReviewPhotoStorageError),
+                "x-upsert": "false",
+            },
+            content=content,
+            timeout=10,
+        )
+        response.raise_for_status()
+    except PrivateImageStorageError:
+        raise
+    except httpx.HTTPError as exc:
+        raise ReviewPhotoStorageError("Private review photo storage is unavailable.") from exc
+    return relative_path
+
+
+def read_private_review_photo(
+    storage_path: str,
+    *,
+    app_settings: Settings = settings,
+) -> tuple[bytes, str]:
+    """Reads private review-photo bytes and returns `(bytes, content_type)`."""
+    try:
+        response = httpx.request(
+            "GET",
+            _storage_object_url(storage_path, app_settings, app_settings.review_photos_bucket),
+            headers=_storage_headers(app_settings, error_type=ReviewPhotoStorageError),
+            timeout=10,
+        )
+    except PrivateImageStorageError:
+        raise
+    except httpx.HTTPError as exc:
+        raise ReviewPhotoStorageError("Private review photo storage is unavailable.") from exc
+    if response.status_code == 404:
+        raise FileNotFoundError("Review photo object not found in private storage.")
+    try:
+        response.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise ReviewPhotoStorageError("Private review photo storage is unavailable.") from exc
+
+    mime = detect_image_mime(response.content)
+    if mime is None:
+        raise ReviewPhotoStorageError("Stored review photo is not a valid image.")
+    return response.content, mime
+
+
+def delete_private_review_photos(
+    storage_paths: list[str],
+    *,
+    app_settings: Settings = settings,
+) -> None:
+    """Best-effort cleanup for uploaded photos when the review transaction cannot commit."""
+    try:
+        headers = _storage_headers(app_settings, error_type=ReviewPhotoStorageError)
+    except ReviewPhotoStorageError:
+        return
+    for storage_path in storage_paths:
+        try:
+            response = httpx.request(
+                "DELETE",
+                _storage_object_url(storage_path, app_settings, app_settings.review_photos_bucket),
+                headers=headers,
+                timeout=10,
+            )
+            response.raise_for_status()
+        except httpx.HTTPError:
+            continue
 
 
 def _signing_secret(app_settings: Settings = settings) -> bytes:

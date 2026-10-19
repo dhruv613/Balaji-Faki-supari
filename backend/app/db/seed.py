@@ -45,9 +45,11 @@ def ensure_catalog_seeded(db: Session, *, with_default_prices: bool = True) -> N
             id=1,
             store_name="Balaji Faki Point",
             store_name_gu="બાલાજી ફાકી પોઈન્ટ",
+            store_address="Riddhi Siddhi Complex, University Rd., nr. Bhagat Singh Garden, Rajkot, Gujarat 360005",
+            opening_hours="Call the store to confirm opening hours",
             upi_payee_name="Balaji Faki Point",
             upi_id="8000961030@okbizaxis",
-            qr_code_storage_path="https://balaji-faki-point.vercel.app/images/balaji-logo.png",
+            qr_code_storage_path=None,
             delivery_charge_paise=0,
             free_delivery_threshold_paise=0,
             serviceable_pin_codes_json='["360001","360002","360003","360004","360005","360006","360007"]',
@@ -56,6 +58,12 @@ def ensure_catalog_seeded(db: Session, *, with_default_prices: bool = True) -> N
         )
         db.add(settings_row)
         db.flush()
+    else:
+        # Move the existing public page's confirmed location into the canonical settings row.
+        if settings_row.store_address == "Rajkot, Gujarat":
+            settings_row.store_address = "Riddhi Siddhi Complex, University Rd., nr. Bhagat Singh Garden, Rajkot, Gujarat 360005"
+        if settings_row.opening_hours == "9:00 AM – 9:00 PM":
+            settings_row.opening_hours = "Call the store to confirm opening hours"
 
     for p_spec in INITIAL_PRODUCTS:
         product = db.scalar(select(Product).where(Product.slug == p_spec["slug"]))

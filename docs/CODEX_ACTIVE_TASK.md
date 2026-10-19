@@ -51,18 +51,23 @@ Critical rules:
 - Added temporary local prices through the canonical catalog seed: Faki 250g/500g/1kg = ₹250/₹500/₹1,000 and Supari 250g/500g/1kg = ₹200/₹400/₹800.
 - Required a meaningful delivery-failure reason in both the dedicated delivery action and the existing admin status action, then persist it with shipment, status-history, and delivery-event records.
 - Verified approval and confirmation idempotency, duplicate bank-credit rejection, and status persistence after reopening the database engine through the FastAPI HTTP workflow.
+- Added optional, admin-entered product fields for ingredients/composition, popularity, characteristics, production/packaging, provider/manufacturer, and safety/storage. They remain blank until the shop supplies confirmed facts; the public catalogue only renders populated fields.
+- Added `supabase/migrations/20261019000000_product_information.sql` for those product fields and wired the existing Owner Admin product editor to save them.
+- Replaced the payment-proof filesystem fallback with the existing local Supabase private `payment-proofs` bucket. A payment attempt moves to `SUBMITTED` only after its proof upload succeeds; storage failures return a retry-safe `503` before any state change.
+- Removed the remote QR-logo fallback. Customers now see a payment QR only when the local store configuration has an actual configured QR asset.
+- Moved the existing shop address and opening-hours disclaimer into the canonical `StoreSettings` seed, added the public `/api/store` profile response, and changed **Our shop** to read it rather than hard-code contact data. The public response deliberately excludes UPI and QR settings.
+- Removed the obsolete remote staging verification script and remote Supabase project configuration from the local verification path. Historical Antigravity remote instructions are marked archived.
 
 ## In progress
 
-- The remaining product/shop data needs business confirmation before it can be published.
+- The local Supabase migration and private Storage smoke checks require Docker Desktop's Linux engine. No production service has been contacted.
 
 ## Remaining
 
 - Complete browser-level local-server verification when browser access is available.
-- Run PostgreSQL and private Supabase Storage verification after Docker Desktop's Linux engine is running and a local-only database connection is configured. No remote Supabase project was used.
-- Review the retained-template system design document requirement and remaining product/review/shop content separately from the state-machine work.
-- Add private customer-photo support only after the business supplies a storage and moderation policy; the current `reviews` schema has no photo field.
-- Obtain confirmed product composition, characteristics, production/packaging, provider/manufacturer, safety/storage details, and store photos before adding them to the catalog or shop page.
+- Run `20261019000000_product_information.sql`, PostgreSQL, and private Supabase Storage smoke checks after Docker Desktop's Linux engine is running and a local-only database connection is configured. No remote Supabase project was used.
+- Add private customer-review photo support with an explicit local Storage bucket and moderation path; it is not yet in the `reviews` schema.
+- Obtain confirmed product composition, characteristics, production/packaging, provider/manufacturer, safety/storage details, store photos, and the actual QR asset before publishing them.
 
 ## Files changed
 
@@ -90,22 +95,27 @@ Critical rules:
 - `frontend/src/types/orders.ts`
 - `frontend/src/styles/globals.css`
 - `backend/app/core/domain.py`
+- `backend/app/core/storage.py`
 - `backend/app/main.py`
 - `backend/app/schemas.py`
+- `backend/app/db/models.py`
 - `backend/app/db/seed.py`
+- `supabase/migrations/20261019000000_product_information.sql`
 - `backend/tests/test_api_workflow.py`
 - `backend/tests/test_payment_state_machine.py`
 - `backend/tests/test_cancellation_service.py`
 - `backend/tests/test_review_service.py`
 - `backend/tests/test_catalog_details.py`
+- `backend/tests/test_supabase_storage.py`
 - `backend/tests/test_delivery_state_service.py`
+- `frontend/src/features/store/storeApi.ts`
 - `docs/CODEX_ACTIVE_TASK.md`
 
 ## Tests
 
-- Passed: Python AST validation; 19 backend tests including the FastAPI HTTP lifecycle, idempotent payment approval/order confirmation, duplicate bank-credit rejection, rejection-and-retry, cancellation/refund consistency, inventory rollback, delivery-failure persistence, and reopened-database status persistence; frontend typecheck and test suite; Vite production build.
-- Blocked: local PostgreSQL and private Supabase Storage checks. `npx supabase status` confirmed Docker Desktop's Linux engine is not running, and no local `DATABASE_URL` is configured. Browser automation is unavailable in this session.
+- Passed this session: `backend/tests/test_catalog_details.py` (3 tests), `backend/tests/test_supabase_storage.py` (4 tests), `frontend/tests/checkout.test.mjs`, and `npm --prefix frontend run typecheck`.
+- Blocked: the existing FastAPI `TestClient` workflow test stalls before its first request because this managed Windows environment blocks the socket pair that AnyIO creates. The stack trace stops in Python's standard-library `socket.accept`, before application code. Local PostgreSQL and live private Supabase Storage checks also remain blocked because Docker Desktop's Linux engine is not running.
 
 ## Next exact action
 
-Start Docker Desktop's Linux engine, configure only the local Supabase connection, and run the PostgreSQL/private-storage smoke checks; then add only store-confirmed product/shop facts and photos through the existing admin catalog fields.
+Run the local migration and workflow suite on a Windows environment that permits AnyIO sockets, then smoke-test the local Supabase Storage upload. Next implementation work is customer review-photo storage and moderation, followed by adding only owner-confirmed store/product facts.

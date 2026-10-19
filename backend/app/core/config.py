@@ -85,6 +85,7 @@ class Settings:
         default_factory=_default_cors_origins
     )
     payment_proofs_bucket: str = "payment-proofs"
+    review_photos_bucket: str = "review-photos"
     signed_url_ttl_seconds: int = 300
 
 

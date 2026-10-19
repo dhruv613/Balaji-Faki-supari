@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import Notice from '../../../components/common/Notice';
 import { env } from '../../../lib/env';
-import { formatPackSize, getErrorMessage } from '../../../lib/api';
+import { formatPackSize, getErrorMessage, resolveApiUrl } from '../../../lib/api';
 import { getAdminReviews, updateAdminReview } from '../api';
 import type { AdminReviewRecord, ReviewModerationStatus } from '../types';
 import {
@@ -11,6 +11,10 @@ import {
   LoadingSkeleton,
   useAdminToast,
 } from '../components';
+
+function isReviewPhotoProxyPath(value: unknown): value is string {
+  return typeof value === 'string' && value.startsWith('/api/');
+}
 
 export default function AdminReviewsPage() {
   const { showToast } = useAdminToast();
@@ -326,6 +330,17 @@ export default function AdminReviewsPage() {
               <h3 style={{ fontSize: 16, marginBottom: 6 }}>Customer Feedback</h3>
               <p>{selectedReview.reviewText}</p>
             </div>
+
+            {(selectedReview.photoUrls ?? []).filter(isReviewPhotoProxyPath).length > 0 && (
+              <section className="card card--tinted" style={{ marginBottom: 20 }} aria-labelledby="admin-review-photos-heading">
+                <h3 id="admin-review-photos-heading" style={{ fontSize: 16, marginBottom: 10 }}>Customer Photos</h3>
+                <div className="review-photo-grid">
+                  {(selectedReview.photoUrls ?? []).filter(isReviewPhotoProxyPath).map((photoUrl, index) => (
+                    <img key={photoUrl} src={resolveApiUrl(photoUrl)} alt={`Customer review photo ${index + 1}`} loading="lazy" />
+                  ))}
+                </div>
+              </section>
+            )}
 
             <form className="card" style={{ marginBottom: 20 }} onSubmit={handleSaveReply}>
               <label htmlFor="admin-reply-input">Official Store Reply</label>

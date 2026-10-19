@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import Notice from '../../../components/common/Notice';
-import { formatPackSize, getErrorMessage } from '../../../lib/api';
+import { formatPackSize, getErrorMessage, resolveApiUrl } from '../../../lib/api';
 import { useSession } from '../../../lib/supabase';
 import { getMyOrders } from '../../orders/api/ordersApi';
 import type { Order } from '../../../types/orders';
@@ -15,8 +15,23 @@ import {
 type ProductFilter = 'all' | ReviewProduct;
 type ReviewSort = 'newest' | 'highest' | 'lowest';
 
+const MAX_REVIEW_PHOTOS = 5;
+const MAX_REVIEW_PHOTO_BYTES = 5 * 1024 * 1024;
+const REVIEW_PHOTO_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
+
 export function validateReviewText(reviewText: string): string | null {
   return reviewText.trim().length >= 10 ? null : 'Write at least 10 characters about your purchase.';
+}
+
+export function validateReviewPhotos(files: readonly Pick<File, 'name' | 'size' | 'type'>[]): string | null {
+  if (files.length > MAX_REVIEW_PHOTOS) return 'Choose no more than 5 photos.';
+  for (const file of files) {
+    const name = file.name || 'A selected photo';
+    if (!REVIEW_PHOTO_TYPES.has(file.type)) return `${name} must be a JPG, PNG, or WEBP image.`;
+    if (file.size === 0) return `${name} is empty. Choose a photo with image data.`;
+    if (file.size > MAX_REVIEW_PHOTO_BYTES) return `${name} is larger than 5 MB.`;
+  }
+  return null;
 }
 
 function Stars({ rating }: { rating: number }) {
@@ -38,12 +53,22 @@ export default function CustomerReviewsPage() {
   const [selectedOrderId, setSelectedOrderId] = useState('');
   const [rating, setRating] = useState(5);
   const [reviewText, setReviewText] = useState('');
+  const [reviewPhotos, setReviewPhotos] = useState<File[]>([]);
   const [loadingReviews, setLoadingReviews] = useState(true);
   const [loadingOrders, setLoadingOrders] = useState(false);
   const [pageError, setPageError] = useState('');
   const [formError, setFormError] = useState('');
   const [notice, setNotice] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  const reviewPhotoPreviews = useMemo(() => reviewPhotos.map((file) => ({
+    file,
+    url: URL.createObjectURL(file),
+  })), [reviewPhotos]);
+
+  useEffect(() => () => {
+    reviewPhotoPreviews.forEach(({ url }) => URL.revokeObjectURL(url));
+  }, [reviewPhotoPreviews]);
 
   useEffect(() => {
     let active = true;
@@ -84,9 +109,26 @@ export default function CustomerReviewsPage() {
   const average = reviews.length ? (reviews.reduce((sum, review) => sum + review.rating, 0) / reviews.length).toFixed(1) : '0.0';
   const distribution = [5, 4, 3, 2, 1].map((star) => ({ star, count: reviews.filter((review) => review.rating === star).length }));
 
+  function handlePhotoSelection(event: ChangeEvent<HTMLInputElement>) {
+    const nextPhotos = [...reviewPhotos, ...Array.from(event.target.files ?? [])];
+    event.currentTarget.value = '';
+    const validationError = validateReviewPhotos(nextPhotos);
+    if (validationError) {
+      setFormError(validationError);
+      return;
+    }
+    setReviewPhotos(nextPhotos);
+    setFormError('');
+  }
+
+  function removePhoto(index: number) {
+    setReviewPhotos((current) => current.filter((_, currentIndex) => currentIndex !== index));
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const validationError = validateReviewText(reviewText);
+    const photoValidationError = validateReviewPhotos(reviewPhotos);
     if (!selectedOrderId) {
       setFormError('Choose a delivered order to review.');
       return;
@@ -95,14 +137,19 @@ export default function CustomerReviewsPage() {
       setFormError(validationError);
       return;
     }
+    if (photoValidationError) {
+      setFormError(photoValidationError);
+      return;
+    }
     setSubmitting(true);
     setFormError('');
     setNotice('');
     try {
-      await submitReview(selectedOrderId, rating, reviewText.trim());
+      await submitReview(selectedOrderId, rating, reviewText.trim(), reviewPhotos);
       setEligibleOrders((current) => current.filter((order) => order.id !== selectedOrderId));
       setSelectedOrderId('');
       setReviewText('');
+      setReviewPhotos([]);
       setNotice('Thanks. Your verified-purchase review was submitted for moderation.');
     } catch (error) {
       setFormError(getErrorMessage(error));
@@ -152,6 +199,9 @@ export default function CustomerReviewsPage() {
             <div className="review-meta"><Stars rating={review.rating} /><strong>{review.rating}.0</strong><span className="text-small text-secondary">· {new Date(review.createdAt).toLocaleDateString('en-IN')}</span></div>
             <p style={{ margin: '12px 0' }}>{review.reviewText}</p>
             <div className="review-footer"><span className="text-small text-secondary">{review.productName} · {formatPackSize(review.packSize)}</span>{review.verifiedPurchase && <span className="badge">Verified purchase</span>}</div>
+            {review.photoUrls.length > 0 && <div className="review-photo-grid" aria-label="Customer review photos">
+              {review.photoUrls.map((photoUrl, index) => <img key={photoUrl} src={resolveApiUrl(photoUrl)} alt={`Customer photo ${index + 1} for ${review.productName}`} loading="lazy" />)}
+            </div>}
             {review.adminReply && <div className="card card--tinted" style={{ marginTop: 12 }}><strong>Balaji Faki Point</strong><p className="text-small" style={{ marginTop: 4 }}>{review.adminReply}</p></div>}
           </article>)}
         </div>
@@ -175,6 +225,16 @@ export default function CustomerReviewsPage() {
           </fieldset>
           <label htmlFor="review-text">Your review</label>
           <textarea id="review-text" className="input" value={reviewText} onChange={(event) => setReviewText(event.target.value)} maxLength={2000} placeholder="What did you like? What can we do better?" required aria-invalid={!!validateReviewText(reviewText)} />
+          <label htmlFor="review-photos" style={{ marginTop: 16 }}>Photos (optional)</label>
+          <p id="review-photos-help" className="text-small text-secondary" style={{ margin: '4px 0 8px' }}>Add up to 5 JPG, PNG, or WEBP photos. Each photo must be 5 MB or smaller.</p>
+          <input id="review-photos" className="input" type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" multiple aria-describedby="review-photos-help" onChange={handlePhotoSelection} disabled={submitting} />
+          {reviewPhotoPreviews.length > 0 && <ul className="review-selected-photos" aria-label="Selected review photos">
+            {reviewPhotoPreviews.map(({ file, url }, index) => <li key={`${file.name}-${index}`} className="review-selected-photo">
+              <img src={url} alt={`Preview of ${file.name}`} />
+              <span className="text-small">{file.name}</span>
+              <button type="button" className="btn btn--outline btn--sm" onClick={() => removePhoto(index)} disabled={submitting} aria-label={`Remove ${file.name}`}>Remove</button>
+            </li>)}
+          </ul>}
           {formError && <Notice tone="warning" title="Review not submitted">{formError}</Notice>}
           {notice && <Notice title="Review submitted">{notice}</Notice>}
           <button type="submit" className="btn btn--primary" disabled={submitting}>{submitting ? 'Submitting…' : 'Submit review'}</button>

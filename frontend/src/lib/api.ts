@@ -22,12 +22,23 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Resolves a FastAPI path whether the configured base URL includes `/api` or not.
+ */
+export function resolveApiUrl(path: string): string {
+  const normalized = path.startsWith('/') ? path : `/${path}`;
+  const apiPath = env.apiBaseUrl.endsWith('/api') && normalized.startsWith('/api/')
+    ? normalized.slice(4)
+    : normalized;
+  return `${env.apiBaseUrl}${apiPath}`;
+}
+
 export async function apiFetch<T>(
   path: string,
   options: RequestInit = {},
 ): Promise<T> {
   if (!env.apiBaseUrl) throw new ApiError(0, 'Online ordering is not connected yet. Please contact the store.');
-  const url = `${env.apiBaseUrl}${path}`;
+  const url = resolveApiUrl(path);
   const isFormData = options.body instanceof FormData;
 
   const headers = new Headers(options.headers);

@@ -1,4 +1,7 @@
-# Balaji Faki Point — Antigravity Engineering Handoff & Security Audit
+# Balaji Faki Point — Archived Antigravity Handoff
+
+> Historical record only. Its prior remote/staging instructions are obsolete and must not be run.
+> Use `docs/CODEX_ACTIVE_TASK.md`, the local Supabase configuration, and local-only verification instead.
 
 **Repository**: `https://github.com/dhruv613/Balaji-Faki-supari`  
 **Active Development Branch**: `dev/antigravity`  

@@ -18,7 +18,7 @@ os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 import app.db.session as db_session
 from app.db.models import Customer, Order, OrderItem, Product, ProductVariant, StoreSettings, UserProfile
 from app.db.seed import ensure_catalog_seeded
-from app.main import _serialize_customer_order, list_public_products
+from app.main import _serialize_customer_order, _serialize_store_profile, list_public_products
 
 
 class CatalogDetailsTests(unittest.TestCase):
@@ -32,6 +32,9 @@ class CatalogDetailsTests(unittest.TestCase):
             faki = db.scalar(select(Product).where(Product.slug == "faki"))
             assert faki is not None
             faki.description = "Store-confirmed packaging information."
+            faki.ingredients = "Test-confirmed ingredients."
+            faki.production_packaging = "Test-confirmed packaging."
+            faki.safety_storage = "Test-confirmed storage guidance."
             db.commit()
 
             products = {product["type"]: product for product in list_public_products(db)}
@@ -40,6 +43,10 @@ class CatalogDetailsTests(unittest.TestCase):
         self.assertEqual(products["supari"]["prices"]["1kg"], 800)
         self.assertEqual(products["faki"]["description"], "Store-confirmed packaging information.")
         self.assertEqual(products["faki"]["imageUrl"], "/images/hero-product.jpg")
+        self.assertEqual(products["faki"]["information"]["ingredients"], "Test-confirmed ingredients.")
+        self.assertEqual(products["faki"]["information"]["productionPackaging"], "Test-confirmed packaging.")
+        self.assertEqual(products["faki"]["information"]["safetyStorage"], "Test-confirmed storage guidance.")
+        self.assertEqual(products["faki"]["information"]["providerManufacturer"], "")
 
     def test_order_details_include_the_current_product_image(self) -> None:
         with db_session.SessionLocal() as db:
@@ -85,6 +92,23 @@ class CatalogDetailsTests(unittest.TestCase):
             payload = _serialize_customer_order(db, order, db.get(StoreSettings, 1))
 
         self.assertEqual(payload["productImageUrl"], "/images/hero-product.jpg")
+
+    def test_public_store_profile_uses_settings_without_exposing_payment_destination(self) -> None:
+        with db_session.SessionLocal() as db:
+            ensure_catalog_seeded(db)
+            store = db.get(StoreSettings, 1)
+            assert store is not None
+            store.store_name = "Confirmed Test Store"
+            store.store_address = "Confirmed Test Address"
+            store.upi_id = "private-payment-destination"
+            db.commit()
+
+            profile = _serialize_store_profile(store)
+
+        self.assertEqual(profile["storeName"], "Confirmed Test Store")
+        self.assertEqual(profile["storeAddress"], "Confirmed Test Address")
+        self.assertNotIn("upiId", profile)
+        self.assertNotIn("qrImageUrl", profile)
 
 
 if __name__ == "__main__":

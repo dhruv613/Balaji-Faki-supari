@@ -96,6 +96,9 @@ assert.throws(() => contracts.readQuote({subtotal:100,deliveryFee:0,total:101,cu
 assert.throws(() => contracts.readQuote({subtotal:-1,deliveryFee:0,total:-1,currency:'INR'}));
 assert.equal(contracts.readQuote({subtotal:100,deliveryFee:0,total:100,currency:'INR'}).deliveryFee,0);
 assert.throws(() => contracts.readProducts([{type:'faki'}]));
+const catalogProduct = {type:'faki',name:'Faki',nameGu:'ફાકી',category:'Faki',description:'',imageUrl:'/images/faki.png',information:{ingredients:'Test-confirmed ingredients.',popularity:'',characteristics:'',productionPackaging:'Test-confirmed packaging.',providerManufacturer:'',safetyStorage:'Test-confirmed storage guidance.'},packSizes:['250g','500g','1kg'],prices:{'250g':250,'500g':500,'1kg':1000}};
+assert.equal(contracts.readProducts([catalogProduct])[0].information.ingredients,'Test-confirmed ingredients.');
+assert.throws(() => contracts.readProducts([{...catalogProduct,information:{ingredients:1}}]));
 assert.throws(() => contracts.readPaymentStatus({orderId:'other',orderNumber:'BFP',status:'verified',orderStatus:'active'},'mine'));
 const order = {id:'UI-PREVIEW-NO-ORDER',orderNumber:'#UI-PREVIEW', product:'faki',productName:'Faki',packSize:'500g',quantity:2,subtotal:100,deliveryFee:0,total:100,customerName:'UI preview',phone:'9999999999',address:'Design preview only',pinCode:'360005',status:'pending_payment',paymentStatus:'pending',createdAt:'2026-10-17T00:00:00Z',updatedAt:'2026-10-17T00:00:00Z',payment:{amount:100,payeeName:'Design preview — do not pay',upiId:'Not issued'}};
 assert.equal(contracts.readOrder(order).id,order.id);

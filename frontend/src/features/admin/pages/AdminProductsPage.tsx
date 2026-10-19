@@ -7,7 +7,7 @@ import {
   createAdminProduct,
   updateAdminProduct,
 } from '../api';
-import type { AdminProduct, AdminProductVariant, PackSize, ProductType } from '../types';
+import type { AdminProduct, AdminProductVariant, PackSize, ProductInformation, ProductType } from '../types';
 import { notifyAdminDataChanged } from '../lib/orderStateMachine';
 import { DetailDrawer, LoadingSkeleton, useAdminToast } from '../components';
 
@@ -18,6 +18,24 @@ interface EditingRowState {
   costPriceInput: string;
   sellingPriceInput: string;
 }
+
+const EMPTY_PRODUCT_INFORMATION: ProductInformation = {
+  ingredients: '',
+  popularity: '',
+  characteristics: '',
+  productionPackaging: '',
+  providerManufacturer: '',
+  safetyStorage: '',
+};
+
+const PRODUCT_INFORMATION_FIELDS: Array<{ key: keyof ProductInformation; label: string; placeholder: string }> = [
+  { key: 'ingredients', label: 'Ingredients / composition', placeholder: 'Only confirmed ingredients or composition.' },
+  { key: 'popularity', label: 'Why customers choose it', placeholder: 'Only a store-confirmed reason.' },
+  { key: 'characteristics', label: 'Product characteristics', placeholder: 'Only confirmed product characteristics.' },
+  { key: 'productionPackaging', label: 'Production / packaging', placeholder: 'Only confirmed preparation or packaging details.' },
+  { key: 'providerManufacturer', label: 'Provider / manufacturer', placeholder: 'Only confirmed provider or manufacturer information.' },
+  { key: 'safetyStorage', label: 'Safety / storage', placeholder: 'Only confirmed safety or storage guidance.' },
+];
 
 export default function AdminProductsPage() {
   const { showToast } = useAdminToast();
@@ -35,6 +53,7 @@ export default function AdminProductsPage() {
   const [formNameGu, setFormNameGu] = useState('');
   const [formCategory, setFormCategory] = useState('');
   const [formDescription, setFormDescription] = useState('');
+  const [formInformation, setFormInformation] = useState<ProductInformation>(EMPTY_PRODUCT_INFORMATION);
   const [formImageUrl, setFormImageUrl] = useState('');
   const [formActive, setFormActive] = useState(true);
   const [variantCostPrices, setVariantCostPrices] = useState<Record<PackSize, string>>({
@@ -180,6 +199,7 @@ export default function AdminProductsPage() {
     setFormNameGu(product.nameGu);
     setFormCategory(product.category);
     setFormDescription(product.description);
+    setFormInformation(product.information ?? EMPTY_PRODUCT_INFORMATION);
     setFormImageUrl(product.imageUrl);
     setFormActive(product.active);
 
@@ -241,6 +261,7 @@ export default function AdminProductsPage() {
           nameGu: formNameGu.trim(),
           category: formCategory.trim(),
           description: formDescription.trim(),
+          information: formInformation,
           imageUrl: formImageUrl.trim(),
           active: formActive,
           variants: parsedVariants,
@@ -254,6 +275,7 @@ export default function AdminProductsPage() {
           nameGu: formNameGu.trim(),
           category: formCategory.trim(),
           description: formDescription.trim(),
+          information: formInformation,
           imageUrl: formImageUrl.trim(),
           active: formActive,
           variants: parsedVariants,
@@ -520,6 +542,26 @@ export default function AdminProductsPage() {
             />
             <p className="text-small text-secondary">Do not enter unverified claims, certifications, or ingredients.</p>
           </div>
+
+          <fieldset style={{ marginTop: 16 }}>
+            <legend>Confirmed product information</legend>
+            <p className="text-small text-secondary" style={{ marginBottom: 12 }}>
+              Leave a field blank until the store confirms it. These facts appear to customers exactly as entered.
+            </p>
+            {PRODUCT_INFORMATION_FIELDS.map(({ key, label, placeholder }) => (
+              <div key={key} style={{ marginTop: 12 }}>
+                <label htmlFor={`prod-info-${key}`}>{label}</label>
+                <textarea
+                  id={`prod-info-${key}`}
+                  className="input"
+                  value={formInformation[key]}
+                  onChange={(event) => setFormInformation((current) => ({ ...current, [key]: event.target.value }))}
+                  maxLength={2000}
+                  placeholder={placeholder}
+                />
+              </div>
+            ))}
+          </fieldset>
 
           <div style={{ marginTop: 16 }}>
             <label htmlFor="prod-image-url">Product image URL</label>
