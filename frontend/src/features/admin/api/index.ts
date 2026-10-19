@@ -24,7 +24,6 @@ import type {
   ReviewPaymentRequest,
   RejectPaymentRequest,
   AdminProduct,
-  CreateAdminProductRequest,
   UpdateAdminProductRequest,
   AdminInventoryResponse,
   StockAdjustmentRequest,
@@ -240,14 +239,23 @@ export async function getAdminProducts(): Promise<AdminProduct[]> {
   return apiFetch<AdminProduct[]>(resolveApiPath('/api/admin/products'));
 }
 
-/** POST /api/admin/products */
-export async function createAdminProduct(
-  payload: CreateAdminProductRequest,
-): Promise<AdminProduct> {
-  return apiFetch<AdminProduct>(resolveApiPath('/api/admin/products'), {
+/** POST /api/admin/products/{id}/images - upload one product photo (public catalogue bucket) */
+export async function addAdminProductImage(productId: string, file: File, altText: string): Promise<AdminProduct> {
+  const form = new FormData();
+  form.append('image', file);
+  form.append('altText', altText);
+  return apiFetch<AdminProduct>(resolveApiPath(`/api/admin/products/${encodeURIComponent(productId)}/images`), {
     method: 'POST',
-    body: JSON.stringify(payload),
+    body: form,
   });
+}
+
+/** DELETE /api/admin/products/{id}/images/{imageId} */
+export async function deleteAdminProductImage(productId: string, imageId: string): Promise<AdminProduct> {
+  return apiFetch<AdminProduct>(
+    resolveApiPath(`/api/admin/products/${encodeURIComponent(productId)}/images/${encodeURIComponent(imageId)}`),
+    { method: 'DELETE' },
+  );
 }
 
 /** PATCH /api/admin/products/{id} */

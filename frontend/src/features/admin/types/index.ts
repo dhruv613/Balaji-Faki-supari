@@ -335,6 +335,15 @@ export interface AdminProductVariant {
   availableQuantity: number;
   reservedQuantity: number;
   isAvailable: boolean;
+  /** false = development price not yet approved by the owner. */
+  priceConfirmed: boolean;
+}
+
+export interface AdminProductImage {
+  id: string;
+  url: string;
+  alt: string;
+  position: number;
 }
 
 export interface AdminProduct {
@@ -347,47 +356,30 @@ export interface AdminProduct {
   descriptionGu?: string;
   imageUrl: string;
   information?: ProductInformation;
+  images: AdminProductImage[];
   active: boolean;
   variants: AdminProductVariant[];
   updatedAt: string;
 }
 
-export interface CreateAdminProductRequest {
-  type: ProductType;
-  name: string;
-  nameGu: string;
-  category: string;
-  description: string;
-  descriptionGu?: string;
-  imageUrl: string;
-  information?: ProductInformation;
-  active: boolean;
-  variants: Array<{
-    packSize: PackSize;
-    sku: string;
-    costPrice?: number | null;
-    price: number | null;
-    availableQuantity: number;
-    isAvailable: boolean;
-  }>;
-}
-
+/**
+ * Partial update: only the keys present are changed. An omitted price or availability is never cleared or reset;
+ * `price: null` explicitly removes the price (the pack then cannot be ordered).
+ */
 export interface UpdateAdminProductRequest {
   name?: string;
   nameGu?: string;
   category?: string;
   description?: string;
-  descriptionGu?: string;
-  imageUrl?: string;
-  information?: ProductInformation;
   active?: boolean;
+  information?: Partial<ProductInformation>;
   variants?: Array<{
-    id?: string;
     packSize: PackSize;
     costPrice?: number | null;
-    price: number | null;
-    availableQuantity?: number;
-    isAvailable: boolean;
+    price?: number | null;
+    /** Approve the current selling price as a real, owner-confirmed price. */
+    priceConfirmed?: boolean;
+    isAvailable?: boolean;
   }>;
 }
 

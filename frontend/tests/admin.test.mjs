@@ -679,6 +679,24 @@ const settingsHtml = renderToStaticMarkup(React.createElement(MemoryRouter, null
 assert.match(settingsHtml, /No sample values are shown/);
 assert.doesNotMatch(settingsHtml, /Save changes/, 'nothing can be saved before the server answered');
 
+// Price Management: only changed fields are sent; approving a price is explicit; nothing is cleared by accident.
+const { buildVariantPatch } = load('src/features/admin/pages/AdminProductsPage.tsx', commonPageStubs);
+const variant = { id: 'v1', packSize: '500g', sku: 'S', costPrice: 180, price: 500, availableQuantity: 5, reservedQuantity: 0, isAvailable: false, priceConfirmed: false };
+const patchOf = (edit) => JSON.parse(JSON.stringify(buildVariantPatch(variant, { cost: '180', price: '500', available: false, approve: false, ...edit })));
+assert.deepEqual(patchOf({}).patch, { packSize: '500g' }, 'an untouched row sends nothing');
+assert.deepEqual(patchOf({ price: '550' }).patch, { packSize: '500g', price: 550 }, 'only the price');
+assert.deepEqual(patchOf({ available: true }).patch, { packSize: '500g', isAvailable: true }, 'availability only when toggled');
+assert.deepEqual(patchOf({ price: '550', approve: true }).patch, { packSize: '500g', price: 550, priceConfirmed: true });
+assert.deepEqual(patchOf({ approve: true }).patch, { packSize: '500g', priceConfirmed: true }, 'approve the existing development price');
+assert.deepEqual(patchOf({ cost: '' }).patch, { packSize: '500g', costPrice: null }, 'clearing is explicit');
+for (const bad of [{ price: '-1' }, { price: 'abc' }, { cost: '-5' }, { price: '', approve: true }]) {
+  assert.ok(patchOf(bad).error, JSON.stringify(bad));
+}
+const approved = { ...variant, priceConfirmed: true };
+assert.deepEqual(JSON.parse(JSON.stringify(buildVariantPatch(approved, { cost: '180', price: '500', available: false, approve: true }).patch)), { packSize: '500g' }, 'already approved: no change');
+const productsSource = readFileSync(new URL('../src/features/admin/pages/AdminProductsPage.tsx', import.meta.url), 'utf8');
+assert.doesNotMatch(productsSource, /createAdminProduct|imageUrl|SAMPLE_/, 'no create flow (fixed catalogue) and no free-text image URLs');
+
 const pricesHtml = renderToStaticMarkup(
   React.createElement(MemoryRouter, { initialEntries: ['/admin/prices'] }, React.createElement(PricesPage)),
 );

@@ -543,12 +543,13 @@ export const SAMPLE_ADMIN_PRODUCTS: AdminProduct[] = [
     description: '',
     descriptionGu: '',
     imageUrl: '/images/hero-product.jpg',
+    images: [],
     active: true,
     updatedAt: '15 Oct 2026',
     variants: [
-      { id: 'var-faki-250', packSize: '250g', sku: 'BFP-FAKI-250G', costPrice: null, price: null, availableQuantity: 42, reservedQuantity: 4, isAvailable: true },
-      { id: 'var-faki-500', packSize: '500g', sku: 'BFP-FAKI-500G', costPrice: null, price: null, availableQuantity: 28, reservedQuantity: 3, isAvailable: true },
-      { id: 'var-faki-1000', packSize: '1kg', sku: 'BFP-FAKI-1KG', costPrice: null, price: null, availableQuantity: 8, reservedQuantity: 1, isAvailable: true },
+      { id: 'var-faki-250', packSize: '250g', sku: 'BFP-FAKI-250G', costPrice: null, price: null, priceConfirmed: false, availableQuantity: 42, reservedQuantity: 4, isAvailable: true },
+      { id: 'var-faki-500', packSize: '500g', sku: 'BFP-FAKI-500G', costPrice: null, price: null, priceConfirmed: false, availableQuantity: 28, reservedQuantity: 3, isAvailable: true },
+      { id: 'var-faki-1000', packSize: '1kg', sku: 'BFP-FAKI-1KG', costPrice: null, price: null, priceConfirmed: false, availableQuantity: 8, reservedQuantity: 1, isAvailable: true },
     ],
   },
   {
@@ -560,12 +561,13 @@ export const SAMPLE_ADMIN_PRODUCTS: AdminProduct[] = [
     description: '',
     descriptionGu: '',
     imageUrl: '/images/supari-reference.png',
+    images: [],
     active: true,
     updatedAt: '15 Oct 2026',
     variants: [
-      { id: 'var-supari-250', packSize: '250g', sku: 'BFP-SUPARI-250G', costPrice: null, price: null, availableQuantity: 35, reservedQuantity: 2, isAvailable: true },
-      { id: 'var-supari-500', packSize: '500g', sku: 'BFP-SUPARI-500G', costPrice: null, price: null, availableQuantity: 19, reservedQuantity: 1, isAvailable: true },
-      { id: 'var-supari-1000', packSize: '1kg', sku: 'BFP-SUPARI-1KG', costPrice: null, price: null, availableQuantity: 6, reservedQuantity: 0, isAvailable: true },
+      { id: 'var-supari-250', packSize: '250g', sku: 'BFP-SUPARI-250G', costPrice: null, price: null, priceConfirmed: false, availableQuantity: 35, reservedQuantity: 2, isAvailable: true },
+      { id: 'var-supari-500', packSize: '500g', sku: 'BFP-SUPARI-500G', costPrice: null, price: null, priceConfirmed: false, availableQuantity: 19, reservedQuantity: 1, isAvailable: true },
+      { id: 'var-supari-1000', packSize: '1kg', sku: 'BFP-SUPARI-1KG', costPrice: null, price: null, priceConfirmed: false, availableQuantity: 6, reservedQuantity: 0, isAvailable: true },
     ],
   },
 ];
