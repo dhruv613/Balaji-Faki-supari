@@ -1547,99 +1547,75 @@ def get_admin_dashboard(
     _admin: AuthenticatedPrincipal = Depends(get_owner_admin_principal),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    orders = db.scalars(select(Order).order_by(Order.created_at.desc())).all()
-    payments = db.scalars(select(PaymentAttempt).order_by(PaymentAttempt.submitted_at.desc())).all()
-    variants = db.scalars(select(ProductVariant)).all()
-    refunds = db.scalars(select(Refund)).all()
-    audits = db.scalars(select(AdminAuditLog).order_by(AdminAuditLog.created_at.desc()).limit(10)).all()
+    """Exactly three things: Products Sold, Net Profit and the Pending Payment Confirmations table."""
+    delivered = db.scalars(
+        select(Order).where(Order.status == "DELIVERED", Order.payment_status == "VERIFIED")
+    ).all()
+    items = [item for order in delivered for item in order.items]
+    products_sold = sum(int(item.quantity) for item in items)
 
-    delivered_verified_orders = [
-        o for o in orders if o.status == "DELIVERED" and o.payment_status == "VERIFIED"
-    ]
-    products_sold_count = sum(
-        sum(it.quantity for it in o.items) for o in delivered_verified_orders
-    )
+    missing_costs = sorted({f"{item.product_name} {item.pack_size}" for item in items if item.unit_cost_paise is None})
+    net_profit: dict[str, Any]
+    if missing_costs:
+        net_profit = {
+            "amount": None,
+            "status": "NOT_CONFIGURED",
+            "reason": "Cost price is not configured for: " + ", ".join(missing_costs) + ".",
+            "note": None,
+        }
+    else:
+        # Delivery charges are treated as pass-through (courier cost is not tracked), so profit is measured on items.
+        revenue = sum(int(item.line_total_paise) for item in items)
+        cost = sum(int(item.unit_cost_paise) * int(item.quantity) for item in items)
+        delivered_ids = [order.id for order in delivered]
+        refunded = 0
+        if delivered_ids:
+            refunded = sum(
+                int(refund.verified_refund_amount_paise or refund.refund_amount_paise)
+                for refund in db.scalars(
+                    select(Refund).where(Refund.order_id.in_(delivered_ids), Refund.status == "COMPLETED")
+                ).all()
+            )
+        variant_ids = {item.variant_id for item in items if item.variant_id}
+        unapproved = bool(variant_ids) and any(
+            not variant.price_confirmed
+            for variant in db.scalars(select(ProductVariant).where(ProductVariant.id.in_(variant_ids))).all()
+        )
+        net_profit = {
+            "amount": paise_to_inr(revenue - cost - refunded),
+            "status": "OK",
+            "reason": None,
+            "note": (
+                "Includes products whose prices or costs are development data not yet approved by the owner."
+                if unapproved
+                else None
+            ),
+        }
 
-    # Calculate Net Profit only if cost prices are present on variants/items
-    all_variants_have_cost = bool(variants) and all(
-        v.cost_price_paise is not None and v.price_paise is not None for v in variants
-    )
-    net_profit_amount: float | int | None = None
-    if all_variants_have_cost:
-        revenue_paise = sum(o.total_paise for o in delivered_verified_orders)
-        cost_paise = sum(
-            sum((it.unit_cost_paise or 0) * it.quantity for it in o.items)
-            for o in delivered_verified_orders
-        )
-        delivery_expense_paise = sum(o.delivery_fee_paise for o in delivered_verified_orders)
-        completed_refunds_paise = sum(
-            r.refund_amount_paise for r in refunds if r.status == "COMPLETED"
-        )
-        net_profit_paise = revenue_paise - cost_paise - delivery_expense_paise - completed_refunds_paise
-        net_profit_amount = paise_to_inr(net_profit_paise)
-
-    verified_payments = [p for p in payments if p.status == "VERIFIED"]
-    pending_payments = [p for p in payments if p.status in ("PENDING", "SUBMITTED", "UNDER_REVIEW")]
-
-    metrics = {
-        "totalOrders": len(orders),
-        "todaysOrders": len(orders),
-        "verifiedPaymentReceiptsCount": len(verified_payments),
-        "verifiedPaymentReceiptsAmount": paise_to_inr(
-            sum(p.expected_amount_paise for p in verified_payments)
-        )
-        or 0,
-        "pendingPaymentsCount": len(pending_payments),
-        "ordersAwaitingConfirmation": sum(1 for o in orders if o.status == "AWAITING_CONFIRMATION"),
-        "packingOrders": sum(1 for o in orders if o.status == "PACKING"),
-        "packedOrders": sum(1 for o in orders if o.status == "PACKED"),
-        "outForDeliveryOrders": sum(1 for o in orders if o.status == "OUT_FOR_DELIVERY"),
-        "deliveredOrdersCount": len(delivered_verified_orders),
-        "deliveredOrderSalesAmount": paise_to_inr(
-            sum(o.total_paise for o in delivered_verified_orders)
-        )
-        or 0,
-        "pendingRefundsCount": sum(
-            1 for r in refunds if r.status in ("PENDING", "APPROVED", "PROCESSING")
-        ),
-        "completedRefundsAmount": paise_to_inr(
-            sum(r.refund_amount_paise for r in refunds if r.status == "COMPLETED")
-        )
-        or 0,
-        "lowStockProductsCount": sum(
-            1 for v in variants if v.available_stock <= v.low_stock_threshold
-        ),
-        "productsSoldCount": products_sold_count,
-        "netProfitAmount": net_profit_amount,
-    }
-
-    return {
-        "metrics": metrics,
-        "recentOrders": [_serialize_admin_order_summary(db, o) for o in orders[:10]],
-        "recentPayments": [_serialize_admin_payment(db, p) for p in payments[:10]],
-        "salesOverview": [],
-        "statusDistribution": [
-            {"status": st, "count": sum(1 for o in orders if o.status == st)}
-            for st in CANONICAL_ORDER_STATUSES
-        ],
-        "recentActivity": [
+    pending = db.scalars(
+        select(PaymentAttempt)
+        .where(PaymentAttempt.status.in_(("SUBMITTED", "UNDER_REVIEW")))
+        .order_by(PaymentAttempt.submitted_at.asc())
+    ).all()
+    rows = []
+    for attempt in pending:
+        order = attempt.order or db.get(Order, attempt.order_id)
+        rows.append(
             {
-                "id": a.id,
-                "action": a.action,
-                "entityType": a.entity_type,
-                "entityId": a.entity_id,
-                "actorId": a.actor_id or "",
-                "actorEmail": a.actor_email,
-                "timestamp": _iso(a.created_at),
-                "details": a.new_state or a.action,
+                "paymentId": attempt.id,
+                "orderId": attempt.order_id,
+                "orderNumber": order.order_number if order else attempt.order_id,
+                "customerName": order.shipping_name if order else "",
+                "amount": paise_to_inr(attempt.expected_amount_paise),
+                "utr": attempt.submitted_utr,
+                "status": attempt.status,
+                "submittedAt": _iso(attempt.submitted_at),
             }
-            for a in audits
-        ],
-        "ordersRequiringAttention": [
-            _serialize_admin_order_summary(db, o)
-            for o in orders
-            if o.status in ("PAYMENT_REVIEW", "AWAITING_CONFIRMATION", "DELIVERY_FAILED")
-        ],
+        )
+    return {
+        "productsSold": products_sold,
+        "netProfit": net_profit,
+        "pendingPaymentConfirmations": rows,
     }
 
 

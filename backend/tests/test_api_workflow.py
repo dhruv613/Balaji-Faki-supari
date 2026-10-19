@@ -312,8 +312,8 @@ class FastApiWorkflowIntegrationTests(unittest.TestCase):
         # 7. Admin Dashboard & Payment Review Queue
         dash_before = self.client.get("/api/admin/dashboard", headers=admin_headers)
         self.assertEqual(dash_before.status_code, 200)
-        self.assertEqual(dash_before.json()["metrics"]["pendingPaymentsCount"], 1)
-        self.assertEqual(dash_before.json()["metrics"]["productsSoldCount"], 0)
+        self.assertEqual(len(dash_before.json()["pendingPaymentConfirmations"]), 1)
+        self.assertEqual(dash_before.json()["productsSold"], 0)
 
         # Admin fetches short-lived signed proof URL and raw screenshot bytes
         proof_meta_res = self.client.get(
@@ -501,11 +501,12 @@ class FastApiWorkflowIntegrationTests(unittest.TestCase):
 
         dash_after = self.client.get("/api/admin/dashboard", headers=admin_headers)
         self.assertEqual(dash_after.status_code, 200)
-        metrics_after = dash_after.json()["metrics"]
-        self.assertEqual(metrics_after["productsSoldCount"], 2)
-        self.assertEqual(metrics_after["deliveredOrdersCount"], 1)
-        # Net Profit = 520 revenue - (170 * 2 cost) = 180 INR
-        self.assertEqual(metrics_after["netProfitAmount"], 180)
+        dashboard_after = dash_after.json()
+        self.assertEqual(dashboard_after["productsSold"], 2)
+        self.assertEqual(dashboard_after["pendingPaymentConfirmations"], [])
+        # Net Profit = 520 item revenue - (170 * 2 cost) = 180 INR
+        self.assertEqual(dashboard_after["netProfit"]["status"], "OK")
+        self.assertEqual(dashboard_after["netProfit"]["amount"], 180)
 
         # 11. Second Order: Test Duplicate UTR Rejection, Payment Rejection, and Cancellation Stock Release
         order2_res = self.client.post(
