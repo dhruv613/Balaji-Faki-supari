@@ -1,9 +1,28 @@
 # Balaji Faki Point — Change Plan (Phase 2 → Phase 3)
 
 - **Date:** 2026-10-19 · **Base:** `dev/antigravity` @ `7587029` · **Inputs:** `CLAUDE_FINAL_REQUIREMENTS.md`, `CLAUDE_PROJECT_AUDIT.md`
-- **Status:** plan only. No source, config, migration or env file has been changed for Phase 3. Awaiting approval.
+- **Status:** APPROVED with corrections (see §0). Phase 3 implementation in progress; progress log at the end of this file.
 - **Rules for execution:** local-only; forward-only migrations; each work package (WP) ends with its checks and its own local commit (no push); existing audit logs, payment records, orders and customers are preserved.
 - Priorities follow the owner's P0/P1/P2 lists. IDs `C-/A-/R-/S-/L-` refer to the requirements file.
+
+---
+
+## 0. Phase 3 decision record (owner approval, 2026-10-19) — overrides anything below that conflicts
+
+**Approved:** WP0–WP10, safe non-policy fixes from WP11, WP12, local commits per verified WP, handoff/plan updates. **Not authorised:** touching the online Supabase project (no migrate/reset/deploy/link), Vercel, GitHub push, real UPI payments, deleting production data, finalising cancellation/refund policy.
+
+1. **Local mandatory.** React + FastAPI + local Supabase Postgres/Auth/Storage. Production MCP removed and CLI link detached (done in WP0; link files preserved outside the repo in the user profile folder `.balaji-faki-prod-link-backup`). Before every migration/reset the target must be verified local (`scripts/check-local-only.mjs` plus a host check in the DB helper scripts). A written production remediation runbook will be prepared but **never executed**.
+2. **Security P0 (replaces the earlier "no `using(true)`" wording).** Remove permissive customer/profile RLS; block customer→admin role escalation; admin UI requires a successful `/api/me`; every backend admin endpoint enforces `OWNER_ADMIN`; no hard-coded proof-signing secret; DB/Storage credentials server-side only. `using (true)` SELECT policies are acceptable for intentionally public data (products, published reviews, shop content). Private-data protection and intended public access are tested **separately** against local Postgres. All privileged functions, role-change triggers and `security definer` functions are reviewed; no migration is called safe until its final permissions are verified on local Postgres.
+3. **Checkout/login (approved UX).** Explicit *Sign in* and *Create account*; a wrong password never creates an account; local registration needs no email confirmation. Public visitors may browse Home, products, product details, reviews, shop, help **and select products / prepare a temporary order draft** (`/order` and `/order/review` stay open). **Authentication is required only when the order is created/submitted**; the draft is preserved and the customer returns to checkout after login. `/my-orders*`, payment pages and `/account` remain protected.
+4. **Shopping UX.** Branding kept; Order Faki / Order Supari prominent; DB-driven images, ingredients, weights, descriptions, prices, reviews; Faki 1 kg = ₹1,000 confirmed, all other prices unapproved development data; five-stage timeline inside Order Details; no standalone Track page.
+5. **Payment workflow.** Separation kept. A screenshot or typed bank-credit reference is **not** proof of settlement. For local development the admin approval path uses clearly labelled **TEST bank-credit evidence** only; duplicate submissions and duplicate verified bank-credit assignments are prevented; nothing is auto-approved or auto-confirmed.
+6. **Expiry/cancellation/refunds — WP11 policy items BLOCKED.** The proposed 30-minute auto-cancel is **withdrawn**. Investigation (WP11a, analysis + design) will distinguish: stock-reservation expiry, payment-verification pending, order cancellation, paid-but-no-proof, late payment evidence, and refund required; an already-paid customer must never lose proof or a recovery route. Until approval: no automatic order cancellation, no change to customer cancel rules, no refund policy changes. A refund is never marked `COMPLETED` without verified actual transfer settlement. Unrelated backend fixes proceed.
+7. **Reviews (approved).** Auto-publish eligible delivered-order reviews, moderate afterwards; one review per order item; admin may hide spam/abuse/private-information/prohibited content with an audit reason; genuine negative reviews stay visible; hidden reviews are excluded from the public average and count but preserved in admin history and audit; multipart photo endpoint and authorised photo access completed.
+8. **Admin.** Navigation stays Dashboard · Price Management · Order Management · Feedback Management. Dashboard shows **only** Products Sold, Net Profit (from verified financial data and cost information; if costs are missing show **"Not configured"**) and Pending Payment Confirmations. Inventory, Customers (read-only), Settings, payment review, delivery and refunds are completed as contextual secondary modules. Reports/Notifications stay hidden (historical data kept). No fake or sample data in operational screens.
+9. **Testing priority.** Real local integration over mocks: migrations + RLS, Auth sign-up/login, public browsing, checkout-with-login-return, server prices, order persistence, private Storage upload, admin approval, separate confirmation, My Orders timeline, reviews + photos, inventory + settings, rejected-payment resubmission. If Docker, Postgres, Auth or Storage is unavailable the integration result is reported as **BLOCKED/NOT TESTED**, never passed.
+10. **Reporting.** After each WP: completed work, files changed, tests passed/failed, next task, blockers.
+
+Section changes caused by this record: §3 steps 1–4 are executed in WP0; WP2 uses the corrected RLS rule; WP4 uses the open-draft model above; WP6 uses auto-publish; WP10 Net Profit shows "Not configured"; **WP11 is split into WP11a (policy-free fixes, allowed) and WP11b (policy-dependent, BLOCKED)**; §6 is a proposal awaiting approval with the 30-minute auto-cancel withdrawn.
 
 ---
 
@@ -218,7 +237,7 @@ Sequence: **WP0 → WP1 → WP2 → WP3** (P0 gate) → WP4–WP9 (customer, can
 - **Tests:** each endpoint's auth (customer 403, anonymous 401), validation, audit rows; partial-PATCH regression; inventory concurrency; dashboard maths with and without costs.
 - **Done when:** every visible admin screen uses real endpoints; no `SAMPLE_*` reachable; main nav still four items.
 
-### WP11 — Cancellation, refund and expiry (P1) · depends on: WP3, §6 approval
+### WP11 — Cancellation, refund and expiry (P1) · **WP11a allowed, WP11b BLOCKED until policy approval** · depends on: WP3
 - Implement the approved §6 policy using existing `Refund` flow and the SQL `cancellation_requests` table (add ORM model if "request" step is approved); reservation expiry job (lazy release on quote/order/admin reads plus a startup background loop), idempotent and row-locked.
 - **Tests:** release exactly once; never expires orders with a submitted/verified proof; refund creation only for verified payments; late-proof behaviour.
 - **Done when:** stock cannot be held indefinitely and every money path has a test.
@@ -289,3 +308,8 @@ Current code lets customers self-cancel up to PACKED; this proposal tightens it.
 5. **Docker:** please start Docker Desktop (Linux engine) before WP1.
 
 Owner-supplied content still needed before go-live (not blocking local work): approved prices and delivery charge, real UPI/QR and receiving account, ingredient/production/manufacturer/shelf-life/safety facts, store photos, decision on the tracked Excel file.
+
+---
+
+## 10. Work-package progress log
+- **WP0 — done (2026-10-19):** `.mcp.json` emptied (production server removed); CLI link files moved outside the repo; `supabase/config.toml` has `project_id = "balaji-faki-local"` and local email confirmation off; `scripts/check-local-only.mjs` added and wired into `scripts/verify-all.mjs` (positive and negative tests passed).
