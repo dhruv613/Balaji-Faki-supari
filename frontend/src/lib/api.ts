@@ -137,6 +137,13 @@ export const PRODUCT_SHELL: Product[] = [
     packSizes: ['250g', '500g', '1kg'],
     prices: { '250g': null, '500g': null, '1kg': null },
   },
+  {
+    type: 'tamaku',
+    name: 'Tamaku',
+    nameGu: 'તમાકુ',
+    packSizes: ['250g', '500g', '1kg'],
+    prices: { '250g': null, '500g': null, '1kg': null },
+  },
 ];
 
 /** Format a number as Indian Rupees */

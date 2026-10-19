@@ -120,6 +120,24 @@ INITIAL_PRODUCTS = (
             ("1kg", "BFP-CHUNO-1KG", 7000, 16000, 50, False),
         ),
     },
+    {
+        "slug": "tamaku",
+        "name": "Tamaku",
+        "name_gu": "તમાકુ",
+        "category": "Tobacco",
+        "description": "",
+        "image_url": "/images/products/balaji-tamaku-sachets.webp",
+        "images": (
+            ("/images/products/balaji-tamaku-sachets.webp", "Balaji Faki Point orange parcel sachets"),
+            ("/images/products/balaji-tamaku-banner.jpg", "Tamaku parcel banner with a single sachet"),
+        ),
+        # DEVELOPMENT placeholder prices and pack sizes only (no owner-confirmed data exists yet).
+        "variants": (
+            ("250g", "BFP-TAMAKU-250G", 4000, 8000, 50, False),
+            ("500g", "BFP-TAMAKU-500G", 7500, 15000, 50, False),
+            ("1kg", "BFP-TAMAKU-1KG", 14000, 28000, 50, False),
+        ),
+    },
 )
 
 

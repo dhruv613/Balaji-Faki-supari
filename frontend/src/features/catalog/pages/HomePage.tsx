@@ -4,8 +4,17 @@ import Modal from '../../../components/common/Modal';
 import { RatingLine } from '../../../components/common/Stars';
 import { useOrder } from '../../../context/OrderContext';
 import { contactDetails, useStoreProfile } from '../../store/storeApi';
+import HeroSlider, { type HeroSlide } from '../components/HeroSlider';
 import ProductDetailsView from '../components/ProductDetailsView';
 import { PackPrices, primaryImage } from '../components/ProductParts';
+
+/** Hero photos, shown in this order. To add or change one, drop the file in public/images/hero and edit this list. */
+const HERO_SLIDES: HeroSlide[] = [
+  { url: '/images/hero/hero-chuno.webp', alt: 'Balaji Chuno sachets' },
+  { url: '/images/hero/hero-faki-box.webp', alt: 'Balaji Faki Point box' },
+  { url: '/images/hero/hero-water-bottle.webp', alt: 'Balaji Faki Point water bottle' },
+  { url: '/images/hero/hero-parcel-sachets.webp', alt: 'Balaji Faki Point orange parcel sachets' },
+];
 
 export default function HomePage() {
   const { products, catalogStatus } = useOrder();
@@ -36,13 +45,7 @@ export default function HomePage() {
           </div>
 
           <div className="hero__photo">
-            <img
-              src="/images/supari-reference.png"
-              alt="Bowl of sliced supari"
-              width="700"
-              height="621"
-              loading="eager"
-            />
+            <HeroSlider slides={HERO_SLIDES} />
           </div>
         </div>
       </section>

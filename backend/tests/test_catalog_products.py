@@ -42,7 +42,7 @@ class CatalogProductsTests(unittest.TestCase):
         with db_session.SessionLocal() as db:
             seed_development_data(db)
             products = {p["type"]: p for p in list_public_products(db)}
-            self.assertEqual(list(products), ["faki", "supari", "mitho-mavo", "water", "chuno"])
+            self.assertEqual(list(products), ["faki", "supari", "mitho-mavo", "water", "chuno", "tamaku"])  # newest product last
             self.assertEqual(products["mitho-mavo"]["packSizes"], ["250g", "500g", "1kg"])
             self.assertEqual(products["water"]["packSizes"], ["1l"])
             self.assertEqual(list(products["water"]["prices"]), ["1l"])
@@ -63,6 +63,13 @@ class CatalogProductsTests(unittest.TestCase):
             self.assertEqual(products["water"]["information"]["ingredients"], "")
             self.assertEqual(products["chuno"]["packSizes"], ["250g", "500g", "1kg"])
             self.assertEqual(products["chuno"]["description"], "")  # nothing invented for Chuno either
+            self.assertEqual(products["tamaku"]["category"], "Tobacco")
+            self.assertEqual(products["tamaku"]["description"], "")
+            self.assertEqual(products["tamaku"]["priceConfirmed"], {"250g": False, "500g": False, "1kg": False})
+            self.assertEqual(
+                [i["url"] for i in get_public_product("tamaku", db)["images"]],
+                ["/images/products/balaji-tamaku-sachets.webp", "/images/products/balaji-tamaku-banner.jpg"],
+            )
             self.assertEqual(products["chuno"]["information"]["ingredients"], "")
             self.assertEqual(products["chuno"]["priceConfirmed"], {"250g": False, "500g": False, "1kg": False})
             self.assertEqual(
