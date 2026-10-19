@@ -53,7 +53,10 @@ class CatalogProductsTests(unittest.TestCase):
                 [i["url"] for i in get_public_product("water", db)["images"]],
                 ["/images/products/balaji-water-bottle.webp", "/images/products/balaji-water-label.jpg"],
             )
-            # Faki and Supari are unchanged.
+            # Faki: real photos (bundle first, banner last). Supari: its bowl photo first, then the arecanut packet photos.
+            self.assertEqual([i["url"] for i in get_public_product("faki", db)["images"]], ["/images/products/balaji-faki-bundle.jpg", "/images/products/balaji-faki-box.webp", "/images/products/balaji-faki-banner.jpg"])
+            self.assertEqual([i["url"] for i in get_public_product("supari", db)["images"]], ["/images/supari-reference.png", "/images/products/balaji-supari-packet-front.webp", "/images/products/balaji-supari-packet-back.webp"])
+            # Faki and Supari keep their pack sizes.
             self.assertEqual(products["faki"]["packSizes"], ["250g", "500g", "1kg"])
             self.assertEqual(products["supari"]["imageUrl"], "/images/supari-reference.png")
             self.assertEqual(products["faki"]["information"]["ingredients"], "")  # nothing invented for any product

@@ -37,11 +37,12 @@ INITIAL_PRODUCTS = (
         "name_gu": "ફાકી",
         "category": "Faki",
         "description": "",
-        "image_url": "/images/products/balaji-faki-packet-front.webp",
-        # Bundled gallery (front, back). Alt text only describes the photo: no weight, ingredients or claims.
+        "image_url": "/images/products/balaji-faki-bundle.jpg",
+        # Bundled gallery: bundle first, box, promotional banner last. Alt text only describes the photo: no weight, ingredients or claims.
         "images": (
-            ("/images/products/balaji-faki-packet-front.webp", "Faki packet, front"),
-            ("/images/products/balaji-faki-packet-back.webp", "Faki packet, back"),
+            ("/images/products/balaji-faki-bundle.jpg", "Faki sachets tied in a bundle"),
+            ("/images/products/balaji-faki-box.webp", "Balaji Faki Point box"),
+            ("/images/products/balaji-faki-banner.jpg", "Balaji Faki Point promotional banner"),
         ),
         "variants": (
             ("250g", "BFP-FAKI-250G", 10000, 25000, 50, False),
@@ -56,6 +57,11 @@ INITIAL_PRODUCTS = (
         "category": "Supari",
         "description": "",
         "image_url": "/images/supari-reference.png",
+        "images": (
+            ("/images/supari-reference.png", "Bowl of sliced supari"),
+            ("/images/products/balaji-supari-packet-front.webp", "Supari packet, front"),
+            ("/images/products/balaji-supari-packet-back.webp", "Supari packet, back"),
+        ),
         "variants": (
             ("250g", "BFP-SUPARI-250G", 9000, 20000, 50, False),
             ("500g", "BFP-SUPARI-500G", 18000, 40000, 50, False),
