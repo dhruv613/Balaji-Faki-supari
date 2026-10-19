@@ -130,7 +130,7 @@ Everything runs on this machine. **Never** run `supabase link`, `db push`, `--li
 
 ```powershell
 # 0. Docker Desktop (Linux engine) must be running.
-supabase start                         # local Postgres 54322, Auth/API 54321, Storage; prints local keys (do not paste them anywhere public)
+supabase start                         # local Postgres 55322, Auth/API 55321, Storage; prints local keys (do not paste them anywhere public)
 supabase db reset                      # LOCAL database only: applies supabase/migrations in order
 # Put the local keys from `supabase status` into backend/.env and frontend/.env (they are gitignored).
 python -m pip install -r backend/requirements.txt
@@ -161,7 +161,7 @@ Keep your existing `.env` / `frontend/.env` or copy `.env.example` to `.env`:
 
 ```ini
 VITE_API_BASE_URL=http://127.0.0.1:8000/api
-VITE_SUPABASE_URL=http://127.0.0.1:54321
+VITE_SUPABASE_URL=http://127.0.0.1:55321
 VITE_SUPABASE_PUBLISHABLE_KEY=
 VITE_SUPABASE_ANON_KEY=
 VITE_SUPPORT_WHATSAPP=918000961030

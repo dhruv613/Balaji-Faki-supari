@@ -99,4 +99,40 @@ alter table public.bank_credits drop constraint if exists bank_credits_evidence_
 alter table public.bank_credits
   add constraint bank_credits_evidence_kind_check check (evidence_kind in ('BANK_STATEMENT', 'LOCAL_TEST'));
 
+-- 7. Found by the local PostgreSQL run: policies for `anon` must not call private.is_owner_admin() (anon has no access to the
+--    private schema, so the whole query failed). Public rows get anon-safe policies; the admin branch stays authenticated-only.
+drop policy if exists "products_public_select" on public.products;
+create policy "products_public_select"
+  on public.products for select
+  to anon
+  using (is_active = true); -- intentionally public catalogue rows
+create policy "products_authenticated_select"
+  on public.products for select
+  to authenticated
+  using (is_active = true or (select private.is_owner_admin()));
+
+drop policy if exists "reviews_select_published_or_own_or_admin" on public.reviews;
+create policy "reviews_select_published_public"
+  on public.reviews for select
+  to anon
+  using (moderation_status = 'PUBLISHED'); -- column grants hide reviewer identity and moderation notes
+create policy "reviews_select_published_or_own_or_admin"
+  on public.reviews for select
+  to authenticated
+  using (
+    moderation_status = 'PUBLISHED'
+    or user_id = (select auth.uid())
+    or (select private.is_owner_admin())
+  );
+
+-- 8. Found by the local PostgreSQL run: the own-profile UPDATE policy selected from user_profiles inside its own WITH CHECK
+--    ("infinite recursion detected in policy"), so customers could not save their profile. Role and is_active are protected
+--    by column grants (migration ...02), by this migration's trigger, and by the check below that admins only may change rows.
+drop policy if exists "user_profiles_update_own" on public.user_profiles;
+create policy "user_profiles_update_own"
+  on public.user_profiles for update
+  to authenticated
+  using ((select auth.uid()) = id or (select private.is_owner_admin()))
+  with check ((select auth.uid()) = id or (select private.is_owner_admin()));
+
 commit;

@@ -120,7 +120,7 @@ def run_checks(conn: psycopg.Connection) -> None:
     ok, rows = attempt(conn, "select proname from pg_proc p join pg_namespace n on n.oid=p.pronamespace "
                              "where n.nspname='public' and proname in ('simple_auth_login','simple_auth_update_profile')")
     record("structure", "legacy password RPCs removed", ok and not rows)
-    ok, rows = attempt(conn, "select policyname from pg_policies where schemaname='public' and policyname like '%simple_auth%'")
+    ok, rows = attempt(conn, "select policyname from pg_policies where schemaname='public' and policyname like '%%simple_auth%%'")
     record("structure", "no simple_auth policies", ok and not rows)
     ok, rows = attempt(conn, "select id, public from storage.buckets where id in "
                              "('payment-proofs','review-photos','payment-qr','product-images','store-photos')")
@@ -146,7 +146,8 @@ def run_checks(conn: psycopg.Connection) -> None:
         cur.execute("select id from public.products where slug='faki'")
         pid = cur.fetchone()[0]
         cur.execute("insert into public.product_variants (product_id, pack_size, sku, cost_price_paise, price_paise, total_stock) "
-                    "values (%s,'1kg','CHK-FAKI-1KG',60000,100000,5) on conflict (sku) do nothing", (pid,))
+                    "values (%s,'1kg','CHK-FAKI-1KG',60000,100000,5) on conflict (product_id, pack_size) do update set "
+                    "cost_price_paise=60000, price_paise=100000, total_stock=5", (pid,))
         cur.execute("insert into public.customers (user_id, full_name, phone) values (%s,'Test User','+919999999999') "
                     "on conflict (user_id) do nothing", (cust,))
         cur.execute("insert into public.customers (user_id, full_name, phone) values (%s,'Other','+919999999998') "
@@ -176,7 +177,7 @@ def run_checks(conn: psycopg.Connection) -> None:
     # --- public access (intended) -----------------------------------------------------------------
     ok, rows = attempt(conn, "select slug from public.products")
     record(PUB, "anon can read products", ok and any(r[0] == "faki" for r in rows))
-    ok, rows = attempt(conn, "select price_paise from public.product_variants where sku='CHK-FAKI-1KG'")
+    ok, rows = attempt(conn, "select price_paise from public.product_variants where pack_size='1kg' and product_id=(select id from public.products where slug='faki')")
     record(PUB, "anon can read variant selling price", ok and rows == [(100000,)])
     ok, _ = attempt(conn, "select store_name, shop_intro from public.store_settings")
     record(PUB, "anon can read public shop fields", ok)
