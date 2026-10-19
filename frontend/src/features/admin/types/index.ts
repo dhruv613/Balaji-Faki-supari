@@ -743,36 +743,49 @@ export interface AdminNotificationsResponse {
 /*  15. MODULE 12 — STORE SETTINGS                                    */
 /* ================================================================== */
 
+export interface AdminStorePhoto {
+  id: string;
+  url: string;
+  caption: string;
+}
+
+/** Shop details, payment destination and delivery rules, all stored in the database. */
 export interface AdminStoreSettings {
   storeName: string;
-  logoUrl: string;
+  storeNameGu?: string;
+  tagline: string;
   storeAddress: string;
   phoneNumber: string;
+  supportWhatsapp: string;
   supportEmail: string;
   businessHours: string;
+  shopIntro: string;
+  productionInfo: string;
+  providerManufacturer: string;
+  packagingInfo: string;
+  photos: AdminStorePhoto[];
   officialUpiId: string;
   officialPayeeName: string;
+  /** Short-lived signed path for the private payment QR; empty when none is uploaded. */
   officialUpiQrImageUrl: string;
   deliveryCharges: number | null;
+  freeDeliveryThreshold: number | null;
   serviceablePinCodes: string[];
   lowStockThreshold: number;
   stockReservationExpiryMinutes: number;
-  orderCancellationPolicy: string;
-  refundPolicy: string;
-  emailNotificationPreferences: {
-    sendCustomerOrderUpdates: boolean;
-    sendCustomerPaymentReceipts: boolean;
-    sendAdminNewOrderAlerts: boolean;
-    sendAdminLowStockAlerts: boolean;
-  };
-  adminAccount: {
-    email: string;
-    role: UserRole;
-    lastUpdatedAt?: string;
-  };
+  /** null until the owner confirms payment, delivery and PIN settings; checkout stays closed outside local mode. */
+  businessSettingsConfirmedAt: string | null;
+  /** true while the UPI ID is a LOCAL TEST value. */
+  paymentIsLocalTest: boolean;
+  adminAccount: { email: string; role: UserRole };
 }
 
-export interface UpdateAdminSettingsRequest extends Partial<Omit<AdminStoreSettings, 'adminAccount'>> {
-  /** Required when modifying officialUpiId, officialPayeeName, or officialUpiQrImageUrl */
-  adminCurrentPasswordForSensitiveChange?: string;
-}
+export type UpdateAdminSettingsRequest = Partial<
+  Pick<
+    AdminStoreSettings,
+    | 'storeName' | 'storeNameGu' | 'tagline' | 'storeAddress' | 'phoneNumber' | 'supportWhatsapp' | 'supportEmail'
+    | 'businessHours' | 'shopIntro' | 'productionInfo' | 'providerManufacturer' | 'packagingInfo'
+    | 'officialUpiId' | 'officialPayeeName' | 'deliveryCharges' | 'freeDeliveryThreshold' | 'serviceablePinCodes'
+    | 'lowStockThreshold' | 'stockReservationExpiryMinutes'
+  >
+>;

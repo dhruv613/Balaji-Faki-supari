@@ -655,6 +655,30 @@ assert.doesNotMatch(unconfigured, /₹0/);
 assert.match(view({ ...liveData, netProfit: { ...liveData.netProfit, note: 'Includes products whose prices or costs are development data not yet approved by the owner.' } }), /development data/);
 assert.match(view({ ...liveData, pendingPaymentConfirmations: [] }), /No payment screenshots are waiting/);
 
+// Settings: pure helpers - only changed fields are sent, PIN codes validated, nothing saved from placeholders.
+const SettingsMod = load('src/features/admin/pages/AdminSettingsPage.tsx', { ...commonPageStubs, '../api': adminApi });
+const baseSettings = {
+  storeName: 'Balaji Faki Point', tagline: 'Fresh', storeAddress: 'Rajkot', phoneNumber: '+91 80009 61030', supportWhatsapp: '918000961030',
+  supportEmail: '', businessHours: 'Call the store', shopIntro: '', productionInfo: '', providerManufacturer: '', packagingInfo: '',
+  photos: [], officialUpiId: 'local-test@upi', officialPayeeName: 'LOCAL TEST - do not pay', officialUpiQrImageUrl: '',
+  deliveryCharges: 0, freeDeliveryThreshold: null, serviceablePinCodes: ['360001', '360005'], lowStockThreshold: 10,
+  stockReservationExpiryMinutes: 30, businessSettingsConfirmedAt: null, paymentIsLocalTest: true, adminAccount: { email: 'o@x.test', role: 'OWNER_ADMIN' },
+};
+const baseForm = SettingsMod.toForm(baseSettings);
+assert.equal(JSON.stringify(SettingsMod.changedSettings(baseSettings, baseForm)), '{}', 'unchanged form sends nothing');
+assert.equal(JSON.stringify(SettingsMod.changedSettings(baseSettings, { ...baseForm, tagline: 'Fresher' })), '{"tagline":"Fresher"}');
+assert.equal(JSON.stringify(SettingsMod.changedSettings(baseSettings, { ...baseForm, deliveryCharges: '40', freeDeliveryThreshold: '1500' })), '{"deliveryCharges":40,"freeDeliveryThreshold":1500}');
+assert.equal(JSON.stringify(SettingsMod.changedSettings(baseSettings, { ...baseForm, serviceablePinCodes: '360005, 360001' })), '{"serviceablePinCodes":["360005","360001"]}');
+for (const bad of [{ serviceablePinCodes: '123' }, { serviceablePinCodes: '360001, 360001' }, { deliveryCharges: '-5' }, { deliveryCharges: 'abc' }, { lowStockThreshold: '1.5' }]) {
+  assert.ok('error' in SettingsMod.changedSettings(baseSettings, { ...baseForm, ...bad }), JSON.stringify(bad));
+}
+assert.deepEqual(JSON.parse(JSON.stringify(SettingsMod.parsePinCodes('360001  360002,360003'))), ['360001', '360002', '360003']);
+const settingsSource = readFileSync(new URL('../src/features/admin/pages/AdminSettingsPage.tsx', import.meta.url), 'utf8');
+assert.doesNotMatch(settingsSource, /SAMPLE_|okbizaxis|dp334218|supabase\.auth\.updateUser/, 'no sample values or client-side credential handling');
+const settingsHtml = renderToStaticMarkup(React.createElement(MemoryRouter, null, React.createElement(SettingsMod.default)));
+assert.match(settingsHtml, /No sample values are shown/);
+assert.doesNotMatch(settingsHtml, /Save changes/, 'nothing can be saved before the server answered');
+
 const pricesHtml = renderToStaticMarkup(
   React.createElement(MemoryRouter, { initialEntries: ['/admin/prices'] }, React.createElement(PricesPage)),
 );

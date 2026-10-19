@@ -449,12 +449,42 @@ export async function getAdminSettings(): Promise<AdminStoreSettings> {
   return apiFetch<AdminStoreSettings>(resolveApiPath('/api/admin/settings'));
 }
 
-/** PATCH /api/admin/settings */
+/** PATCH /api/admin/settings - only the fields sent are changed */
 export async function updateAdminSettings(
   payload: UpdateAdminSettingsRequest,
 ): Promise<AdminStoreSettings> {
   return apiFetch<AdminStoreSettings>(resolveApiPath('/api/admin/settings'), {
     method: 'PATCH',
     body: JSON.stringify(payload),
+  });
+}
+
+/** POST /api/admin/settings/confirm - the owner attests that payment, delivery and PIN settings are real */
+export async function confirmBusinessSettings(note?: string): Promise<AdminStoreSettings> {
+  return apiFetch<AdminStoreSettings>(resolveApiPath('/api/admin/settings/confirm'), {
+    method: 'POST',
+    body: JSON.stringify({ confirm: true, note: note?.trim() || undefined }),
+  });
+}
+
+/** POST /api/admin/settings/qr - replaces the private payment QR (withdraws confirmation) */
+export async function uploadPaymentQr(file: File): Promise<AdminStoreSettings> {
+  const form = new FormData();
+  form.append('qr', file);
+  return apiFetch<AdminStoreSettings>(resolveApiPath('/api/admin/settings/qr'), { method: 'POST', body: form });
+}
+
+/** POST /api/admin/settings/photos */
+export async function addStorePhoto(file: File, caption: string): Promise<AdminStoreSettings> {
+  const form = new FormData();
+  form.append('photo', file);
+  form.append('caption', caption);
+  return apiFetch<AdminStoreSettings>(resolveApiPath('/api/admin/settings/photos'), { method: 'POST', body: form });
+}
+
+/** DELETE /api/admin/settings/photos/{id} */
+export async function deleteStorePhoto(photoId: string): Promise<AdminStoreSettings> {
+  return apiFetch<AdminStoreSettings>(resolveApiPath(`/api/admin/settings/photos/${encodeURIComponent(photoId)}`), {
+    method: 'DELETE',
   });
 }

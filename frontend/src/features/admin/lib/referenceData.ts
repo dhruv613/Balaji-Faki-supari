@@ -24,7 +24,6 @@ import type {
   AdminRefundRecord,
   AdminNotificationLog,
   NotificationTemplateItem,
-  AdminStoreSettings,
   AdminAuditEntry,
 } from '../types';
 
@@ -1063,35 +1062,6 @@ export const SAMPLE_NOTIFICATION_TEMPLATES: NotificationTemplateItem[] = [
     enabled: true,
   },
 ];
-
-export const SAMPLE_ADMIN_SETTINGS: AdminStoreSettings = {
-  storeName: 'Balaji Faki Point',
-  logoUrl: '/images/balaji-logo.png',
-  storeAddress: 'Riddhi Siddhi Complex, University Rd. nr. Bhagat Singh Garden, Rajkot, Gujarat 360005',
-  phoneNumber: '+91 80009 61030',
-  supportEmail: 'support@balajifakipoint.in',
-  businessHours: 'Pending store confirmation (Contact +91 80009 61030)',
-  officialUpiId: '8000961030@okbizaxis',
-  officialPayeeName: 'Balaji Pan',
-  officialUpiQrImageUrl: '',
-  deliveryCharges: null,
-  serviceablePinCodes: ['360001', '360002', '360003', '360004', '360005', '360006', '360007'],
-  lowStockThreshold: 10,
-  stockReservationExpiryMinutes: 30,
-  orderCancellationPolicy: 'Orders may be cancelled before packing begins. Once packed or dispatched, cancellations require store approval.',
-  refundPolicy: 'Eligible refunds for verified payments are processed manually to the original source account after bank credit verification.',
-  emailNotificationPreferences: {
-    sendCustomerOrderUpdates: true,
-    sendCustomerPaymentReceipts: true,
-    sendAdminNewOrderAlerts: true,
-    sendAdminLowStockAlerts: true,
-  },
-  adminAccount: {
-    email: 'owner@balajifakipoint.in',
-    role: 'OWNER_ADMIN',
-    lastUpdatedAt: '17 Oct 2026',
-  },
-};
 
 export const SAMPLE_AUDIT_LOGS: AdminAuditEntry[] = [
   {
