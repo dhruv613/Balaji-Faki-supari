@@ -300,6 +300,10 @@ export interface ApprovePaymentRequest {
   verifiedUtr: string;
   transactionStatus: 'CREDITED';
   bankCreditReference: string;
+  /** BANK_STATEMENT = found on the real bank statement; LOCAL_TEST = labelled development evidence only. */
+  evidenceKind: 'BANK_STATEMENT' | 'LOCAL_TEST';
+  /** The owner attests the credit was found on the actual bank statement (required for BANK_STATEMENT). */
+  bankStatementChecked?: boolean;
   notes?: string;
 }
 
@@ -561,6 +565,8 @@ export interface AdminReviewRecord {
   adminReply?: string;
   adminRepliedAt?: string;
   moderatedBy?: string;
+  /** Why the review is hidden (spam, abuse, private information, prohibited content). */
+  moderationReason?: string | null;
   /** Short-lived FastAPI proxy paths for review photo moderation. */
   photoUrls?: string[];
 }
@@ -573,6 +579,8 @@ export interface AdminReviewsQueryParams extends PaginationParams {
 export interface UpdateAdminReviewRequest {
   moderationStatus?: ReviewModerationStatus;
   adminReply?: string;
+  /** Required (3+ characters) when hiding a review; recorded in the audit log. */
+  moderationReason?: string;
 }
 
 /* ================================================================== */

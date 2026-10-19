@@ -2059,29 +2059,44 @@ def reject_admin_payment(
 def list_admin_orders(
     status: str | None = Query(default=None),
     payment_status: str | None = Query(default=None, alias="paymentStatus"),
-    search: str | None = Query(default=None),
+    search: str | None = Query(default=None, max_length=100),
+    date_from: str | None = Query(default=None, alias="dateFrom", pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    date_to: str | None = Query(default=None, alias="dateTo", pattern=r"^\d{4}-\d{2}-\d{2}$"),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, alias="pageSize", ge=1, le=200),
     _admin: AuthenticatedPrincipal = Depends(get_owner_admin_principal),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    stmt = select(Order).order_by(Order.created_at.desc())
+    """Orders with their items, payment details and timeline in ONE response (no per-order detail calls)."""
+    stmt = select(Order)
     if status and status != "ALL":
         stmt = stmt.where(Order.status == status)
     if payment_status and payment_status != "ALL":
         stmt = stmt.where(Order.payment_status == payment_status)
-    orders = db.scalars(stmt).all()
-    items = [_serialize_admin_order_summary(db, o) for o in orders]
     if search and search.strip():
-        q = search.strip().lower()
-        items = [
-            it
-            for it in items
-            if q in f"{it['orderNumber']} {it['customerName']} {it['phone']} {it['pinCode']}".lower()
-        ]
-    total = len(items)
+        needle = f"%{search.strip().lower()}%"
+        stmt = stmt.where(
+            or_(
+                func.lower(Order.order_number).like(needle),
+                func.lower(Order.shipping_name).like(needle),
+                Order.shipping_phone.like(f"%{search.strip()}%"),
+                Order.shipping_pin_code.like(f"%{search.strip()}%"),
+            )
+        )
+    try:
+        if date_from:
+            stmt = stmt.where(Order.created_at >= datetime.fromisoformat(date_from).replace(tzinfo=timezone.utc))
+        if date_to:
+            end = datetime.fromisoformat(date_to).replace(tzinfo=timezone.utc) + timedelta(days=1)
+            stmt = stmt.where(Order.created_at < end)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Dates must be valid YYYY-MM-DD values.") from exc
+    total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+    orders = db.scalars(
+        stmt.order_by(Order.created_at.desc()).offset((page - 1) * page_size).limit(page_size)
+    ).all()
     return {
-        "items": items,
+        "items": [_serialize_admin_order_detail(db, o) for o in orders],
         "total": total,
         "page": page,
         "pageSize": page_size,

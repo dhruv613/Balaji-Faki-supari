@@ -5,7 +5,6 @@ import { env } from '../../../lib/env';
 import { formatINR, formatPackSize, getErrorMessage } from '../../../lib/api';
 import {
   getAdminOrders,
-  getAdminOrderById,
   confirmAdminOrder,
   updateAdminOrderStatus,
 } from '../api';
@@ -143,16 +142,13 @@ export default function AdminOrdersPage() {
       paymentStatus: paymentFilter,
       dateFrom: dateFrom || undefined,
       dateTo: dateTo || undefined,
+      pageSize: 200,
     })
-      .then(async (res) => {
+      .then((res) => {
+        // One request returns every order with its items, payment details and timeline.
         if (!active) return;
-        const detailed = await Promise.all(
-          res.items.map((item) => getAdminOrderById(item.id).catch(() => null)),
-        );
-        if (active) {
-          setOrders(detailed.filter((item): item is AdminOrderDetail => item !== null));
-          setIsLive(true);
-        }
+        setOrders(res.items);
+        setIsLive(true);
       })
       .catch((err) => {
         if (active) setError(getErrorMessage(err));

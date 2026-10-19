@@ -53,9 +53,9 @@ export default function AdminPaymentsPage() {
   const [selectedPayment, setSelectedPayment] = useState<AdminPaymentSubmission | null>(null);
 
   // Bank credit verification form state
-  const [receivingBankAccount, setReceivingBankAccount] = useState(
-    'Axis Bank · 8000961030@okbizaxis',
-  );
+  const [receivingBankAccount, setReceivingBankAccount] = useState('');
+  const [evidenceKind, setEvidenceKind] = useState<'BANK_STATEMENT' | 'LOCAL_TEST'>('BANK_STATEMENT');
+  const [statementChecked, setStatementChecked] = useState(false);
   const [verifiedAmountInput, setVerifiedAmountInput] = useState('');
   const [verifiedUtrInput, setVerifiedUtrInput] = useState('');
   const [bankCreditRefInput, setBankCreditRefInput] = useState('');
@@ -84,6 +84,9 @@ export default function AdminPaymentsPage() {
       .then((res) => {
         if (active) {
           setPayments(res.items);
+          const focus = searchParams.get('payment');
+          const focused = focus ? res.items.find((item) => item.id === focus) : undefined;
+          if (focused) openPaymentInspector(focused);
           setIsLive(true);
         }
       })
@@ -105,6 +108,8 @@ export default function AdminPaymentsPage() {
       payment.expectedAmount !== null ? String(payment.expectedAmount) : '',
     );
     setBankCreditRefInput(payment.bankCredit?.bankCreditReference ?? '');
+    setEvidenceKind('BANK_STATEMENT');
+    setStatementChecked(false);
     setVerificationNotes('');
     setRejectionReason(payment.rejectionReason ?? '');
     setValidationError('');
@@ -163,8 +168,19 @@ export default function AdminPaymentsPage() {
       verifiedUtr: verifiedUtrInput.trim(),
       transactionStatus: transactionStatus === 'CREDITED' ? 'CREDITED' : ('MISMATCH' as 'CREDITED'),
       bankCreditReference: bankCreditRefInput.trim(),
+      evidenceKind,
+      bankStatementChecked: evidenceKind === 'BANK_STATEMENT' ? statementChecked : undefined,
       notes: verificationNotes.trim() || undefined,
     };
+
+    if (evidenceKind === 'BANK_STATEMENT' && !statementChecked) {
+      setValidationError('Confirm that you found this credit on the actual bank statement. A screenshot or a typed reference is not proof of settlement.');
+      return;
+    }
+    if (evidenceKind === 'LOCAL_TEST' && !approvalPayload.bankCreditReference.toUpperCase().startsWith('TEST-')) {
+      setValidationError('LOCAL TEST evidence must use a reference that starts with TEST-.');
+      return;
+    }
 
     const validation = validatePaymentApproval({
       currentPaymentStatus: selectedPayment.paymentStatus,
@@ -537,12 +553,34 @@ export default function AdminPaymentsPage() {
                 </div>
               </div>
 
+              <fieldset style={{ marginBottom: 14 }} disabled={selectedPayment.paymentStatus !== 'UNDER_REVIEW' || busy}>
+                <legend>Evidence of settlement</legend>
+                <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontWeight: 400 }}>
+                  <input type="radio" name="evidence-kind" checked={evidenceKind === 'BANK_STATEMENT'} onChange={() => setEvidenceKind('BANK_STATEMENT')} />
+                  <span>Real bank statement. The credit appears in the receiving account.</span>
+                </label>
+                {!env.isProd && (
+                  <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontWeight: 400 }}>
+                    <input type="radio" name="evidence-kind" checked={evidenceKind === 'LOCAL_TEST'} onChange={() => setEvidenceKind('LOCAL_TEST')} />
+                    <span>LOCAL TEST evidence (development only, reference must start with TEST-). No real payment exists.</span>
+                  </label>
+                )}
+                {evidenceKind === 'BANK_STATEMENT' ? (
+                  <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontWeight: 600, marginTop: 8 }}>
+                    <input type="checkbox" checked={statementChecked} onChange={(e) => setStatementChecked(e.target.checked)} />
+                    <span>I found this credit on the actual bank statement. I am not relying on the customer screenshot or a typed reference alone.</span>
+                  </label>
+                ) : (
+                  <Notice tone="warning" title="TEST evidence">This approval is recorded as LOCAL TEST evidence and is rejected by the server outside local development.</Notice>
+                )}
+              </fieldset>
+
               <div style={{ marginBottom: 14 }}>
                 <label htmlFor="verify-bank-ref">Bank Credit Reference / Statement Entry ID</label>
                 <input
                   id="verify-bank-ref"
                   className="input"
-                  placeholder="e.g. AXIS-CR-20261015-8841"
+                  placeholder={evidenceKind === 'LOCAL_TEST' ? 'TEST-CR-0001' : 'Reference shown on the bank statement'}
                   value={bankCreditRefInput}
                   onChange={(e) => setBankCreditRefInput(e.target.value)}
                   disabled={selectedPayment.paymentStatus !== 'UNDER_REVIEW' || busy}

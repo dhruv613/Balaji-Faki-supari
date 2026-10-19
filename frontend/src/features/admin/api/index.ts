@@ -100,8 +100,8 @@ export async function getAdminDashboard(): Promise<AdminDashboardResponse> {
 /** GET /api/admin/orders */
 export async function getAdminOrders(
   params?: AdminOrdersQueryParams,
-): Promise<PaginatedResponse<AdminOrderSummary>> {
-  return apiFetch<PaginatedResponse<AdminOrderSummary>>(
+): Promise<PaginatedResponse<AdminOrderDetail>> {
+  return apiFetch<PaginatedResponse<AdminOrderDetail>>(
     `${resolveApiPath('/api/admin/orders')}${buildQueryString(params)}`,
   );
 }

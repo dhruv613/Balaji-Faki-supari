@@ -37,8 +37,6 @@ import AdminDeliveryPage from '../features/admin/pages/AdminDeliveryPage';
 import AdminCustomersPage from '../features/admin/pages/AdminCustomersPage';
 import AdminReviewsPage from '../features/admin/pages/AdminReviewsPage';
 import AdminRefundsPage from '../features/admin/pages/AdminRefundsPage';
-import AdminReportsPage from '../features/admin/pages/AdminReportsPage';
-import AdminNotificationsPage from '../features/admin/pages/AdminNotificationsPage';
 import AdminSettingsPage from '../features/admin/pages/AdminSettingsPage';
 
 export function AppRouter() {
@@ -89,9 +87,10 @@ export function AppRouter() {
         <Route path="customers" element={<AdminCustomersPage />} />
         <Route path="reviews" element={<AdminReviewsPage />} />
         <Route path="refunds" element={<AdminRefundsPage />} />
-        <Route path="reports" element={<AdminReportsPage />} />
-        <Route path="notifications" element={<AdminNotificationsPage />} />
         <Route path="settings" element={<AdminSettingsPage />} />
+        {/* Reports and Notifications are hidden until built; their page files and database history are kept. */}
+        <Route path="reports" element={<Navigate to="/admin/dashboard" replace />} />
+        <Route path="notifications" element={<Navigate to="/admin/dashboard" replace />} />
       </Route>
 
       {/* ========== 404 fallback ========== */}
