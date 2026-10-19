@@ -22,7 +22,7 @@ type ProductFilter = 'all' | ReviewProduct;
 const EMPTY_SUMMARY: ReviewSummary = { average: null, count: 0, distribution: { '1': 0, '2': 0, '3': 0, '4': 0, '5': 0 } };
 
 const MAX_REVIEW_PHOTOS = 5;
-const MAX_REVIEW_PHOTO_BYTES = 5 * 1024 * 1024;
+const MAX_REVIEW_PHOTO_BYTES = 4 * 1024 * 1024; // the host rejects request bodies above 4.5 MB, so all photos together share 4 MB
 const REVIEW_PHOTO_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 
 export function validateReviewText(reviewText: string): string | null {
@@ -35,8 +35,9 @@ export function validateReviewPhotos(files: readonly Pick<File, 'name' | 'size' 
     const name = file.name || 'A selected photo';
     if (!REVIEW_PHOTO_TYPES.has(file.type)) return `${name} must be a JPG, PNG, or WEBP image.`;
     if (file.size === 0) return `${name} is empty. Choose a photo with image data.`;
-    if (file.size > MAX_REVIEW_PHOTO_BYTES) return `${name} is larger than 5 MB.`;
+    if (file.size > MAX_REVIEW_PHOTO_BYTES) return `${name} is larger than 4 MB.`;
   }
+  if (files.reduce((sum, file) => sum + file.size, 0) > MAX_REVIEW_PHOTO_BYTES) return 'Your photos together must be smaller than 4 MB.';
   return null;
 }
 
@@ -229,7 +230,7 @@ export default function CustomerReviewsPage() {
           <label htmlFor="review-text">Your review</label>
           <textarea id="review-text" className="input" value={reviewText} onChange={(event) => setReviewText(event.target.value)} maxLength={2000} placeholder="What did you like? What can we do better?" required aria-invalid={!!validateReviewText(reviewText)} />
           <label htmlFor="review-photos" style={{ marginTop: 16 }}>Photos (optional)</label>
-          <p id="review-photos-help" className="text-small text-secondary" style={{ margin: '4px 0 8px' }}>Add up to 5 JPG, PNG, or WEBP photos. Each photo must be 5 MB or smaller.</p>
+          <p id="review-photos-help" className="text-small text-secondary" style={{ margin: '4px 0 8px' }}>Add up to 5 JPG, PNG, or WEBP photos. Together they must be smaller than 4 MB.</p>
           <input id="review-photos" className="input" type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" multiple aria-describedby="review-photos-help" onChange={handlePhotoSelection} disabled={submitting} />
           {reviewPhotoPreviews.length > 0 && <ul className="review-selected-photos" aria-label="Selected review photos">
             {reviewPhotoPreviews.map(({ file, url }, index) => <li key={`${file.name}-${index}`} className="review-selected-photo">

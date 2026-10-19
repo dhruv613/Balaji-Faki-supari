@@ -183,6 +183,11 @@ class ReviewTests(unittest.TestCase):
             with self.assertRaises(HTTPException) as too_many:
                 submit_customer_review(order.id, 5, "A perfectly long enough review.", [upload() for _ in range(6)], buyer, db)
             self.assertEqual(too_many.exception.status_code, 422)
+            big = PNG + b"\x00" * int(2.5 * 1024 * 1024)  # each photo is under the limit, together they exceed 4 MB (the host's request cap)
+            with self.assertRaises(HTTPException) as too_big_together:
+                submit_customer_review(order.id, 5, "A perfectly long enough review.", [upload("a.png", big), upload("b.png", big)], buyer, db)
+            self.assertEqual(too_big_together.exception.status_code, 422)
+            self.assertIn("together", too_big_together.exception.detail)
             with self.assertRaises(HTTPException) as not_image:
                 submit_customer_review(
                     order.id, 5, "A perfectly long enough review.", [upload("x.png", b"not an image")], buyer, db

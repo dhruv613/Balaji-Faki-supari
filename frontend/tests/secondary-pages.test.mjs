@@ -27,8 +27,12 @@ assert.match(homeSource, /<Modal[\s\S]*<ProductDetailsView/, 'a product card ope
 assert.doesNotMatch(homeSource, /to=\{`\/products\//, 'the home page no longer navigates away to see product details');
 assert.match(readFileSync(new URL('../src/features/catalog/pages/ProductDetailsPage.tsx', import.meta.url), 'utf8'), /ProductDetailsView/, 'the product page shows the same details view');
 
-const { validateReviewText } = loadPage('reviews/pages/CustomerReviewsPage.tsx');
+const { validateReviewText, validateReviewPhotos } = loadPage('reviews/pages/CustomerReviewsPage.tsx');
 assert.ok(validateReviewText('too short'));
+const photo = (size) => ({ name: 'p.png', type: 'image/png', size });
+assert.equal(validateReviewPhotos([photo(1000)]), null);
+assert.match(validateReviewPhotos([photo(4 * 1024 * 1024 + 1)]), /larger than 4 MB/, 'one photo is capped at 4 MB');
+assert.match(validateReviewPhotos([photo(2.5 * 1024 * 1024), photo(2.5 * 1024 * 1024)]), /together must be smaller than 4 MB/, 'all photos share the host request limit');
 assert.equal(validateReviewText('ગુણવત્તા અને પેકિંગ સારું છે.'), null);
 assert.equal(validateReviewText('Very good packing.'), null);
 console.log('Secondary pages: real read-only customers and review validation passed.');

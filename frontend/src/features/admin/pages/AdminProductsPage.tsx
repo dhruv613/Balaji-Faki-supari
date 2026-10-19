@@ -350,7 +350,7 @@ export default function AdminProductsPage() {
               </div>
               <label htmlFor="prod-image-alt" style={{ marginTop: 12 }}>Photo description (for screen readers)</label>
               <input id="prod-image-alt" className="input" value={altText} onChange={(e) => setAltText(e.target.value)} maxLength={255} disabled={busy} />
-              <label htmlFor="prod-image-file">Add a photo (JPG, PNG or WEBP, 5 MB max)</label>
+              <label htmlFor="prod-image-file">Add a photo (JPG, PNG or WEBP, 4 MB max)</label>
               <input id="prod-image-file" className="input" type="file" accept="image/jpeg,image/png,image/webp" disabled={busy} onChange={(e) => void uploadImage(e)} />
             </fieldset>
 

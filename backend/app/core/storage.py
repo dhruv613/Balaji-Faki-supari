@@ -18,8 +18,11 @@ ALLOWED_IMAGE_MIMES: dict[str, str] = {
     "image/png": ".png",
     "image/webp": ".webp",
 }
-MAX_SCREENSHOT_BYTES = 5 * 1024 * 1024  # 5 MB
-MAX_REVIEW_PHOTO_BYTES = 5 * 1024 * 1024  # 5 MB
+# Vercel Functions reject request bodies above 4.5 MB (413 FUNCTION_PAYLOAD_TOO_LARGE), so every upload, and the sum of a
+# review's photos, stays under 4 MB.
+MAX_REQUEST_UPLOAD_BYTES = 4 * 1024 * 1024
+MAX_SCREENSHOT_BYTES = MAX_REQUEST_UPLOAD_BYTES
+MAX_REVIEW_PHOTO_BYTES = MAX_REQUEST_UPLOAD_BYTES
 
 
 class PrivateImageStorageError(RuntimeError):
@@ -38,7 +41,7 @@ class CatalogImageStorageError(PrivateImageStorageError):
     """Catalogue, shop or QR image storage is unavailable or rejected an object."""
 
 
-MAX_CATALOG_IMAGE_BYTES = 5 * 1024 * 1024
+MAX_CATALOG_IMAGE_BYTES = MAX_REQUEST_UPLOAD_BYTES
 MAX_QR_IMAGE_BYTES = 2 * 1024 * 1024
 
 
@@ -63,7 +66,7 @@ def _validate_image_upload(
     if not content:
         raise ValueError(f"The {label} file is empty.")
     if len(content) > max_bytes:
-        raise ValueError(f"{label.capitalize()} must be smaller than 5 MB.")
+        raise ValueError(f"{label.capitalize()} must be smaller than {max_bytes // (1024 * 1024)} MB.")
 
     normalized_mime = (declared_content_type or "").split(";")[0].strip().lower()
     if normalized_mime not in ALLOWED_IMAGE_MIMES:

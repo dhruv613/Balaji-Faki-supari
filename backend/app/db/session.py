@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Generator
 from pathlib import Path
 from typing import Any
@@ -9,7 +10,7 @@ from typing import Any
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy.pool import StaticPool
+from sqlalchemy.pool import NullPool, StaticPool
 
 from ..core.config import settings
 from .models import Base
@@ -21,10 +22,19 @@ _DEFAULT_SQLITE_PATH = _BACKEND_DIR / "balaji_faki_local.db"
 def resolve_database_url(explicit_url: str | None = None) -> str:
     url = (explicit_url or settings.database_url or "").strip()
     if not url:
+        if not settings.is_local_env:
+            # A silent local SQLite file would lose every order on a serverless host (read-only, per-instance filesystem).
+            raise RuntimeError("DATABASE_URL is not set. Outside local development the backend needs the Supabase database URL.")
         return f"sqlite:///{_DEFAULT_SQLITE_PATH.as_posix()}"
     if url.startswith("postgres://"):
         return "postgresql+psycopg://" + url[len("postgres://") :]
     return url
+
+
+def _is_serverless_pooled(url: str) -> bool:
+    """Vercel, or a Supabase pooler URL (transaction mode, port 6543): connections are short-lived and shared by many
+    function instances, so the app keeps no pool of its own and must not use prepared statements."""
+    return bool(os.environ.get("VERCEL")) or "pooler.supabase.com" in url or ":6543/" in url
 
 
 def build_engine(database_url: str | None = None) -> Engine:
@@ -34,6 +44,9 @@ def build_engine(database_url: str | None = None) -> Engine:
         kwargs["connect_args"] = {"check_same_thread": False}
         if ":memory:" in resolved_url:
             kwargs["poolclass"] = StaticPool
+    elif _is_serverless_pooled(resolved_url):
+        kwargs["poolclass"] = NullPool
+        kwargs["connect_args"] = {"prepare_threshold": None}  # psycopg: no server-side prepared statements behind the pooler
     else:
         kwargs["pool_pre_ping"] = True
 

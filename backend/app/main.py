@@ -46,6 +46,7 @@ from .core.storage import (
     get_storage_object,
     put_storage_object,
     validate_catalog_image,
+    MAX_REQUEST_UPLOAD_BYTES,
     MAX_REVIEW_PHOTO_BYTES,
     create_signed_proof_query,
     delete_private_review_photos,
@@ -1212,8 +1213,12 @@ def submit_customer_review(
     if len(uploads) > MAX_REVIEW_PHOTOS:
         raise HTTPException(status_code=422, detail=f"Attach no more than {MAX_REVIEW_PHOTOS} photos.")
     validated: list[tuple[bytes, str]] = []
+    total_bytes = 0
     for upload in uploads:
         data = upload.file.read(MAX_REVIEW_PHOTO_BYTES + 1)
+        total_bytes += len(data)
+        if total_bytes > MAX_REQUEST_UPLOAD_BYTES:
+            raise HTTPException(status_code=422, detail="Review photos together must be smaller than 4 MB.")
         try:
             validated.append((data, validate_review_photo(data, upload.content_type)))
         except ValueError as exc:

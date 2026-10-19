@@ -5,8 +5,8 @@
  */
 
 export const env = {
-  /** FastAPI base URL, e.g. http://localhost:8000/api */
-  apiBaseUrl: (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, ''),
+  /** FastAPI base URL, e.g. http://localhost:8000/api. Production builds default to the same-origin `/api` (the backend service of the same Vercel project). */
+  apiBaseUrl: (import.meta.env.VITE_API_BASE_URL ?? (import.meta.env.PROD ? '/api' : '')).replace(/\/$/, ''),
 
   /** Supabase project URL */
   supabaseUrl: import.meta.env.VITE_SUPABASE_URL ?? '',

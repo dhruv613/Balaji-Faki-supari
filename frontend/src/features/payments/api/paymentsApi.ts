@@ -12,7 +12,7 @@ import type { PaymentStatusResponse, PaymentSubmissionResult, OrderStatus, Payme
 
 /** Allowed screenshot formats and size (must match FastAPI validation). */
 export const SCREENSHOT_ACCEPT = ['image/jpeg', 'image/png', 'image/webp'];
-export const SCREENSHOT_MAX_BYTES = 5 * 1024 * 1024;
+export const SCREENSHOT_MAX_BYTES = 4 * 1024 * 1024; // the host rejects request bodies above 4.5 MB
 
 const VALID_SUBMISSION_STATUSES: ReadonlyArray<string> = [
   'PENDING',
@@ -97,7 +97,7 @@ export function validateScreenshot(file: File | null): string | null {
   if (!file) return 'Please upload your payment screenshot.';
   if (!SCREENSHOT_ACCEPT.includes(file.type)) return 'Upload a JPG, PNG or WEBP image.';
   if (file.size === 0) return 'The screenshot file is empty.';
-  if (file.size > SCREENSHOT_MAX_BYTES) return 'Screenshot must be smaller than 5 MB.';
+  if (file.size > SCREENSHOT_MAX_BYTES) return 'Screenshot must be smaller than 4 MB.';
   return null;
 }
 

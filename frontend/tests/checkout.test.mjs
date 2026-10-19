@@ -131,6 +131,8 @@ assert.ok(paymentsApi.validateScreenshot(null));
 assert.ok(paymentsApi.validateScreenshot({type:'image/svg+xml',size:5}));
 assert.ok(paymentsApi.validateScreenshot({type:'image/png',size:0}));
 assert.ok(paymentsApi.validateScreenshot({type:'image/png',size:6*1024*1024}));
+assert.ok(paymentsApi.validateScreenshot({type:'image/png',size:4*1024*1024+1}), 'the host rejects bodies above 4.5 MB, so screenshots stop at 4 MB');
+assert.equal(paymentsApi.validateScreenshot({type:'image/png',size:4*1024*1024}),null);
 assert.equal(paymentsApi.validateScreenshot({type:'image/png',size:128}),null);
 assert.equal(paymentsApi.validateUtr, undefined, 'the customer no longer enters a UTR');
 for (const status of ['pending_payment','verifying_payment']) assert.equal(paymentsApi.isPaymentConfirmed({status:'verified',orderStatus:status}),false);
