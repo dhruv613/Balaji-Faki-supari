@@ -192,3 +192,41 @@ class UpdateAdminProductRequestSchema(CamelModel):
 
 class LinkLegacyAccountRequestSchema(CamelModel):
     legacy_password: str = Field(alias="legacyPassword", min_length=4, max_length=128)
+
+
+class StockAdjustmentRequestSchema(CamelModel):
+    inventory_item_id: str = Field(alias="inventoryItemId", min_length=1, max_length=64)
+    adjustment_type: Literal["ADD", "DEDUCT"] = Field(alias="adjustmentType")
+    quantity: int = Field(ge=1, le=100000)
+    reason: str = Field(min_length=5, max_length=500)
+
+
+class UpdateAdminSettingsRequestSchema(CamelModel):
+    """Partial update: only fields present in the request change."""
+
+    store_name: Optional[str] = Field(default=None, alias="storeName", min_length=1, max_length=120)
+    store_name_gu: Optional[str] = Field(default=None, alias="storeNameGu", max_length=120)
+    tagline: Optional[str] = Field(default=None, max_length=255)
+    store_address: Optional[str] = Field(default=None, alias="storeAddress", min_length=1, max_length=255)
+    phone_number: Optional[str] = Field(default=None, alias="phoneNumber", min_length=5, max_length=32)
+    support_whatsapp: Optional[str] = Field(default=None, alias="supportWhatsapp", max_length=32)
+    support_email: Optional[str] = Field(default=None, alias="supportEmail", max_length=255)
+    business_hours: Optional[str] = Field(default=None, alias="businessHours", min_length=1, max_length=120)
+    shop_intro: Optional[str] = Field(default=None, alias="shopIntro", max_length=4000)
+    production_info: Optional[str] = Field(default=None, alias="productionInfo", max_length=4000)
+    provider_manufacturer: Optional[str] = Field(default=None, alias="providerManufacturer", max_length=4000)
+    packaging_info: Optional[str] = Field(default=None, alias="packagingInfo", max_length=4000)
+    official_upi_id: Optional[str] = Field(default=None, alias="officialUpiId", max_length=120)
+    official_payee_name: Optional[str] = Field(default=None, alias="officialPayeeName", max_length=120)
+    delivery_charges: Optional[float] = Field(default=None, alias="deliveryCharges", ge=0, le=100000)
+    free_delivery_threshold: Optional[float] = Field(default=None, alias="freeDeliveryThreshold", ge=0, le=10000000)
+    serviceable_pin_codes: Optional[list[str]] = Field(default=None, alias="serviceablePinCodes", max_length=200)
+    low_stock_threshold: Optional[int] = Field(default=None, alias="lowStockThreshold", ge=0, le=100000)
+    stock_reservation_expiry_minutes: Optional[int] = Field(
+        default=None, alias="stockReservationExpiryMinutes", ge=1, le=10080
+    )
+
+
+class ConfirmBusinessSettingsRequestSchema(CamelModel):
+    confirm: Literal[True]
+    note: Optional[str] = Field(default=None, max_length=500)

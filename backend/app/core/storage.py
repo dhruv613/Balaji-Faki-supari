@@ -34,6 +34,14 @@ class ReviewPhotoStorageError(PrivateImageStorageError):
     """Private Supabase Storage is unavailable or rejected a review photo."""
 
 
+class CatalogImageStorageError(PrivateImageStorageError):
+    """Catalogue, shop or QR image storage is unavailable or rejected an object."""
+
+
+MAX_CATALOG_IMAGE_BYTES = 5 * 1024 * 1024
+MAX_QR_IMAGE_BYTES = 2 * 1024 * 1024
+
+
 def detect_image_mime(content: bytes) -> str | None:
     """Inspects file magic bytes to verify genuine JPEG, PNG, or WEBP image content."""
     if len(content) >= 3 and content[:3] == b"\xff\xd8\xff":
@@ -306,3 +314,69 @@ def verify_signed_proof_query(
         app_settings=app_settings,
     )
     return hmac.compare_digest(sig, expected_sig)
+
+
+def validate_catalog_image(content: bytes, declared_content_type: str | None, *, max_bytes: int = MAX_CATALOG_IMAGE_BYTES) -> str:
+    """Validates a product/shop/QR image upload (size, declared type, magic bytes)."""
+    return _validate_image_upload(content, declared_content_type, label="image", max_bytes=max_bytes)
+
+
+def put_storage_object(
+    bucket: str,
+    path: str,
+    content: bytes,
+    mime_type: str,
+    *,
+    app_settings: Settings = settings,
+) -> None:
+    """Uploads a validated image with the server-side credential. Never overwrites an existing object."""
+    try:
+        response = httpx.request(
+            "POST",
+            _storage_object_url(path, app_settings, bucket),
+            headers={**_storage_headers(app_settings, mime_type, error_type=CatalogImageStorageError), "x-upsert": "false"},
+            content=content,
+            timeout=10,
+        )
+        response.raise_for_status()
+    except PrivateImageStorageError:
+        raise
+    except httpx.HTTPError as exc:
+        raise CatalogImageStorageError("Image storage is unavailable.") from exc
+
+
+def get_storage_object(bucket: str, path: str, *, app_settings: Settings = settings) -> tuple[bytes, str]:
+    try:
+        response = httpx.request(
+            "GET",
+            _storage_object_url(path, app_settings, bucket),
+            headers=_storage_headers(app_settings, error_type=CatalogImageStorageError),
+            timeout=10,
+        )
+    except PrivateImageStorageError:
+        raise
+    except httpx.HTTPError as exc:
+        raise CatalogImageStorageError("Image storage is unavailable.") from exc
+    if response.status_code == 404:
+        raise FileNotFoundError("Image object not found.")
+    try:
+        response.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise CatalogImageStorageError("Image storage is unavailable.") from exc
+    mime = detect_image_mime(response.content)
+    if mime is None:
+        raise CatalogImageStorageError("Stored object is not a valid image.")
+    return response.content, mime
+
+
+def delete_storage_objects(bucket: str, paths: list[str], *, app_settings: Settings = settings) -> None:
+    """Best-effort cleanup; a missing object or an unavailable service never raises."""
+    try:
+        headers = _storage_headers(app_settings, error_type=CatalogImageStorageError)
+    except CatalogImageStorageError:
+        return
+    for path in paths:
+        try:
+            httpx.request("DELETE", _storage_object_url(path, app_settings, bucket), headers=headers, timeout=10)
+        except httpx.HTTPError:
+            continue
