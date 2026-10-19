@@ -130,6 +130,13 @@ export const PRODUCT_SHELL: Product[] = [
     packSizes: ['1l'],
     prices: { '1l': null },
   },
+  {
+    type: 'chuno',
+    name: 'Chuno',
+    nameGu: 'ચુનો',
+    packSizes: ['250g', '500g', '1kg'],
+    prices: { '250g': null, '500g': null, '1kg': null },
+  },
 ];
 
 /** Format a number as Indian Rupees */

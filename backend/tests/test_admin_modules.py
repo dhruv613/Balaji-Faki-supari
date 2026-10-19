@@ -90,7 +90,7 @@ class AdminModuleTests(unittest.TestCase):
             db.commit()
 
             inventory = main_module.get_admin_inventory(self.admin, db)
-            self.assertEqual(len(inventory["items"]), 10)  # Faki 3 + Supari 3 + Mitho Mavo 3 + Water 1
+            self.assertEqual(len(inventory["items"]), 13)  # Faki 3 + Supari 3 + Mitho Mavo 3 + Water 1 + Chuno 3
             item = next(i for i in inventory["items"] if i["sku"] == "BFP-FAKI-250G")
             self.assertEqual((item["totalStock"], item["reservedStock"], item["availableStock"]), (50, 45, 5))
             self.assertTrue(item["isLowStock"])  # 5 <= threshold 10

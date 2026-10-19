@@ -190,3 +190,10 @@ Source of truth for this phase: `docs/CLAUDE_PROJECT_AUDIT.md`, `docs/CLAUDE_FIN
 ### Faki photo order swapped (2026-10-19, owner request)
 - Faki gallery is now: (1) box (also the card image), (2) tied sachet bundle, (3) promotional banner last. Migration `20261020000007_faki_gallery_order.sql` (local DB only, applies only if the gallery is still as left by the previous migration); dev seed and tests match. This supersedes the order stated in the previous section.
 
+### Chuno added as an orderable product (2026-10-19, owner request)
+- New product `chuno` (name "Chuno", Gujarati ચુનો, category "Chuno", no description). Migration `20261020000008_chuno.sql` (local DB only) creates it UNPRICED with stock 0, so it is not orderable in production until the owner sets price and stock in Price Management. The dev seed adds badged placeholder prices (250 g 50, 500 g 90, 1 kg 160) so it can be ordered locally; they are placeholders, not owner data.
+- Pack sizes 250 g / 500 g / 1 kg are my default (same as Faki and Mitho Mavo), **not confirmed**: the photos show small sachets and a "parcel", so the real sizes may be small weights or counts. Tell me the real sizes and prices.
+- Photos in the order supplied: (1) the pile of sachets with one in front (card image), (2) yellow banner with the pile and "ચુના પાર્સલ", (3) yellow banner with one sachet. Both banners carry the store's WhatsApp number and Instagram handle and a Windows "Activate Windows" watermark in the bottom-right corner (re-export them without it).
+- Nothing about ingredients, weight or claims was entered. The sachets read "Special Fodelo Chuno" in Gujarati; that wording was not copied into the product facts.
+- Verification: `npm run verify` PASS (66 backend tests), DB security 51/51, smoke 65/65 (Chuno in the catalogue with three photos), browser: five cards, Chuno dialog with all three photos, order from the dialog preselects Chuno and the 500 g pack.
+

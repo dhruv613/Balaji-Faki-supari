@@ -42,7 +42,7 @@ class CatalogProductsTests(unittest.TestCase):
         with db_session.SessionLocal() as db:
             seed_development_data(db)
             products = {p["type"]: p for p in list_public_products(db)}
-            self.assertEqual(list(products), ["faki", "supari", "mitho-mavo", "water"])
+            self.assertEqual(list(products), ["faki", "supari", "mitho-mavo", "water", "chuno"])
             self.assertEqual(products["mitho-mavo"]["packSizes"], ["250g", "500g", "1kg"])
             self.assertEqual(products["water"]["packSizes"], ["1l"])
             self.assertEqual(list(products["water"]["prices"]), ["1l"])
@@ -61,6 +61,14 @@ class CatalogProductsTests(unittest.TestCase):
             self.assertEqual(products["supari"]["imageUrl"], "/images/supari-reference.png")
             self.assertEqual(products["faki"]["information"]["ingredients"], "")  # nothing invented for any product
             self.assertEqual(products["water"]["information"]["ingredients"], "")
+            self.assertEqual(products["chuno"]["packSizes"], ["250g", "500g", "1kg"])
+            self.assertEqual(products["chuno"]["description"], "")  # nothing invented for Chuno either
+            self.assertEqual(products["chuno"]["information"]["ingredients"], "")
+            self.assertEqual(products["chuno"]["priceConfirmed"], {"250g": False, "500g": False, "1kg": False})
+            self.assertEqual(
+                [i["url"] for i in get_public_product("chuno", db)["images"]],
+                ["/images/products/balaji-chuno-sachets.webp", "/images/products/balaji-chuno-banner-parcel.jpg", "/images/products/balaji-chuno-banner-sachet.jpg"],
+            )
 
     def test_new_products_are_orderable_and_unknown_combinations_are_refused(self) -> None:
         with db_session.SessionLocal() as db:

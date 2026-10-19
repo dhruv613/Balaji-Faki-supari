@@ -101,6 +101,25 @@ INITIAL_PRODUCTS = (
             ("1l", "BFP-WATER-1L", 800, 2000, 50, False),
         ),
     },
+    {
+        "slug": "chuno",
+        "name": "Chuno",
+        "name_gu": "ચુનો",
+        "category": "Chuno",
+        "description": "",
+        "image_url": "/images/products/balaji-chuno-sachets.webp",
+        "images": (
+            ("/images/products/balaji-chuno-sachets.webp", "Balaji Chuno sachets"),
+            ("/images/products/balaji-chuno-banner-parcel.jpg", "Chuno parcel banner with a pile of sachets"),
+            ("/images/products/balaji-chuno-banner-sachet.jpg", "Chuno parcel banner with a single sachet"),
+        ),
+        # DEVELOPMENT placeholder prices and pack sizes only (no owner-confirmed data exists yet).
+        "variants": (
+            ("250g", "BFP-CHUNO-250G", 2000, 5000, 50, False),
+            ("500g", "BFP-CHUNO-500G", 3800, 9000, 50, False),
+            ("1kg", "BFP-CHUNO-1KG", 7000, 16000, 50, False),
+        ),
+    },
 )
 
 

@@ -79,7 +79,7 @@ context.persistDraft(adopted, 'customer-one');
 assert.equal(context.loadState(userOne).address, valid.address);
 // No fabricated prices: the shell shows names only until the database answers.
 assert.ok(Object.values(initialState.products[0].prices).every(price => price === null));
-assert.equal(api.PRODUCT_SHELL.map(p => p.type).join(), "faki,supari,mitho-mavo,water");
+assert.equal(api.PRODUCT_SHELL.map(p => p.type).join(), "faki,supari,mitho-mavo,water,chuno");
 assert.equal(api.PRODUCTS, undefined, 'hard-coded price list must not exist');
 // Payment retries are idempotent per attempt; a new attempt (new proof or after a rejection) gets a new key.
 const keyStore = new Map();

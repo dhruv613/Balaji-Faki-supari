@@ -180,6 +180,8 @@ def main() -> int:
         check("Water order persists as product 'water', pack '1l'", wo.status_code == 200 and wo.json()["product"] == "water" and wo.json()["packSize"] == "1l", wo.text[:200])
         if wo.status_code == 200:
             http.post(f"{API}/orders/{wo.json()['id']}/cancel", headers=cust, json={"reason": "Smoke test cleanup of the water order"})
+    chuno = next((p for p in http.get(f"{API}/products").json() if p["type"] == "chuno"), None)
+    check("Chuno is in the catalogue with its three photos", bool(chuno) and len(chuno["images"]) == 3 and chuno["imageUrl"] == "/images/products/balaji-chuno-sachets.webp", str(chuno)[:150])
     mavo_bad = http.post(f"{API}/checkout/quote", json={"product": "mitho-mavo", "packSize": "1l", "quantity": 1, "pinCode": "360005"})
     check("a pack size the product does not have is refused", mavo_bad.status_code == 400, mavo_bad.text[:120])
 
