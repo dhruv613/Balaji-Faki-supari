@@ -21,7 +21,7 @@ SECRET = "test-supabase-hs256-secret-for-contract-suite-32by"
 TMP = Path(tempfile.mkdtemp(prefix="bfp_contract_test_"))
 DB_URL = f"sqlite:///{(TMP / 'contract.sqlite3').as_posix()}"
 os.environ["DATABASE_URL"] = DB_URL
-os.environ["SUPABASE_URL"] = "http://127.0.0.1:54321"
+os.environ["SUPABASE_URL"] = "http://127.0.0.1:55321"
 os.environ["BFP_ENV"] = "local"
 
 import app.db.session as db_session  # noqa: E402
@@ -42,7 +42,7 @@ PNG = (
 def token(user_id: str) -> str:
     claims = {
         "sub": user_id, "aud": "authenticated", "role": "authenticated", "email": "owner-contract@example.test",
-        "iss": "http://127.0.0.1:54321/auth/v1", "exp": int(time.time()) + 3600,
+        "iss": "http://127.0.0.1:55321/auth/v1", "exp": int(time.time()) + 3600,
     }
     return pyjwt.encode(claims, SECRET, algorithm="HS256")
 

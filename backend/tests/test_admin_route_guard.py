@@ -21,7 +21,7 @@ SECRET = "test-supabase-hs256-secret-for-admin-guard-suite-32b"
 TMP = Path(tempfile.mkdtemp(prefix="bfp_guard_test_"))
 DB_URL = f"sqlite:///{(TMP / 'guard.sqlite3').as_posix()}"
 os.environ["DATABASE_URL"] = DB_URL
-os.environ["SUPABASE_URL"] = "http://127.0.0.1:54321"
+os.environ["SUPABASE_URL"] = "http://127.0.0.1:55321"
 os.environ["BFP_ENV"] = "local"
 
 import app.db.session as db_session  # noqa: E402
@@ -49,7 +49,7 @@ def _token() -> str:
         "aud": "authenticated",
         "role": "authenticated",
         "email": "guard-customer@example.com",
-        "iss": "http://127.0.0.1:54321/auth/v1",
+        "iss": "http://127.0.0.1:55321/auth/v1",
         "exp": int(time.time()) + 3600,
         "user_metadata": {"fullName": "Guard Customer", "phone": "+919876543210", "role": "OWNER_ADMIN"},
         "app_metadata": {"role": "OWNER_ADMIN"},  # a forged claim must never grant API access

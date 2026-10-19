@@ -1,0 +1,78 @@
+INFO:     Started server process [12412]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     127.0.0.1:58349 - "GET /api/products HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56826 - "GET /api/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56826 - "GET /api/products HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56826 - "GET /api/store HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56826 - "GET /api/admin/dashboard HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:56826 - "GET /api/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56826 - "GET /api/admin/dashboard HTTP/1.1" 403 Forbidden
+INFO:     127.0.0.1:56826 - "GET /api/orders HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56826 - "POST /api/checkout/quote HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56826 - "POST /api/checkout/quote HTTP/1.1" 422 Unprocessable Content
+INFO:     127.0.0.1:56826 - "POST /api/orders HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56826 - "POST /api/orders HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56826 - "GET /api/orders/526c01f7-2bde-49ef-86f0-c1ceee01ef21 HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:56826 - "GET /api/orders/not-a-uuid HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:56826 - "POST /api/payments/526c01f7-2bde-49ef-86f0-c1ceee01ef21/submit HTTP/1.1" 409 Conflict
+INFO:     127.0.0.1:56826 - "POST /api/payments/526c01f7-2bde-49ef-86f0-c1ceee01ef21/submit HTTP/1.1" 409 Conflict
+INFO:     127.0.0.1:51996 - "GET /api/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51996 - "GET /api/products HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51996 - "GET /api/store HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51996 - "GET /api/admin/dashboard HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:51996 - "GET /api/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51996 - "GET /api/admin/dashboard HTTP/1.1" 403 Forbidden
+INFO:     127.0.0.1:51996 - "GET /api/orders HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51996 - "POST /api/checkout/quote HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51996 - "POST /api/checkout/quote HTTP/1.1" 422 Unprocessable Content
+INFO:     127.0.0.1:51996 - "POST /api/orders HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51996 - "POST /api/orders HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51996 - "GET /api/orders/538c080b-36d0-4062-9348-7f2c377ad207 HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:51996 - "GET /api/orders/not-a-uuid HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:51996 - "POST /api/payments/538c080b-36d0-4062-9348-7f2c377ad207/submit HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51996 - "POST /api/payments/538c080b-36d0-4062-9348-7f2c377ad207/submit HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51996 - "GET /api/admin/payments/e59b61ea-ddf3-4d54-ae56-fb41987a91b0/proof?raw=1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51996 - "GET /api/admin/payments/e59b61ea-ddf3-4d54-ae56-fb41987a91b0/proof?raw=1 HTTP/1.1" 403 Forbidden
+INFO:     127.0.0.1:51996 - "POST /api/admin/payments/e59b61ea-ddf3-4d54-ae56-fb41987a91b0/approve HTTP/1.1" 409 Conflict
+INFO:     127.0.0.1:51996 - "POST /api/admin/payments/e59b61ea-ddf3-4d54-ae56-fb41987a91b0/review HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51996 - "POST /api/admin/payments/e59b61ea-ddf3-4d54-ae56-fb41987a91b0/reject HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51996 - "GET /api/payments/538c080b-36d0-4062-9348-7f2c377ad207/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51996 - "POST /api/payments/538c080b-36d0-4062-9348-7f2c377ad207/submit HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51996 - "POST /api/admin/payments/d67d4dd4-b437-412b-820c-5b96e748a9cf/review HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51996 - "POST /api/admin/payments/d67d4dd4-b437-412b-820c-5b96e748a9cf/approve HTTP/1.1" 422 Unprocessable Content
+INFO:     127.0.0.1:51996 - "POST /api/admin/payments/d67d4dd4-b437-412b-820c-5b96e748a9cf/approve HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51996 - "POST /api/admin/orders/538c080b-36d0-4062-9348-7f2c377ad207/confirm HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51996 - "PATCH /api/admin/orders/538c080b-36d0-4062-9348-7f2c377ad207/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51996 - "PATCH /api/admin/orders/538c080b-36d0-4062-9348-7f2c377ad207/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51996 - "PATCH /api/admin/orders/538c080b-36d0-4062-9348-7f2c377ad207/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51996 - "PATCH /api/admin/orders/538c080b-36d0-4062-9348-7f2c377ad207/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51996 - "PATCH /api/admin/orders/538c080b-36d0-4062-9348-7f2c377ad207/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51996 - "PATCH /api/admin/orders/538c080b-36d0-4062-9348-7f2c377ad207/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51996 - "GET /api/orders/538c080b-36d0-4062-9348-7f2c377ad207/tracking HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51996 - "POST /api/orders/538c080b-36d0-4062-9348-7f2c377ad207/review HTTP/1.1" 201 Created
+INFO:     127.0.0.1:51996 - "POST /api/orders/538c080b-36d0-4062-9348-7f2c377ad207/review HTTP/1.1" 409 Conflict
+INFO:     127.0.0.1:51996 - "GET /api/reviews?sort=lowest HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51996 - "GET /api/reviews/photos/890f2955-4a91-4e9f-98a1-6139a3d157bc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51996 - "PATCH /api/admin/reviews/c91bfd11-d243-4f55-a93c-a3b70fa120a6 HTTP/1.1" 422 Unprocessable Content
+INFO:     127.0.0.1:51996 - "PATCH /api/admin/reviews/c91bfd11-d243-4f55-a93c-a3b70fa120a6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51996 - "GET /api/reviews HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51996 - "GET /api/reviews/photos/890f2955-4a91-4e9f-98a1-6139a3d157bc HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:51996 - "GET /api/admin/reviews HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51996 - "GET /api/admin/reviews/photos/890f2955-4a91-4e9f-98a1-6139a3d157bc?sig=33db2d5f2c6c65d74ce032911d63422a62c1a42a837016430255679ec1ba6f9f&exp=1792400809 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51996 - "POST /api/orders HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51996 - "POST /api/orders/b2edec02-7d4c-44a7-be06-76c4117560dd/cancel HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51996 - "GET /api/admin/inventory HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51996 - "POST /api/admin/inventory/adjustments HTTP/1.1" 201 Created
+INFO:     127.0.0.1:51996 - "PATCH /api/admin/products/faki HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51996 - "POST /api/admin/products/faki/images HTTP/1.1" 201 Created
+INFO:     127.0.0.1:51996 - "POST /api/admin/settings/qr HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51996 - "POST /api/orders HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51996 - "GET /api/orders/89534718-4504-41e6-9ad8-064ad4551d65/payment-qr?sig=58e95c959de9e6897aa95ae68020fd1cb3a858a39ec05b2418541c0d5bb71b67&exp=1792399910 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51996 - "POST /api/admin/settings/confirm HTTP/1.1" 422 Unprocessable Content
+INFO:     127.0.0.1:51996 - "PATCH /api/admin/settings HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51996 - "GET /api/store HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51996 - "GET /api/admin/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51996 - "GET /api/admin/customers?search=smoke HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51996 - "GET /api/admin/orders?pageSize=50 HTTP/1.1" 200 OK

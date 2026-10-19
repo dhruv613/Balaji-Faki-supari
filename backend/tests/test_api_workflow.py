@@ -25,7 +25,7 @@ if str(BACKEND_ROOT) not in sys.path:
 TEST_JWT_SECRET = "test-supabase-hs256-secret-for-integration-suite-32bytes"
 TEST_TMP_DIR = Path(tempfile.mkdtemp(prefix="bfp_api_test_"))
 TEST_DB_URL = f"sqlite:///{(TEST_TMP_DIR / 'test_bfp.sqlite3').as_posix()}"
-TEST_SUPABASE_URL = "http://127.0.0.1:54321"
+TEST_SUPABASE_URL = "http://127.0.0.1:55321"
 os.environ["DATABASE_URL"] = TEST_DB_URL
 os.environ["BFP_ENV"] = "local"
 os.environ["SUPABASE_URL"] = TEST_SUPABASE_URL

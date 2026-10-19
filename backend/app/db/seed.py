@@ -82,6 +82,16 @@ def seed_development_data(db: Session, *, with_default_prices: bool = True) -> N
         )
         db.flush()
 
+    store = db.get(StoreSettings, 1)
+    if store is not None and not store.upi_id and not store.upi_payee_name:
+        # The migration creates the settings row without a payment destination: give it explicit LOCAL TEST values.
+        store.upi_id = LOCAL_TEST_UPI_ID
+        store.upi_payee_name = LOCAL_TEST_PAYEE
+        if not store.serviceable_pin_codes or store.serviceable_pin_codes == []:
+            store.serviceable_pin_codes = list(DEV_SERVICEABLE_PINS)
+        if store.delivery_charge_paise is None:
+            store.delivery_charge_paise = 0
+
     for spec in INITIAL_PRODUCTS:
         product = db.scalar(select(Product).where(Product.slug == spec["slug"]))
         if product is None:
@@ -97,8 +107,19 @@ def seed_development_data(db: Session, *, with_default_prices: bool = True) -> N
             db.add(product)
             db.flush()
         for pack_size, sku, cost_paise, price_paise, stock, confirmed in spec["variants"]:
-            exists = db.scalar(select(ProductVariant.id).where(ProductVariant.sku == sku))
-            if exists is not None:
+            existing = db.scalar(select(ProductVariant).where(ProductVariant.sku == sku))
+            if existing is not None:
+                # Rows created by the schema migration are pristine (no price, cost or stock). The explicit dev command may
+                # give those development values; anything an admin has touched is never overwritten.
+                pristine = (
+                    existing.price_paise is None and existing.cost_price_paise is None
+                    and int(existing.total_stock) == 0 and not existing.price_confirmed
+                )
+                if pristine and with_default_prices:
+                    existing.cost_price_paise = cost_paise
+                    existing.price_paise = price_paise
+                    existing.price_confirmed = bool(confirmed)
+                    existing.total_stock = stock
                 continue
             db.add(
                 ProductVariant(
