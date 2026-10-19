@@ -6,11 +6,17 @@ import EmailSignIn from '../../../components/common/EmailSignIn';
 import Notice from '../../../components/common/Notice';
 import { ORDER_STATUS_DISPLAY_LABELS } from '../../../types/orders';
 import { cancelOrder, getOrder, getOrderTracking } from '../api/ordersApi';
-import type { Order, OrderStatus, TrackingEvent } from '../../../types/orders';
+import type { Order, TrackingEvent } from '../../../types/orders';
+import { useOrder } from '../../../context/OrderContext';
+import { contactDetails, useStoreProfile } from '../../store/storeApi';
+import { buildCustomerProgress } from '../lib/customerTimeline';
 
 export default function OrderDetailsPage() {
   const { orderId = '' } = useParams();
   const { session, loading: authLoading } = useSession();
+  const draft = useOrder();
+  const { profile } = useStoreProfile();
+  const contact = contactDetails(profile);
   const [order, setOrder] = useState<Order | null>(null);
   const [events, setEvents] = useState<TrackingEvent[]>([]);
   const [loading, setLoading] = useState(false);
@@ -63,14 +69,38 @@ export default function OrderDetailsPage() {
         <div className="two-col">
           <section className="two-col__main card">
             <div className="detail-header"><div><h3>{order.orderNumber}</h3><p className="text-secondary text-small">Placed {new Date(order.createdAt).toLocaleString('en-IN')}</p></div><span className="badge badge--dark">{ORDER_STATUS_DISPLAY_LABELS[order.status]}</span></div>
-            <h3 style={{ marginTop: 24 }}>Order progress</h3>
-            {events.length ? <ol className="timeline" style={{ marginTop: 16 }}>{events.map((event, index) => {
-              const label = ORDER_STATUS_DISPLAY_LABELS[event.status as OrderStatus] || event.label;
-              return <li className="timeline__item" key={`${event.status}-${event.timestamp}-${index}`}>
-                <span className="stepper__circle" aria-hidden="true">{index + 1}</span>
-                <div><strong>{label}</strong><p className="text-secondary text-small">{new Date(event.timestamp).toLocaleString('en-IN')}</p>{event.description && <p>{event.description}</p>}</div>
-              </li>;
-            })}</ol> : <p className="text-secondary" style={{ marginTop: 16 }}>No completed order updates yet.</p>}
+            {(() => {
+              const progress = buildCustomerProgress(order, events);
+              return (
+                <>
+                  {progress.banner && (
+                    <Notice tone={progress.banner.tone === 'success' ? 'info' : progress.banner.tone} title={progress.banner.title}
+                      actions={order.status === 'PENDING_PAYMENT' && draft.orderId === order.id
+                        ? <Link className="btn btn--sm btn--primary" to="/order/payment">Go to payment</Link> : undefined}>
+                      {progress.banner.text}
+                    </Notice>
+                  )}
+                  <h3 style={{ marginTop: 24 }}>Order progress</h3>
+                  {progress.showSteps ? (
+                    <ol className="timeline" style={{ marginTop: 16 }} aria-label="Delivery progress">
+                      {progress.steps.map((step, index) => (
+                        <li className={`timeline__item timeline__item--${step.state}`} key={step.key} aria-current={step.state === 'current' ? 'step' : undefined}>
+                          <span className="stepper__circle" aria-hidden="true">{step.state === 'done' ? '✓' : index + 1}</span>
+                          <div>
+                            <strong>{step.label}</strong>
+                            {step.timestamp
+                              ? <p className="text-secondary text-small">{new Date(step.timestamp).toLocaleString('en-IN')}</p>
+                              : <p className="text-secondary text-small">{step.detail ?? 'Pending'}</p>}
+                          </div>
+                        </li>
+                      ))}
+                    </ol>
+                  ) : order.status !== 'CANCELLED' ? (
+                    <p className="text-secondary" style={{ marginTop: 16 }}>Delivery updates start after the shop confirms your order.</p>
+                  ) : null}
+                </>
+              );
+            })()}
           </section>
           <aside className="two-col__side card card--tinted">
             <h3>Delivery details</h3>
@@ -82,7 +112,7 @@ export default function OrderDetailsPage() {
             <div className="summary-row"><span>Payment</span><strong>{order.paymentStatus}</strong></div>
             <div className="summary-row"><span>Order total</span><strong>{formatINR(order.total)}</strong></div>
             <div className="summary-row"><span>Deliver to</span><strong>{order.address} – {order.pinCode}</strong></div>
-            <a className="btn btn--full" href="tel:+918000961030">Call store</a><Link className="btn btn--full" to="/help">Help with this order</Link>
+            {contact.telHref && <a className="btn btn--full" href={contact.telHref}>Call store</a>}<Link className="btn btn--full" to="/help">Help with this order</Link>
             {canCancel && <div style={{ marginTop: 16 }}>
               <label htmlFor="cancel-order-reason">Need to cancel?</label>
               <textarea id="cancel-order-reason" className="input" value={cancelReason} onChange={event => setCancelReason(event.target.value)} placeholder="Tell us why you need to cancel" maxLength={500} />

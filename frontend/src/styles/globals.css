@@ -830,6 +830,32 @@ legend {
   padding-bottom: 0;
 }
 
+.timeline__item--upcoming .stepper__circle {
+  background: var(--color-surface, #fff);
+  color: var(--color-text-muted, #8a7a6a);
+  border: 2px solid var(--color-border);
+}
+
+.timeline__item--upcoming strong {
+  color: var(--color-text-muted, #8a7a6a);
+}
+
+.timeline__item--done .stepper__circle {
+  background: var(--color-primary, #e8751a);
+  color: #fff;
+}
+
+.timeline__item--current .stepper__circle {
+  border: 2px solid var(--color-primary, #e8751a);
+  box-shadow: 0 0 0 4px rgba(232, 117, 26, 0.18);
+}
+
+.badge--dev {
+  background: #fff3cd;
+  color: #7a5200;
+  font-size: 0.72rem;
+}
+
 /* ----- 20. Visit Store (Map) ----- */
 .map-placeholder {
   height: 420px;

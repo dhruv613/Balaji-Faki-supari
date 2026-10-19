@@ -4,7 +4,8 @@ import OrderStepper from '../../../components/common/OrderStepper';
 import Notice from '../../../components/common/Notice';
 import NoActiveOrder from '../../../components/common/NoActiveOrder';
 import { useOrder, useOrderDispatch } from '../../../context/OrderContext';
-import { formatINR, getErrorMessage, isNetworkError } from '../../../lib/api';
+import { formatINR, getErrorMessage, isNetworkError, resolveApiUrl } from '../../../lib/api';
+import type { PaymentStatusResponse } from '../../../types/orders';
 import { useSession } from '../../../lib/supabase';
 import EmailSignIn from '../../../components/common/EmailSignIn';
 import {
@@ -44,6 +45,14 @@ export default function QRPaymentPage() {
   const [fileError, setFileError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<SubmitError>(null);
+  // Earlier attempts stay on record; a rejected proof is explained here and a new attempt can be submitted.
+  const [history, setHistory] = useState<PaymentStatusResponse | null>(null);
+  useEffect(() => {
+    let active = true;
+    if (!order?.id || !session) return;
+    getPaymentStatus(order.id).then(info => { if (active) setHistory(info); }).catch(() => { if (active) setHistory(null); });
+    return () => { active = false; };
+  }, [order?.id, session?.user.id]);
 
   const deadline = payment?.expiresAt ? Date.parse(payment.expiresAt) : null;
   const [now, setNow] = useState(() => Date.now());
@@ -132,6 +141,7 @@ export default function QRPaymentPage() {
       const result = await submitPayment(order!.id, {
         utrNumber: state.utrNumber.trim(),
         screenshot: state.screenshotFile,
+        attemptNumber: history?.attempts?.length ?? 0,
       });
       if (activeScope.current !== scope) return;
       dispatch({ type: 'SET_PAYMENT_STATUS', payload: result.paymentStatus });
@@ -169,6 +179,19 @@ export default function QRPaymentPage() {
         Pay the exact amount using any UPI app, then confirm below.
       </p>
 
+      {history?.rejectionReason && (
+        <Notice tone="warning" title="Your last payment proof was not accepted" id="payment-rejected-notice">
+          {history.rejectionReason} Your earlier submission stays on record. If you have paid, upload a clear screenshot and the
+          correct 12-digit UTR below; please do not pay again.
+        </Notice>
+      )}
+
+      {payment.settingsConfirmed === false && (
+        <Notice tone="warning" title="LOCAL TEST payment details" id="payment-local-test-notice">
+          These payment details are for local testing only and are not a real receiving account. Do not make a real payment.
+        </Notice>
+      )}
+
       {expired && (
         <Notice tone="warning" title="This payment window has expired" id="payment-expired-notice">
           If you have already paid, enter your UTR and screenshot below. If you haven't paid,
@@ -200,7 +223,7 @@ export default function QRPaymentPage() {
             <div className="qr-box">
               {qrImageUrl && !expired ? (
                 <img
-                  src={qrImageUrl}
+                  src={qrImageUrl.startsWith('/api/') ? resolveApiUrl(qrImageUrl) : qrImageUrl}
                   alt={`UPI QR code to pay ${payeeName}`}
                   width={280}
                   height={280}

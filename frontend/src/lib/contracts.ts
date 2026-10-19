@@ -162,12 +162,16 @@ export function readOrder(value: unknown): Order {
     }
     if (payment.qrImageUrl !== undefined && payment.qrImageUrl !== null) {
       if (typeof payment.qrImageUrl !== 'string') return invalid();
-      try {
-        if (!['https:', 'http:'].includes(new URL(payment.qrImageUrl).protocol)) return invalid();
-      } catch {
-        return invalid();
+      // The shop QR is served by FastAPI as a short-lived signed path; absolute http(s) URLs are also accepted.
+      if (!/^\/api\/[A-Za-z0-9/_.-]+\?[A-Za-z0-9=&%._-]*$/.test(payment.qrImageUrl)) {
+        try {
+          if (!['https:', 'http:'].includes(new URL(payment.qrImageUrl).protocol)) return invalid();
+        } catch {
+          return invalid();
+        }
       }
     }
+    if (payment.settingsConfirmed !== undefined && typeof payment.settingsConfirmed !== 'boolean') return invalid();
   }
   return value as unknown as Order;
 }
@@ -186,6 +190,18 @@ export function readPaymentStatus(value: unknown, orderId: string): PaymentStatu
     return invalid();
   }
   if (value.message !== undefined && value.message !== null && typeof value.message !== 'string') {
+    return invalid();
+  }
+  if (value.rejectionReason !== undefined && value.rejectionReason !== null && typeof value.rejectionReason !== 'string') {
+    return invalid();
+  }
+  if (value.canSubmitProof !== undefined && typeof value.canSubmitProof !== 'boolean') {
+    return invalid();
+  }
+  if (
+    value.attempts !== undefined &&
+    (!Array.isArray(value.attempts) || !value.attempts.every((attempt) => record(attempt) && text(attempt.id) && text(attempt.status)))
+  ) {
     return invalid();
   }
   return value as unknown as PaymentStatusResponse;

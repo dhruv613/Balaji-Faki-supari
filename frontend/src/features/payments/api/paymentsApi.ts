@@ -26,6 +26,35 @@ const VALID_SUBMISSION_STATUSES: ReadonlyArray<string> = [
   'failed',
 ];
 
+type KeyStorage = Pick<Storage, 'getItem' | 'setItem'>;
+
+function defaultKeyStorage(): KeyStorage | null {
+  try { return typeof sessionStorage === 'undefined' ? null : sessionStorage; } catch { return null; }
+}
+
+/**
+ * One Idempotency-Key per payment ATTEMPT. Retrying the same submission (network drop, double click, reload) reuses
+ * the key, so the server returns the same attempt instead of creating a second one. A genuinely new attempt (different UTR
+ * or screenshot, or a new attempt number after a rejection) gets a new key.
+ */
+export function paymentAttemptKey(
+  orderId: string,
+  utrNumber: string,
+  screenshot: Pick<File, 'name' | 'size' | 'type' | 'lastModified'>,
+  attemptNumber = 0,
+  storage: KeyStorage | null = defaultKeyStorage(),
+): string {
+  const fingerprint = [orderId, utrNumber.trim(), screenshot.name, screenshot.size, screenshot.type, screenshot.lastModified, attemptNumber].join('|');
+  const storageKey = `bfp-payment-attempt:${fingerprint}`;
+  try {
+    const existing = storage?.getItem(storageKey);
+    if (existing) return existing;
+  } catch { /* storage unavailable: fall through to a fresh key */ }
+  const key = `payment-${orderId}-${crypto.randomUUID()}`;
+  try { storage?.setItem(storageKey, key); } catch { /* retries within this page still reuse the key below */ }
+  return key;
+}
+
 /**
  * POST /payments/:orderId/submit — multipart upload of UTR + screenshot.
  *
@@ -35,7 +64,7 @@ const VALID_SUBMISSION_STATUSES: ReadonlyArray<string> = [
  */
 export async function submitPayment(
   orderId: string,
-  payload: { utrNumber: string; screenshot: File },
+  payload: { utrNumber: string; screenshot: File; attemptNumber?: number },
 ): Promise<PaymentSubmissionResult> {
   const invalid = validateUtr(payload.utrNumber) ?? validateScreenshot(payload.screenshot);
   if (invalid) throw new Error(invalid);
@@ -48,7 +77,7 @@ export async function submitPayment(
     {
       method: 'POST',
       body: form,
-      headers: { 'Idempotency-Key': `payment-${orderId}-${crypto.randomUUID()}` },
+      headers: { 'Idempotency-Key': paymentAttemptKey(orderId, payload.utrNumber, payload.screenshot, payload.attemptNumber ?? 0) },
     },
   );
   if (!VALID_SUBMISSION_STATUSES.includes(String(result?.paymentStatus))) {

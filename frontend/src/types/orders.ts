@@ -172,6 +172,8 @@ export interface PaymentInstructions {
   qrImageUrl?: string;
   /** ISO timestamp after which the QR session expires. */
   expiresAt?: string;
+  /** false = the owner has not confirmed the payment settings: these are LOCAL TEST values and must not be paid. */
+  settingsConfirmed?: boolean;
 }
 
 export interface PaymentSubmissionResult {
@@ -193,6 +195,13 @@ export interface PaymentStatusResponse {
   message?: string;
   /** Masked UTR as stored on the server, e.g. 4XXXXXXXX912 */
   utrMasked?: string | null;
+  /** Status of the most recent attempt; attempts are never deleted. */
+  latestAttemptStatus?: string | null;
+  /** Admin-entered reason when the latest proof was rejected and the order awaits a new attempt. */
+  rejectionReason?: string | null;
+  /** true while a new proof can be submitted (order awaiting payment, no attempt under review). */
+  canSubmitProof?: boolean;
+  attempts?: Array<{ id: string; status: string; utrMasked?: string | null; submittedAt?: string | null; rejectionReason?: string | null }>;
 }
 
 export interface TrackingEvent {

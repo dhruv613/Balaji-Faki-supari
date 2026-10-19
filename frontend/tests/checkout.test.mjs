@@ -58,6 +58,52 @@ assert.equal(context.loadState(userTwo).address,'','No cross-account draft discl
 assert.equal(context.loadState(userTwo).orderId,'');
 assert.equal(context.loadState(userTwo).fullName,'Second Customer');
 assert.equal(context.loadState(userTwo).phone,'6987654321');
+// Visitors prepare a draft as guests; signing in keeps it and returns them to checkout.
+storage.clear();
+const guestDraft = { ...valid, fullName: 'Guest Visitor', phone: '9876501234', orderId: 'stale-order', checkoutKey: 'stale-key' };
+context.persistDraft(guestDraft, 'guest');
+assert.equal(context.loadState(null).address, valid.address, 'a guest sees their own draft');
+assert.equal(context.loadState(null).fullName, 'Guest Visitor');
+context.persistDraft({ ...valid, address: 'Old saved address of account one' }, 'customer-one');
+const adopted = context.loadState(userOne);
+assert.equal(adopted.address, valid.address, 'the draft prepared before sign-in wins over an older saved draft');
+assert.equal(adopted.product, 'faki'); assert.equal(adopted.packSize, '500g'); assert.equal(adopted.quantity, 2);
+assert.equal(adopted.orderId, '', 'a guest draft never carries an order reference into an account');
+assert.equal(adopted.checkoutKey, '');
+assert.equal(storage.has('bfp-order-session:guest'), false, 'the guest draft moves into the account instead of lingering');
+assert.equal(context.loadState(userTwo).address, '', 'another account never sees the moved draft');
+assert.equal(context.hasDraftContent(initialState), false);
+assert.equal(context.hasDraftContent({ ...initialState, quantity: 3 }), true);
+context.persistDraft(adopted, 'customer-one');
+assert.equal(context.loadState(userOne).address, valid.address);
+// No fabricated prices: the shell shows names only until the database answers.
+assert.ok(Object.values(initialState.products[0].prices).every(price => price === null));
+assert.equal(api.PRODUCT_SHELL.length, 2);
+assert.equal(api.PRODUCTS, undefined, 'hard-coded price list must not exist');
+// Payment retries are idempotent per attempt; a new attempt (new proof or after a rejection) gets a new key.
+const keyStore = new Map();
+const keyStorage = { getItem: key => keyStore.get(key) ?? null, setItem: (key, value) => keyStore.set(key, value) };
+const shot = { name: 'proof.png', size: 1234, type: 'image/png', lastModified: 1760000000000 };
+const firstKey = paymentsApi.paymentAttemptKey('order-1', '412399887766', shot, 0, keyStorage);
+assert.equal(paymentsApi.paymentAttemptKey('order-1', ' 412399887766 ', shot, 0, keyStorage), firstKey, 'a retry or double click reuses the key');
+assert.notEqual(paymentsApi.paymentAttemptKey('order-1', '412399887700', shot, 0, keyStorage), firstKey, 'a different UTR is a different attempt');
+assert.notEqual(paymentsApi.paymentAttemptKey('order-1', '412399887766', { ...shot, size: 99 }, 0, keyStorage), firstKey, 'a different screenshot is a different attempt');
+assert.notEqual(paymentsApi.paymentAttemptKey('order-1', '412399887766', shot, 1, keyStorage), firstKey, 'after a rejection the same proof is a NEW attempt');
+assert.notEqual(paymentsApi.paymentAttemptKey('order-2', '412399887766', shot, 0, keyStorage), firstKey);
+assert.match(firstKey, /^payment-order-1-/);
+assert.ok(paymentsApi.paymentAttemptKey('order-1', '412399887766', shot, 0, null).startsWith('payment-order-1-'), 'works without storage');
+
+// Signed QR paths are accepted; other schemes are not. Rejection history is validated.
+const baseOrder = { id: 'o1', orderNumber: '#BFP-1', product: 'faki', productName: 'Faki', packSize: '500g', quantity: 1, subtotal: 500, deliveryFee: 0, total: 500, customerName: 'A', phone: '+919876543210', address: 'Somewhere in Rajkot', pinCode: '360005', status: 'PENDING_PAYMENT', paymentStatus: 'PENDING', createdAt: '2026-10-19T10:00:00Z', updatedAt: '2026-10-19T10:00:00Z' };
+const withQr = qr => ({ ...baseOrder, payment: { amount: 500, payeeName: 'LOCAL TEST', upiId: 'local-test@upi', qrImageUrl: qr, settingsConfirmed: false } });
+assert.equal(contracts.readOrder(withQr('/api/orders/o1/payment-qr?sig=abc123&exp=1760000900')).payment.settingsConfirmed, false);
+assert.throws(() => contracts.readOrder(withQr('javascript:alert(1)')));
+assert.throws(() => contracts.readOrder(withQr('/api/orders/o1/payment-qr?sig=<script>')));
+assert.throws(() => contracts.readOrder({ ...withQr('https://example.test/qr.png'), payment: { ...withQr('https://example.test/qr.png').payment, settingsConfirmed: 'yes' } }));
+const rejected = { orderId: 'o1', orderNumber: '#BFP-1', status: 'PENDING', orderStatus: 'PENDING_PAYMENT', rejectionReason: 'Screenshot is blurry', canSubmitProof: true, latestAttemptStatus: 'REJECTED', attempts: [{ id: 'a1', status: 'REJECTED', utrMasked: '4XXXXXXXX766' }] };
+assert.equal(contracts.readPaymentStatus(rejected, 'o1').rejectionReason, 'Screenshot is blurry');
+assert.throws(() => contracts.readPaymentStatus({ ...rejected, attempts: [{ status: 'REJECTED' }] }, 'o1'));
+assert.throws(() => contracts.readPaymentStatus({ ...rejected, canSubmitProof: 'yes' }, 'o1'));
 let enteredMobile=''; let inputValidity='';
 const mobileElement=mobileInput({value:'',onChange:value=>{enteredMobile=value;}}).props.children[1];
 assert.equal(mobileElement.props.maxLength,10);
