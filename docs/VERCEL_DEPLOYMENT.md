@@ -55,6 +55,26 @@ A brand-new Supabase project is the cleaner alternative: run all migrations in o
 - Functions run on Fluid compute (the config sets a 60 s limit); the first request after idle time has a short cold start.
 - The bundle excludes `frontend/`, `docs/`, `supabase/`, `scripts/` and tests (`vercel.json` → `excludeFiles`).
 
-## 5. Rollback
+## 5. Admin panel as its own Vercel project
+
+The same repository serves two separate sites, chosen at build time by one environment variable, `VITE_APP_MODE`:
+
+| Project | `VITE_APP_MODE` | Serves |
+|---|---|---|
+| storefront (existing, `balaji-faki-point`) | `customer` (recommended) | customer site only; `/admin` becomes a 404 and the "Admin Panel" link disappears |
+| admin (new) | `admin` | Admin Panel only; every other path lands on `/admin/dashboard`, sign-in is Owner Admin only (no "Create account") |
+| not set | (default) | both, as in local development |
+
+Create the admin project (Vercel dashboard, once):
+1. Add New → Project → import the **same** repository (`dhruv613/Balaji-Faki-supari`) again. Name it e.g. `balaji-faki-admin`. Keep **Root Directory** at the repo root; leave Framework / Build settings untouched (`vercel.json` decides them).
+2. Before the first deploy, add the environment variables: `VITE_APP_MODE=admin` plus the **same** variables as the storefront project (section 1: `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`, `DATABASE_URL`, `PROOF_SIGNING_SECRET`, ...). Optional: `VITE_STORE_URL=https://<storefront domain>` to show a "Store" link inside the admin.
+3. In the storefront project add `VITE_APP_MODE=customer` and redeploy it.
+4. Supabase → Authentication → URL Configuration: add the admin domain to Redirect URLs.
+5. Deploy. Every push to GitHub now deploys both projects.
+
+Each project runs its own copy of the API function against the same Supabase database, so the admin panel needs no CORS setup either. Admin access is enforced by the server on every request (`/api/me` must return `OWNER_ADMIN`), not by the hidden routes; keeping the admin on its own address just removes it from the public site.
+Optional: protect the admin project with Vercel Deployment Protection / a custom domain such as `admin.<your domain>`.
+
+## 6. Rollback
 
 Vercel → Deployments → pick an earlier deployment → Promote to Production (or Instant Rollback). Database migrations are forward-only and are not undone by a rollback.

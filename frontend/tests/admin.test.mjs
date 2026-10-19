@@ -29,6 +29,16 @@ function load(path, stubs = {}, globals = {}) {
   return context.exports;
 }
 
+// One codebase, two Vercel projects: VITE_APP_MODE picks admin-only, storefront-only or both (default).
+const { parseAppMode } = load('src/lib/appMode.ts');
+assert.equal(parseAppMode('admin'), 'admin');
+assert.equal(parseAppMode(' Customer '), 'customer');
+for (const value of [undefined, '', 'all', 'anything', 42]) assert.equal(parseAppMode(value), 'all');
+const routerSource = readFileSync(new URL('../src/app/router.tsx', import.meta.url), 'utf8');
+assert.match(routerSource, /showAdmin && <Route path="admin"/, 'admin routes are gated by the app mode');
+assert.match(routerSource, /showStore && <Route element=\{<StoreLayout \/>\}>/, 'storefront routes are gated by the app mode');
+assert.match(routerSource, /appMode === 'admin'\s*\? <Route path="\*" element=\{<Navigate to="\/admin\/dashboard"/, 'an admin-only build lands on the dashboard');
+
 const stateMachine = load('src/features/admin/lib/orderStateMachine.ts');
 const {
   validateOrderTransition,
@@ -63,6 +73,7 @@ const routeGuard = load('src/features/admin/components/AdminRouteGuard.tsx', {
   '../../../lib/supabase': authStub,
   '../../../lib/env': { env },
   '../../../components/common/EmailSignIn': { default: () => null },
+  '../../../components/common/StoreLink': { default: () => null },
   '../../../components/common/Notice': { default: () => null },
   '../api': adminApi,
 });
@@ -466,6 +477,7 @@ const AdminStatesMod = load('src/features/admin/components/AdminStates.tsx', {
 const AdminToastMod = load('src/features/admin/components/Toast.tsx');
 const AdminSidebarMod = load('src/features/admin/components/AdminSidebar.tsx', {
   '../../../lib/supabase': authStub,
+  '../../../components/common/StoreLink': { default: () => null },
 });
 
 // Verify primary navigation contains strictly the 4 simplified pages

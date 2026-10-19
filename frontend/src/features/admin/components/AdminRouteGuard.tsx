@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useSession, supabase } from '../../../lib/supabase';
 import { env } from '../../../lib/env';
 import EmailSignIn from '../../../components/common/EmailSignIn';
+import StoreLink from '../../../components/common/StoreLink';
 import Notice from '../../../components/common/Notice';
 import { getAdminMe } from '../api';
 
@@ -123,9 +124,9 @@ export default function AdminRouteGuard({ children }: { children: ReactNode }) {
               Log out &amp; sign in with the Admin account
             </button>
           )}
-          <Link to="/" className="btn btn--outline btn--full">
+          <StoreLink className="btn btn--outline btn--full">
             ← Return to Customer Store
-          </Link>
+          </StoreLink>
         </div>
       </section>
     </main>
