@@ -187,3 +187,6 @@ Source of truth for this phase: `docs/CLAUDE_PROJECT_AUDIT.md`, `docs/CLAUDE_FIN
 - Flags for the owner: the banner promises "All India Courier Service FREE with Order 50 FAKI Parcel" and "Natural Taste Until 30 DAYS" while the site only serves the local PIN list and no delivery charge is decided; it also carries a Windows "Activate Windows" watermark in the bottom-right corner (re-export it without that). The bundle photo has wide white margins, so the sachet looks small in its frame. The box reads "25 PCS" and the banner "50 FAKI Parcel": Faki may be sold by pieces rather than the 250 g / 500 g / 1 kg packs, which is not changed here.
 - Verification: `npm run verify` PASS (66 backend tests), smoke 64/64 (Faki and Supari gallery order), browser: card images and both dialogs show the galleries in the stated order with the right files.
 
+### Faki photo order swapped (2026-10-19, owner request)
+- Faki gallery is now: (1) box (also the card image), (2) tied sachet bundle, (3) promotional banner last. Migration `20261020000007_faki_gallery_order.sql` (local DB only, applies only if the gallery is still as left by the previous migration); dev seed and tests match. This supersedes the order stated in the previous section.
+

@@ -42,7 +42,7 @@ class CatalogDetailsTests(unittest.TestCase):
         self.assertEqual(products["faki"]["prices"]["1kg"], 1000)
         self.assertEqual(products["supari"]["prices"]["1kg"], 800)
         self.assertEqual(products["faki"]["description"], "Store-confirmed packaging information.")
-        self.assertEqual(products["faki"]["imageUrl"], "/images/products/balaji-faki-bundle.jpg")
+        self.assertEqual(products["faki"]["imageUrl"], "/images/products/balaji-faki-box.webp")
         self.assertEqual(products["supari"]["imageUrl"], "/images/supari-reference.png")  # other products keep their own image
         self.assertEqual([i["url"] for i in products["supari"]["images"]], ["/images/supari-reference.png", "/images/products/balaji-supari-packet-front.webp", "/images/products/balaji-supari-packet-back.webp"])  # bowl first, packet photos last
         self.assertEqual(products["faki"]["information"]["ingredients"], "Test-confirmed ingredients.")
@@ -93,7 +93,7 @@ class CatalogDetailsTests(unittest.TestCase):
 
             payload = _serialize_customer_order(db, order, db.get(StoreSettings, 1))
 
-        self.assertEqual(payload["productImageUrl"], "/images/products/balaji-faki-bundle.jpg")
+        self.assertEqual(payload["productImageUrl"], "/images/products/balaji-faki-box.webp")
 
     def test_public_store_profile_uses_settings_without_exposing_payment_destination(self) -> None:
         with db_session.SessionLocal() as db:

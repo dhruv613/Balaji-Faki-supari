@@ -60,8 +60,8 @@ class CatalogAdminTests(unittest.TestCase):
             self.assertEqual(detail["information"]["packaging"], "Test-confirmed packaging.")
             self.assertEqual(detail["information"]["safetyDisclosures"], "Test-confirmed disclosure.")
             self.assertEqual(detail["information"]["ingredients"], "")  # not supplied -> empty, never invented
-            # Seeded Faki gallery: bundle first, box, promotional banner last, then a Storage-backed image.
-            self.assertEqual([i["url"] for i in detail["images"][:3]], ["/images/products/balaji-faki-bundle.jpg", "/images/products/balaji-faki-box.webp", "/images/products/balaji-faki-banner.jpg"])
+            # Seeded Faki gallery: box first, tied sachet bundle, promotional banner last, then a Storage-backed image.
+            self.assertEqual([i["url"] for i in detail["images"][:3]], ["/images/products/balaji-faki-box.webp", "/images/products/balaji-faki-bundle.jpg", "/images/products/balaji-faki-banner.jpg"])
             self.assertEqual([i["alt"] for i in detail["images"]][-1], "Front of pack")
             self.assertTrue(detail["images"][3]["url"].endswith("/product-images/faki/front.png"))
             self.assertEqual(detail["priceConfirmed"], {"250g": False, "500g": False, "1kg": True})

@@ -37,11 +37,11 @@ INITIAL_PRODUCTS = (
         "name_gu": "ફાકી",
         "category": "Faki",
         "description": "",
-        "image_url": "/images/products/balaji-faki-bundle.jpg",
-        # Bundled gallery: bundle first, box, promotional banner last. Alt text only describes the photo: no weight, ingredients or claims.
+        "image_url": "/images/products/balaji-faki-box.webp",
+        # Bundled gallery: box first, tied sachet bundle, promotional banner last. Alt text only describes the photo: no weight, ingredients or claims.
         "images": (
-            ("/images/products/balaji-faki-bundle.jpg", "Faki sachets tied in a bundle"),
             ("/images/products/balaji-faki-box.webp", "Balaji Faki Point box"),
+            ("/images/products/balaji-faki-bundle.jpg", "Faki sachets tied in a bundle"),
             ("/images/products/balaji-faki-banner.jpg", "Balaji Faki Point promotional banner"),
         ),
         "variants": (

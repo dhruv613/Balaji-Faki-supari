@@ -271,7 +271,7 @@ class AdminModuleTests(unittest.TestCase):
         with db_session.SessionLocal() as db:
             # The seeded Faki gallery is two bundled frontend assets: removing them must not touch Storage.
             bundled = [(image.id, image.storage_path) for image in db.scalar(select(Product).where(Product.slug == "faki")).images]
-            self.assertEqual([path for _, path in bundled], ["/images/products/balaji-faki-bundle.jpg", "/images/products/balaji-faki-box.webp", "/images/products/balaji-faki-banner.jpg"])
+            self.assertEqual([path for _, path in bundled], ["/images/products/balaji-faki-box.webp", "/images/products/balaji-faki-bundle.jpg", "/images/products/balaji-faki-banner.jpg"])
             for bundled_id, _ in bundled:
                 main_module.delete_admin_product_image("faki", bundled_id, self.admin, db)
             self.assertEqual(OBJECTS, {})

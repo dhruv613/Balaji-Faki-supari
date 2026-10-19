@@ -198,7 +198,7 @@ def main() -> int:
     if uploaded:  # leave the gallery as it was
         http.delete(f"{API}/admin/products/faki/images/{uploaded['id']}", headers=admin)
     gallery = http.get(f"{API}/products/faki").json()["images"]
-    check("Faki gallery: bundle first, banner last", [i["url"] for i in gallery[:3]] == ["/images/products/balaji-faki-bundle.jpg", "/images/products/balaji-faki-box.webp", "/images/products/balaji-faki-banner.jpg"] and all(i["alt"] != "Smoke photo" for i in gallery), str(gallery)[:200])
+    check("Faki gallery: box first, bundle second, banner last", [i["url"] for i in gallery[:3]] == ["/images/products/balaji-faki-box.webp", "/images/products/balaji-faki-bundle.jpg", "/images/products/balaji-faki-banner.jpg"] and all(i["alt"] != "Smoke photo" for i in gallery), str(gallery)[:200])
     supari_gallery = http.get(f"{API}/products/supari").json()["images"]
     check("Supari gallery: bowl first, arecanut packet photos last", [i["url"] for i in supari_gallery] == ["/images/supari-reference.png", "/images/products/balaji-supari-packet-front.webp", "/images/products/balaji-supari-packet-back.webp"], str(supari_gallery)[:200])
     qr = http.post(f"{API}/admin/settings/qr", headers=admin, files={"qr": ("qr.png", PNG, "image/png")})
