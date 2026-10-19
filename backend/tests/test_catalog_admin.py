@@ -68,7 +68,7 @@ class CatalogAdminTests(unittest.TestCase):
             self.assertEqual(detail["prices"]["1kg"], 1000)
             self.assertIsNone(detail["averageRating"])
             self.assertEqual(detail["reviewCount"], 0)
-            self.assertEqual({p["type"] for p in list_public_products(db)}, {"faki", "supari"})
+            self.assertEqual([p["type"] for p in list_public_products(db)], ["faki", "supari", "mitho-mavo", "water"])
             with self.assertRaises(HTTPException) as missing:
                 get_public_product("unknown", db)
             self.assertEqual(missing.exception.status_code, 404)

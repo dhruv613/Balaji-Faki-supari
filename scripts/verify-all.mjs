@@ -30,6 +30,7 @@ const requiredPaths = [
   'supabase/migrations/20261020000002_least_privilege_grants.sql',
   'supabase/migrations/20261020000003_screenshot_only_payments.sql',
   'supabase/migrations/20261020000004_faki_packet_images.sql',
+  'supabase/migrations/20261020000005_mitho_mavo_and_water.sql',
   'scripts/check-local-only.mjs',
   'scripts/check-db-security.py',
   'docs/design-reference/Balaji Faki Point – Website UI (1).html',

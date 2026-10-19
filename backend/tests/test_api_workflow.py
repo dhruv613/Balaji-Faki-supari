@@ -172,7 +172,7 @@ class FastApiWorkflowIntegrationTests(unittest.TestCase):
         products_res = self.client.get("/api/products")
         self.assertEqual(products_res.status_code, 200)
         products = products_res.json()
-        self.assertEqual({p["type"] for p in products}, {"faki", "supari"})
+        self.assertEqual([p["type"] for p in products], ["faki", "supari", "mitho-mavo", "water"])
 
         # Admin configures selling & cost prices for Faki and Supari variants
         update_faki = self.client.patch(

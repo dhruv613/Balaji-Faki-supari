@@ -116,6 +116,20 @@ export const PRODUCT_SHELL: Product[] = [
     packSizes: ['250g', '500g', '1kg'],
     prices: { '250g': null, '500g': null, '1kg': null },
   },
+  {
+    type: 'mitho-mavo',
+    name: 'Mitho Mavo',
+    nameGu: 'મીઠો માવો',
+    packSizes: ['250g', '500g', '1kg'],
+    prices: { '250g': null, '500g': null, '1kg': null },
+  },
+  {
+    type: 'water',
+    name: 'Water Bottle',
+    nameGu: 'પાણીની બોટલ',
+    packSizes: ['1l'],
+    prices: { '1l': null },
+  },
 ];
 
 /** Format a number as Indian Rupees */
@@ -124,6 +138,8 @@ export function formatINR(amount: number | null): string {
   return `₹${amount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 }
 
+/** 250g -> "250 g", 1kg -> "1 kg", 500ml -> "500 ml", 1l -> "1 L" */
 export function formatPackSize(size: string): string {
-  return size === '1kg' ? '1 kg' : size.replace('g', ' g');
+  const match = /^([0-9]+)(g|kg|ml|l)$/.exec(size);
+  return match ? `${match[1]} ${match[2] === 'l' ? 'L' : match[2]}` : size;
 }

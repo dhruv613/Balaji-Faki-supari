@@ -1,4 +1,5 @@
 import type { CheckoutQuote, Order, Product, PaymentStatusResponse, TrackingEvent } from '../types/orders';
+import { PACK_SIZE_PATTERN, PRODUCT_SLUG_PATTERN } from '../constants/store';
 
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object';
@@ -10,8 +11,8 @@ const money = (value: unknown): value is number =>
   Number.isSafeInteger(Math.round(value * 100)) &&
   Math.abs(value * 100 - Math.round(value * 100)) < 0.000001;
 const text = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0;
-const products = ['faki', 'supari'];
-const sizes = ['250g', '500g', '1kg'];
+const productSlug = (value: unknown): boolean => typeof value === 'string' && PRODUCT_SLUG_PATTERN.test(value);
+const packSize = (value: unknown): boolean => typeof value === 'string' && PACK_SIZE_PATTERN.test(value);
 const productInformationKeys = [
   'ingredients',
   'popularity',
@@ -93,7 +94,7 @@ export function readProducts(value: unknown): Product[] {
   for (const product of value) {
     if (
       !record(product) ||
-      !products.includes(String(product.type)) ||
+      !productSlug(product.type) ||
       !text(product.name) ||
       typeof product.nameGu !== 'string' ||
       (product.category !== undefined && typeof product.category !== 'string') ||
@@ -114,7 +115,7 @@ export function readProducts(value: unknown): Product[] {
       !product.packSizes.every(
         (size: unknown) =>
           typeof size === 'string' &&
-          sizes.includes(size) &&
+          packSize(size) &&
           (prices[size] === null || money(prices[size])),
       )
     ) {
@@ -130,9 +131,9 @@ export function readOrder(value: unknown): Order {
     !text(value.id) ||
     !text(value.orderNumber) ||
     !totals(value) ||
-    !products.includes(String(value.product)) ||
+    !productSlug(value.product) ||
     !text(value.productName) ||
-    !sizes.includes(String(value.packSize)) ||
+    !packSize(value.packSize) ||
     typeof value.quantity !== 'number' ||
     !Number.isInteger(value.quantity) ||
     value.quantity < 1 ||

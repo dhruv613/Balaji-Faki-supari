@@ -34,7 +34,7 @@ export default function OrderFormPage() {
   // Preselect product from URL query param (?product=faki or ?product=supari)
   useEffect(() => {
     const p = searchParams.get('product');
-    if (p && (p === 'faki' || p === 'supari') && p !== state.product) {
+    if (p && p !== state.product && state.products.some((item) => item.type === p)) {
       dispatch({ type: 'SET_PRODUCT', payload: p });
     }
     if (p) {

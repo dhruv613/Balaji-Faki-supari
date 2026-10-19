@@ -20,7 +20,8 @@ let session = null;
 const env = { apiBaseUrl: '', supportWhatsApp: '918000961030' };
 const auth = { supabase: { auth: { getSession: async () => ({ data: { session } }) } }, useSession: () => ({ session: { user: { id: 'ui-test-user' } }, loading: false }) };
 const api = load('src/lib/api.ts', { './env': { env }, './supabase': auth }, { fetch: (...args) => fakeFetch(...args) });
-const contracts = load('src/lib/contracts.ts');
+const store = load('src/constants/store.ts');
+const contracts = load('src/lib/contracts.ts', { '../constants/store': store });
 const ordersApi = load('src/features/orders/api/ordersApi.ts', { '../../../lib/api': api, '../../../lib/contracts': contracts });
 const paymentsApi = load('src/features/payments/api/paymentsApi.ts', { '../../../lib/api': api, '../../../lib/contracts': contracts });
 const catalogApi = load('src/features/catalog/api/catalogApi.ts', { '../../../lib/api': api, '../../../lib/contracts': contracts });
@@ -29,13 +30,13 @@ const mobileInput = load('src/components/common/MobileNumberInput.tsx', { '../..
 const storage = new Map();
 const sessionStorage = { getItem: key => storage.get(key) ?? null, setItem: (key,value) => storage.set(key,value), removeItem: key => storage.delete(key) };
 const context = load('src/context/OrderContext.tsx', {
-  '../lib/api': api, '../features/catalog/api/catalogApi': catalogApi,
+  '../lib/api': api, '../constants/store': store, '../features/catalog/api/catalogApi': catalogApi,
   '../features/orders/api/ordersApi': ordersApi, '../lib/customer': customer,
 }, { sessionStorage });
 const { initialState, reducer, restoreDraft, validateForm, buildSummary, toOrderFormData } = context;
 const valid = { ...initialState, product: 'faki', packSize: '500g', quantity: 2, fullName: '  હેતલ પટેલ  ', phone: '+91 98765 43210', address: 'Riddhi Siddhi Complex, Rajkot', pinCode: '360005' };
 assert.equal(Object.keys(validateForm(valid)).length, 0);
-for (const input of [{quantity:0}, {quantity:NaN}, {quantity:1.5}, {quantity:21}, {product:'other'}, {packSize:'2kg'}, {phone:'1234'}, {phone:'5876543210'}, {pinCode:'000000'}, {pinCode:'12345'}, {fullName:' '}, {address:'short'}]) {
+for (const input of [{quantity:0}, {quantity:NaN}, {quantity:1.5}, {quantity:21}, {product:'Other Product!'}, {packSize:'2 kg'}, {phone:'1234'}, {phone:'5876543210'}, {pinCode:'000000'}, {pinCode:'12345'}, {fullName:' '}, {address:'short'}]) {
   assert.ok(Object.keys(validateForm({...valid, ...input})).length, JSON.stringify(input));
 }
 assert.equal(toOrderFormData(valid).fullName, 'હેતલ પટેલ');
@@ -78,7 +79,7 @@ context.persistDraft(adopted, 'customer-one');
 assert.equal(context.loadState(userOne).address, valid.address);
 // No fabricated prices: the shell shows names only until the database answers.
 assert.ok(Object.values(initialState.products[0].prices).every(price => price === null));
-assert.equal(api.PRODUCT_SHELL.length, 2);
+assert.equal(api.PRODUCT_SHELL.map(p => p.type).join(), "faki,supari,mitho-mavo,water");
 assert.equal(api.PRODUCTS, undefined, 'hard-coded price list must not exist');
 // Payment retries are idempotent per attempt; a new attempt (new proof or after a rejection) gets a new key.
 const keyStore = new Map();
@@ -123,7 +124,7 @@ const saved = restoreDraft(JSON.stringify(proof));
 assert.equal(saved.serverOrder,null); assert.equal(saved.paymentStatus,null);
 assert.equal(saved.checkoutKey,'old-key'); assert.equal(saved.orderId,'old');
 assert.equal(restoreDraft('{').product,'faki');
-assert.equal(restoreDraft(JSON.stringify({product:'invalid',quantity:'bad',fullName:5})).product,'faki');
+assert.equal(restoreDraft(JSON.stringify({product:'Invalid Product',quantity:'bad',fullName:5})).product,'faki');
 assert.equal(buildSummary(initialState).total,null);
 assert.equal(api.formatINR(0),'₹0'); assert.equal(api.formatINR(null),'Awaiting price');
 assert.ok(paymentsApi.validateScreenshot(null));
@@ -140,6 +141,16 @@ assert.throws(() => contracts.readQuote({subtotal:-1,deliveryFee:0,total:-1,curr
 assert.equal(contracts.readQuote({subtotal:100,deliveryFee:0,total:100,currency:'INR'}).deliveryFee,0);
 assert.throws(() => contracts.readProducts([{type:'faki'}]));
 const catalogProduct = {type:'faki',name:'Faki',nameGu:'ફાકી',category:'Faki',description:'',imageUrl:'/images/faki.png',information:{ingredients:'Test-confirmed ingredients.',popularity:'',characteristics:'',productionPackaging:'Test-confirmed packaging.',providerManufacturer:'',safetyStorage:'Test-confirmed storage guidance.'},packSizes:['250g','500g','1kg'],prices:{'250g':250,'500g':500,'1kg':1000}};
+// Products and pack sizes come from the catalogue: any slug-shaped product and unit-shaped pack size is accepted by the client.
+assert.equal(api.formatPackSize('250g'),'250 g'); assert.equal(api.formatPackSize('1kg'),'1 kg'); assert.equal(api.formatPackSize('500ml'),'500 ml'); assert.equal(api.formatPackSize('1l'),'1 L');
+const withWater = reducer(valid,{type:'SET_PRODUCT',payload:'water'});
+assert.equal(withWater.product,'water'); assert.equal(withWater.packSize,'1l','the default pack size comes from the product, not a fixed list');
+assert.equal(validateForm({...valid,product:'mitho-mavo',packSize:'500ml'}).product,undefined);
+const fallback = reducer({...valid,product:'gone',packSize:'9kg'},{type:'SET_CATALOG',payload:{products:[catalogProduct],status:''}});
+assert.equal(fallback.product,'faki'); assert.equal(fallback.packSize,'250g','a stale draft falls back to a product and pack size that exist');
+const waterProduct = {...catalogProduct,type:'water',name:'Water Bottle',packSizes:['1l'],prices:{'1l':20}};
+assert.equal(contracts.readProducts([waterProduct])[0].packSizes[0],'1l');
+assert.throws(() => contracts.readProducts([{...waterProduct,packSizes:['1 L'],prices:{'1 L':20}}]), 'malformed pack sizes are still rejected');
 assert.equal(contracts.readProducts([catalogProduct])[0].information.ingredients,'Test-confirmed ingredients.');
 assert.throws(() => contracts.readProducts([{...catalogProduct,information:{ingredients:1}}]));
 assert.throws(() => contracts.readPaymentStatus({orderId:'other',orderNumber:'BFP',status:'verified',orderStatus:'active'},'mine'));

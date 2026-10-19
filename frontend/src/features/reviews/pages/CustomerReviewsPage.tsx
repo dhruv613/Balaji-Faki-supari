@@ -3,6 +3,8 @@ import { Link, useSearchParams } from 'react-router-dom';
 import Notice from '../../../components/common/Notice';
 import { formatPackSize, getErrorMessage, resolveApiUrl } from '../../../lib/api';
 import { useSession } from '../../../lib/supabase';
+import { useOrder } from '../../../context/OrderContext';
+import { PRODUCT_SLUG_PATTERN } from '../../../constants/store';
 import { getMyOrders } from '../../orders/api/ordersApi';
 import type { Order } from '../../../types/orders';
 import Stars from '../../../components/common/Stars';
@@ -38,15 +40,16 @@ export function validateReviewPhotos(files: readonly Pick<File, 'name' | 'size' 
   return null;
 }
 
-function productLabel(product: ProductFilter): string {
-  return product === 'all' ? 'All products' : product === 'faki' ? 'Faki' : 'Supari';
+function productLabel(product: ProductFilter, products: Array<{ type: string; name: string }>): string {
+  return product === 'all' ? 'All products' : products.find((item) => item.type === product)?.name ?? product;
 }
 
 export default function CustomerReviewsPage() {
   const { session, loading: authLoading } = useSession();
   const [searchParams] = useSearchParams();
+  const { products } = useOrder();
   const initialProduct = searchParams.get('product');
-  const [productFilter, setProductFilter] = useState<ProductFilter>(initialProduct === 'faki' || initialProduct === 'supari' ? initialProduct : 'all');
+  const [productFilter, setProductFilter] = useState<ProductFilter>(initialProduct && PRODUCT_SLUG_PATTERN.test(initialProduct) ? initialProduct : 'all');
   const [sort, setSort] = useState<ReviewSort>('newest');
   const [reviews, setReviews] = useState<PublishedReview[]>([]);
   const [summary, setSummary] = useState<ReviewSummary>(EMPTY_SUMMARY);
@@ -160,13 +163,13 @@ export default function CustomerReviewsPage() {
   return (
     <div className="wrapper reviews-page">
       <h1 className="page__header">Customer reviews</h1>
-      <p className="page__subtitle">Verified-purchase feedback for Faki and Supari.</p>
+      <p className="page__subtitle">Verified-purchase feedback from our customers.</p>
 
       <div className="reviews-layout">
         <aside className="card card--tinted review-summary" aria-label="Customer review summary">
           <div className="amount-display">{average}</div>
           <div className="review-meta">{summary.average !== null && <Stars rating={summary.average} />}<span className="text-small text-secondary">out of 5</span></div>
-          <p className="text-small text-secondary">Based on {summary.count} genuine {productFilter === 'all' ? '' : `${productLabel(productFilter)} `}review{summary.count === 1 ? '' : 's'}</p>
+          <p className="text-small text-secondary">Based on {summary.count} genuine {productFilter === 'all' ? '' : `${productLabel(productFilter, products)} `}review{summary.count === 1 ? '' : 's'}</p>
           <div className="rating-bars">
             {distribution.map((item) => <div className="rating-bar" key={item.star}>
               <span>{item.star} stars</span>
@@ -176,7 +179,7 @@ export default function CustomerReviewsPage() {
           </div>
           <h2 style={{ fontSize: 22, marginTop: 24, marginBottom: 8 }}>Filter reviews</h2>
           <div className="customer-filter-chips" aria-label="Product filters">
-            {(['all', 'faki', 'supari'] as const).map((product) => <button key={product} type="button" className={`chip${productFilter === product ? ' chip--active' : ''}`} aria-pressed={productFilter === product} onClick={() => setProductFilter(product)}>{productLabel(product)}</button>)}
+            {['all', ...products.map((item) => item.type)].map((product) => <button key={product} type="button" className={`chip${productFilter === product ? ' chip--active' : ''}`} aria-pressed={productFilter === product} onClick={() => setProductFilter(product)}>{productLabel(product, products)}</button>)}
           </div>
           <label htmlFor="review-sort" style={{ marginTop: 18 }}>Sort by</label>
           <select id="review-sort" className="input" value={sort} onChange={(event) => setSort(event.target.value as ReviewSort)}>

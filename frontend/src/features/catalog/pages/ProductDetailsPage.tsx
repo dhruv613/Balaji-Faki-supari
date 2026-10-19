@@ -31,7 +31,7 @@ export default function ProductDetailsPage() {
         setSelected(value.packSizes.find((size) => value.prices[size] !== null) ?? value.packSizes[0] ?? null);
       })
       .catch((reason) => { if (active) setError(getErrorMessage(reason)); });
-    getPublishedReviews(slug === 'faki' || slug === 'supari' ? slug : undefined, 'newest')
+    getPublishedReviews(slug, 'newest')
       .then((list) => { if (active) setReviews(list); })
       .catch(() => { if (active) setReviews(null); });
     return () => { active = false; };

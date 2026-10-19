@@ -74,7 +74,7 @@ export default function HomePage() {
         <div className="wrapper">
           <h2>How ordering works</h2>
           <div className="grid" style={{ marginTop: 28 }}>
-            <StepCard num={1} title="Fill the order form" desc="Choose Faki or Supari, quantity and delivery details." />
+            <StepCard num={1} title="Fill the order form" desc="Choose your product, pack size, quantity and delivery details." />
             <StepCard num={2} title="Pay with UPI QR" desc="Scan, pay the exact amount and enter your transaction ID." />
             <StepCard num={3} title="We verify & confirm" desc="Payment verification comes first; the shop confirms before packing and delivery updates begin." />
           </div>

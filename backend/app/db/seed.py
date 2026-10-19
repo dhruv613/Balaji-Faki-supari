@@ -29,7 +29,7 @@ LOCAL_TEST_UPI_ID = "local-test@upi"
 LOCAL_TEST_PAYEE = "LOCAL TEST - do not pay"
 DEV_SERVICEABLE_PINS = ["360001", "360002", "360003", "360004", "360005", "360006", "360007"]
 
-# (pack_size, sku, cost_paise, price_paise, stock, price_confirmed)
+# (pack_size, sku, cost_paise, price_paise, stock, price_confirmed). Pack sizes are per product (250g, 1kg, 500ml, 1l ...).
 INITIAL_PRODUCTS = (
     {
         "slug": "faki",
@@ -60,6 +60,39 @@ INITIAL_PRODUCTS = (
             ("250g", "BFP-SUPARI-250G", 9000, 20000, 50, False),
             ("500g", "BFP-SUPARI-500G", 18000, 40000, 50, False),
             ("1kg", "BFP-SUPARI-1KG", 36000, 80000, 50, False),
+        ),
+    },
+    {
+        "slug": "mitho-mavo",
+        "name": "Mitho Mavo",
+        "name_gu": "મીઠો માવો",
+        "category": "Faki",
+        "description": "No Tobacco Faki (Sadi Faki)",
+        "image_url": "/images/products/balaji-mitho-mavo-sachet.webp",
+        "images": (
+            ("/images/products/balaji-mitho-mavo-sachet.webp", "Mitho Mavo sachet with the mavo mixture"),
+            ("/images/products/balaji-mitho-mavo-sachets.webp", "Two Mitho Mavo sachets with the mavo mixture"),
+        ),
+        # DEVELOPMENT placeholder prices only (no owner-confirmed price exists yet).
+        "variants": (
+            ("250g", "BFP-MITHO-MAVO-250G", 9000, 15000, 50, False),
+            ("500g", "BFP-MITHO-MAVO-500G", 17000, 30000, 50, False),
+            ("1kg", "BFP-MITHO-MAVO-1KG", 33000, 60000, 50, False),
+        ),
+    },
+    {
+        "slug": "water",
+        "name": "Water Bottle",
+        "name_gu": "પાણીની બોટલ",
+        "category": "Water",
+        "description": "",
+        "image_url": "/images/products/balaji-water-bottle.webp",
+        "images": (
+            ("/images/products/balaji-water-bottle.webp", "Balaji Faki Point water bottle"),
+            ("/images/products/balaji-water-label.jpg", "Water bottle label artwork"),
+        ),
+        "variants": (
+            ("1l", "BFP-WATER-1L", 800, 2000, 50, False),
         ),
     },
 )

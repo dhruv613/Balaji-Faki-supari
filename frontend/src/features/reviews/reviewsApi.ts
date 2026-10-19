@@ -1,6 +1,7 @@
 import { apiFetch } from '../../lib/api';
+import { PRODUCT_SLUG_PATTERN } from '../../constants/store';
 
-export type ReviewProduct = 'faki' | 'supari';
+export type ReviewProduct = string; // product slug from the catalogue
 export type ReviewSort = 'newest' | 'oldest' | 'highest' | 'lowest';
 
 export interface PublishedReview {
@@ -41,7 +42,7 @@ function readReview(value: unknown): PublishedReview {
     typeof review.orderId !== 'string' ||
     typeof review.customerName !== 'string' ||
     typeof review.product !== 'string' ||
-    !['faki', 'supari'].includes(review.product) ||
+    !PRODUCT_SLUG_PATTERN.test(review.product) ||
     typeof review.rating !== 'number' ||
     review.rating < 1 ||
     review.rating > 5 ||

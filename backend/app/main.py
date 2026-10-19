@@ -258,13 +258,27 @@ def _serialize_product_images(product: Product) -> list[dict[str, Any]]:
     ]
 
 
+_PACK_UNITS = {"g": ("mass", 1), "kg": ("mass", 1000), "ml": ("volume", 1), "l": ("volume", 1000)}
+
+
+def _pack_sort_key(pack_size: str) -> tuple[str, int]:
+    """250g < 500g < 1kg and 500ml < 1l (a plain string sort would put '1kg' first)."""
+    number, unit = re.fullmatch(r"([0-9]+)([a-z]+)", pack_size).groups()  # format enforced by the schema and DB check
+    family, factor = _PACK_UNITS[unit]
+    return family, int(number) * factor
+
+
+def _catalogue_order(statement):
+    """Catalogue order: the order products were added (Faki, Supari, then newer ones), slug as the tie-break."""
+    return statement.order_by(Product.created_at.asc(), Product.slug.asc())
+
+
 def _serialize_public_product(db: Session, product: Product) -> dict[str, Any]:
-    prices: dict[str, float | int | None] = {"250g": None, "500g": None, "1kg": None}
-    price_confirmed: dict[str, bool] = {"250g": False, "500g": False, "1kg": False}
-    in_stock: dict[str, bool] = {"250g": False, "500g": False, "1kg": False}
-    for variant in product.variants:
-        if variant.pack_size not in prices:
-            continue
+    variants = sorted(product.variants, key=lambda v: _pack_sort_key(v.pack_size))
+    prices: dict[str, float | int | None] = {v.pack_size: None for v in variants}
+    price_confirmed: dict[str, bool] = {v.pack_size: False for v in variants}
+    in_stock: dict[str, bool] = {v.pack_size: False for v in variants}
+    for variant in variants:
         sellable = variant.is_available and variant.available_stock > 0
         prices[variant.pack_size] = paise_to_inr(variant.price_paise) if sellable else None
         price_confirmed[variant.pack_size] = bool(variant.price_confirmed)
@@ -279,7 +293,7 @@ def _serialize_public_product(db: Session, product: Product) -> dict[str, Any]:
         "imageUrl": product.image_url,
         "images": _serialize_product_images(product),
         "information": _serialize_product_information(product),
-        "packSizes": ["250g", "500g", "1kg"],
+        "packSizes": [v.pack_size for v in variants],
         "prices": prices,
         "priceConfirmed": price_confirmed,
         "inStock": in_stock,
@@ -313,7 +327,7 @@ def _serialize_admin_product(p: Product) -> dict[str, Any]:
                 "reservedQuantity": v.reserved_stock,
                 "isAvailable": v.is_available,
             }
-            for v in p.variants
+            for v in sorted(p.variants, key=lambda v: _pack_sort_key(v.pack_size))
         ],
     }
 
@@ -833,7 +847,7 @@ def get_me(
 @router.get("/products")
 def list_public_products(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
     products = db.scalars(
-        select(Product).where(Product.is_active.is_(True)).order_by(Product.slug.asc())
+        _catalogue_order(select(Product).where(Product.is_active.is_(True)))
     ).all()
     return [_serialize_public_product(db, product) for product in products]
 
@@ -2427,7 +2441,7 @@ def list_admin_products(
     _admin: AuthenticatedPrincipal = Depends(get_owner_admin_principal),
     db: Session = Depends(get_db),
 ) -> list[dict[str, Any]]:
-    products = db.scalars(select(Product).order_by(Product.slug.asc())).all()
+    products = db.scalars(_catalogue_order(select(Product))).all()
     return [_serialize_admin_product(p) for p in products]
 
 
@@ -2712,8 +2726,8 @@ def list_published_reviews(
     product_id: str | None = None
     if product:
         slug = product.strip().lower()
-        if slug not in {"faki", "supari"}:
-            raise HTTPException(status_code=422, detail="Product must be faki or supari.")
+        if not re.fullmatch(r"[a-z0-9-]{1,32}", slug):
+            raise HTTPException(status_code=422, detail="Unknown product.")
         catalog_product = db.scalar(select(Product).where(Product.slug == slug))
         if catalog_product is None:
             return {"items": [], "total": 0, "summary": _review_summary(db, "unknown-product")}

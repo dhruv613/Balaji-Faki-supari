@@ -1,7 +1,8 @@
 /* --- Order types --- */
 
-export type ProductType = 'faki' | 'supari';
-export type PackSize = '250g' | '500g' | '1kg';
+/** Product slug and pack size (250g, 1kg, 500ml, 1l ...) are defined per product by the catalogue (database). */
+export type ProductType = string;
+export type PackSize = string;
 
 export interface ProductInformation {
   ingredients: string;

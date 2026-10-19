@@ -169,6 +169,20 @@ def main() -> int:
     c = http.post(f"{API}/orders/{o2['id']}/cancel", headers=cust, json={"reason": "Changed my mind about this order"})
     check("customer cancel works on Postgres (ORDER_CANCELLED notification)", c.status_code == 200 and c.json()["status"] == "CANCELLED", c.text[:200])
 
+    # ---- Mitho Mavo and Water are ordinary catalogue products (relaxed slug / pack-size CHECK constraints on Postgres) ------
+    water = next((p for p in http.get(f"{API}/products").json() if p["type"] == "water"), None)
+    wprice = water["prices"].get("1l") if water else None
+    check("Water Bottle is in the catalogue with a 1 L pack and its own images", bool(water) and water["packSizes"] == ["1l"] and len(water["images"]) == 2, str(water)[:150])
+    if wprice is not None:  # a price exists (dev placeholder or owner-approved)
+        wq = http.post(f"{API}/checkout/quote", json={"product": "water", "packSize": "1l", "quantity": 2, "pinCode": "360005"}).json()
+        check("Water 1 L quote is server-calculated", wq.get("subtotal") == wprice * 2, str(wq))
+        wo = http.post(f"{API}/orders", headers={**cust, "Idempotency-Key": uuid.uuid4().hex}, json={**body, "product": "water", "packSize": "1l", "quantity": 2})
+        check("Water order persists as product 'water', pack '1l'", wo.status_code == 200 and wo.json()["product"] == "water" and wo.json()["packSize"] == "1l", wo.text[:200])
+        if wo.status_code == 200:
+            http.post(f"{API}/orders/{wo.json()['id']}/cancel", headers=cust, json={"reason": "Smoke test cleanup of the water order"})
+    mavo_bad = http.post(f"{API}/checkout/quote", json={"product": "mitho-mavo", "packSize": "1l", "quantity": 1, "pinCode": "360005"})
+    check("a pack size the product does not have is refused", mavo_bad.status_code == 400, mavo_bad.text[:120])
+
     # ---- admin: inventory, products, settings, images, QR ------------------------------------------------------------------
     inv = http.get(f"{API}/admin/inventory", headers=admin).json()
     item = next(i for i in inv["items"] if i["sku"] == "BFP-FAKI-500G")

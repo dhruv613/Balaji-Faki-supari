@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useReducer, type ReactNode, type 
 import type { User } from '@supabase/supabase-js';
 import type { ProductType, PackSize, OrderFormData, OrderSummary, Order, PaymentStatus, Product, CheckoutQuote } from '../types/orders';
 import { PRODUCT_SHELL, getErrorMessage } from '../lib/api';
+import { PACK_SIZE_PATTERN, PRODUCT_SLUG_PATTERN } from '../constants/store';
 import { fetchProducts } from '../features/catalog/api/catalogApi';
 import { getCheckoutQuote, getOrder } from '../features/orders/api/ordersApi';
 import { normalizeIndianMobile, readCustomerDetails, validateCustomerDetails } from '../lib/customer';
@@ -55,11 +56,17 @@ export type Action =
 
 export const MAX_QUANTITY = 20;
 
+/** First pack size that currently has a price, else the first one (never a hard-coded size). */
+function defaultPackSize(products: Product[], type: ProductType): PackSize {
+  const product = products.find((item) => item.type === type);
+  return product?.packSizes.find((size) => product.prices[size] != null) ?? product?.packSizes[0] ?? '250g';
+}
+
 export function reducer(state: OrderState, action: Action): OrderState {
   switch (action.type) {
     case 'SET_PRODUCT':
       if (state.product === action.payload) return state;
-      return { ...state, ...orderReset, product: action.payload, packSize: '250g', quote: null };
+      return { ...state, ...orderReset, product: action.payload, packSize: defaultPackSize(state.products, action.payload), quote: null };
     case 'SET_PACK_SIZE':
       return { ...state, ...orderReset, packSize: action.payload, quote: null };
     case 'SET_QUANTITY':
@@ -73,8 +80,13 @@ export function reducer(state: OrderState, action: Action): OrderState {
       return { ...state, paymentStatus: action.payload };
     case 'SET_SCREENSHOT':
       return { ...state, screenshotFile: action.payload.file, screenshotPreview: action.payload.preview };
-    case 'SET_CATALOG':
-      return { ...state, products: action.payload.products, catalogStatus: action.payload.status };
+    case 'SET_CATALOG': {
+      // A saved draft can name a product or pack size the catalogue no longer has: fall back to a real one.
+      const { products } = action.payload;
+      const product = products.find((item) => item.type === state.product) ?? products[0];
+      const packSize = product?.packSizes.includes(state.packSize) ? state.packSize : defaultPackSize(products, product?.type ?? state.product);
+      return { ...state, products, catalogStatus: action.payload.status, ...(product ? { product: product.type, packSize } : {}) };
+    }
     case 'SET_QUOTE':
       return { ...state, quote: action.payload.quote, quoteStatus: action.payload.status };
     case 'SET_CHECKOUT_KEY':
@@ -110,8 +122,8 @@ export type FormErrors = Partial<Record<keyof OrderFormData, string>>;
 
 export function validateForm(state: OrderFormData): FormErrors {
   const errors: FormErrors = { ...validateCustomerDetails(state) };
-  if (!['faki', 'supari'].includes(state.product)) errors.product = 'Choose Faki or Supari';
-  if (!['250g', '500g', '1kg'].includes(state.packSize)) errors.packSize = 'Choose an available pack size';
+  if (!PRODUCT_SLUG_PATTERN.test(state.product)) errors.product = 'Choose a product';
+  if (!PACK_SIZE_PATTERN.test(state.packSize)) errors.packSize = 'Choose an available pack size';
   if (!Number.isInteger(state.quantity) || state.quantity < 1 || state.quantity > MAX_QUANTITY) errors.quantity = `Choose a quantity between 1 and ${MAX_QUANTITY}`;
   const address = state.address.trim();
   if (!address) errors.address = 'Delivery address is required';
@@ -136,8 +148,8 @@ export function restoreDraft(raw: string | null): OrderState {
     if (!saved || typeof saved !== 'object') return { ...initialState };
     const data = saved as Record<string, unknown>;
     const draft = { ...initialState };
-    if (data.product === 'faki' || data.product === 'supari') draft.product = data.product;
-    if (data.packSize === '250g' || data.packSize === '500g' || data.packSize === '1kg') draft.packSize = data.packSize;
+    if (typeof data.product === 'string' && PRODUCT_SLUG_PATTERN.test(data.product)) draft.product = data.product;
+    if (typeof data.packSize === 'string' && PACK_SIZE_PATTERN.test(data.packSize)) draft.packSize = data.packSize;
     if (typeof data.quantity === 'number' && Number.isInteger(data.quantity) && data.quantity >= 1 && data.quantity <= MAX_QUANTITY) draft.quantity = data.quantity;
     for (const field of ['fullName', 'phone', 'address', 'pinCode', 'orderId', 'checkoutKey'] as const) {
       if (typeof data[field] === 'string') draft[field] = data[field].slice(0, 2000);

@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Literal, Optional
-from pydantic import BaseModel, ConfigDict, Field
+from typing import Annotated, Literal, Optional
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+
+# Products and pack sizes come from the catalogue (database), so the API validates their format; existence is checked per product.
+ProductSlug = Annotated[str, StringConstraints(pattern=r"^[a-z0-9-]{1,32}$")]
+PackSize = Annotated[str, StringConstraints(pattern=r"^[0-9]{1,4}(g|kg|ml|l)$")]
 
 
 class CamelModel(BaseModel):
@@ -11,8 +15,8 @@ class CamelModel(BaseModel):
 
 
 class CheckoutQuoteRequestSchema(CamelModel):
-    product: Literal["faki", "supari"]
-    pack_size: Literal["250g", "500g", "1kg"] = Field(alias="packSize")
+    product: ProductSlug
+    pack_size: PackSize = Field(alias="packSize")
     quantity: int = Field(ge=1, le=20)
     pin_code: str = Field(alias="pinCode", min_length=6, max_length=6)
 
@@ -25,8 +29,8 @@ class CheckoutQuoteResponseSchema(CamelModel):
 
 
 class CreateOrderRequestSchema(CamelModel):
-    product: Literal["faki", "supari"]
-    pack_size: Literal["250g", "500g", "1kg"] = Field(alias="packSize")
+    product: ProductSlug
+    pack_size: PackSize = Field(alias="packSize")
     quantity: int = Field(ge=1, le=20)
     full_name: str = Field(alias="fullName", min_length=2, max_length=100)
     phone: str = Field(min_length=10, max_length=20)
@@ -45,10 +49,10 @@ class PaymentInstructionsSchema(CamelModel):
 class OrderResponseSchema(CamelModel):
     id: str
     order_number: str = Field(alias="orderNumber")
-    product: Literal["faki", "supari"]
+    product: ProductSlug
     product_name: str = Field(alias="productName")
     product_image_url: Optional[str] = Field(default=None, alias="productImageUrl")
-    pack_size: Literal["250g", "500g", "1kg"] = Field(alias="packSize")
+    pack_size: PackSize = Field(alias="packSize")
     quantity: int
     subtotal: float | int
     delivery_fee: float | int = Field(alias="deliveryFee")
@@ -155,7 +159,7 @@ class RecordRefundTransferRequestSchema(CamelModel):
 
 class UpdateProductVariantInputSchema(CamelModel):
     id: Optional[str] = None
-    pack_size: Literal["250g", "500g", "1kg"] = Field(alias="packSize")
+    pack_size: PackSize = Field(alias="packSize")
     cost_price: Optional[float] = Field(default=None, alias="costPrice")
     price: Optional[float] = None
     available_quantity: Optional[int] = Field(default=None, alias="availableQuantity")
