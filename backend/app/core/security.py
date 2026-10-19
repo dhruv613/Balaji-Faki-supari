@@ -113,6 +113,20 @@ def validate_jwt_claims(
     return claims
 
 
+_JWK_CLIENTS: dict[str, object] = {}
+
+
+def _jwk_client(url: str):
+    """One PyJWKClient per JWKS URL so signing keys are cached instead of fetched on every request."""
+    from jwt import PyJWKClient
+
+    client = _JWK_CLIENTS.get(url)
+    if client is None:
+        client = PyJWKClient(url, cache_keys=True)
+        _JWK_CLIENTS[url] = client
+    return client
+
+
 def verify_supabase_access_token(
     token: str,
     *,
@@ -152,7 +166,7 @@ def verify_supabase_access_token(
     )
     try:
         if alg in ("ES256", "RS256", "EDDSA") and app_settings.supabase_jwks_url:
-            jwk_client = PyJWKClient(app_settings.supabase_jwks_url)
+            jwk_client = _jwk_client(app_settings.supabase_jwks_url)
             signing_key = jwk_client.get_signing_key_from_jwt(token)
             verified_claims = jwt.decode(
                 token,
