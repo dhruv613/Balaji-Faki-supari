@@ -174,3 +174,9 @@ Source of truth for this phase: `docs/CLAUDE_PROJECT_AUDIT.md`, `docs/CLAUDE_FIN
 - Verification: `npm run verify` PASS (66 backend tests incl. new `test_catalog_products.py`); `check-db-security.py` 51/51; `smoke-local.py` 63/63 (water quote, order and cancel on Postgres; wrong pack for a product refused); browser: Home (4 cards), Product Details with galleries, Order Form (query preselect, per-product pack sizes), Review, order created for Water, My Orders, Admin Products and Inventory, no horizontal overflow at 375 px.
 - Still Faki/Supari-only copy: the page title and meta description ("Fresh Faki & Supari Online"), the hero buttons, the unrouted Reports sample data.
 
+### Product card opens full details on the same page (2026-10-19, owner request)
+- Clicking any product card (or its "View details & reviews" button) on the home page opens a dialog with the full product details and the Order button, without leaving the page. The card's own Order button still goes straight to the order form.
+- `ProductDetailsView` (photos with front/back switcher, description, pack sizes and prices, owner-supplied facts, reviews, Order button) is shared by the dialog and the `/products/:slug` page, which stays as a deep link. New `components/common/Modal.tsx`: Escape, backdrop click and Close button close it; focus is trapped and returned to the opener; page scroll is locked; full-screen on phones.
+- Ordering from the dialog preselects the product and chosen pack size on `/order`.
+- Verification: typecheck, `npm run verify` (5 frontend suites, 66 backend tests), browser: open from the card name, image and button, photo switch, pack choice, Esc and backdrop close, order handoff, card Order link unaffected, deep link page unchanged, mobile 375 px full-screen with no overflow.
+

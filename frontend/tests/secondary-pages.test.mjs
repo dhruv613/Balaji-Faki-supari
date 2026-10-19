@@ -22,6 +22,11 @@ assert.doesNotMatch(customersSource, /SAMPLE_|Development reference|XXX XX/, 'th
 assert.match(customersSource, /getAdminCustomers\(/, 'customers come from the server');
 assert.doesNotMatch(customersSource, /method:\s*'(POST|PATCH|DELETE|PUT)'/, 'customers are read-only');
 
+const homeSource = readFileSync(new URL('../src/features/catalog/pages/HomePage.tsx', import.meta.url), 'utf8');
+assert.match(homeSource, /<Modal[\s\S]*<ProductDetailsView/, 'a product card opens the full details in a dialog on the same page');
+assert.doesNotMatch(homeSource, /to=\{`\/products\//, 'the home page no longer navigates away to see product details');
+assert.match(readFileSync(new URL('../src/features/catalog/pages/ProductDetailsPage.tsx', import.meta.url), 'utf8'), /ProductDetailsView/, 'the product page shows the same details view');
+
 const { validateReviewText } = loadPage('reviews/pages/CustomerReviewsPage.tsx');
 assert.ok(validateReviewText('too short'));
 assert.equal(validateReviewText('ગુણવત્તા અને પેકિંગ સારું છે.'), null);

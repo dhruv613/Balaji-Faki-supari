@@ -1,13 +1,19 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
+import Modal from '../../../components/common/Modal';
 import { RatingLine } from '../../../components/common/Stars';
 import { useOrder } from '../../../context/OrderContext';
 import { contactDetails, useStoreProfile } from '../../store/storeApi';
+import ProductDetailsView from '../components/ProductDetailsView';
 import { PackPrices, primaryImage } from '../components/ProductParts';
 
 export default function HomePage() {
   const { products, catalogStatus } = useOrder();
   const { profile } = useStoreProfile();
   const contact = contactDetails(profile);
+  // Clicking a product card opens its full details (with the Order button) on this same page.
+  const [openType, setOpenType] = useState<string | null>(null);
+  const openProduct = products.find((item) => item.type === openType) ?? null;
   return (
     <>
       {/* ---- Hero Section ---- */}
@@ -49,7 +55,8 @@ export default function HomePage() {
             {products.map((product) => {
               const image = primaryImage(product);
               return (
-                <div className="product-card" key={product.type}>
+                <div className="product-card product-card--clickable" key={product.type}
+                  onClick={(event) => { if (!(event.target as HTMLElement).closest('a, button')) setOpenType(product.type); }}>
                   {image && <img className="product-card__image" src={image.url} alt={image.alt} loading="lazy" decoding="async" />}
                   <div className="product-card__name">{product.name}</div>
                   <RatingLine average={product.averageRating} count={product.reviewCount} />
@@ -58,9 +65,10 @@ export default function HomePage() {
                   <Link to={`/order?product=${product.type}`} className="btn btn--dark btn--full" id={`order-${product.type}-btn`}>
                     Order {product.name}
                   </Link>
-                  <Link to={`/products/${product.type}`} className="btn btn--full" style={{ marginTop: 8 }} id={`details-${product.type}-btn`}>
+                  <button type="button" className="btn btn--full" style={{ marginTop: 8 }} id={`details-${product.type}-btn`}
+                    aria-haspopup="dialog" onClick={() => setOpenType(product.type)}>
                     View details &amp; reviews
-                  </Link>
+                  </button>
                 </div>
               );
             })}
@@ -68,6 +76,12 @@ export default function HomePage() {
           {catalogStatus && <p className="catalog-status text-small text-secondary" role="status">{catalogStatus}</p>}
         </div>
       </section>
+
+      {openProduct && (
+        <Modal labelledBy="product-modal-title" closeLabel={`Close ${openProduct.name} details`} onClose={() => setOpenType(null)}>
+          <ProductDetailsView product={openProduct} headingTag="h2" titleId="product-modal-title" />
+        </Modal>
+      )}
 
       {/* ---- How Ordering Works ---- */}
       <section className="section section--tinted" id="how-it-works">
