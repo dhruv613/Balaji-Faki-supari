@@ -1,6 +1,9 @@
 import { Link } from 'react-router-dom';
+import { contactDetails, useStoreProfile } from '../../features/store/storeApi';
 
 export default function Footer() {
+  const { profile } = useStoreProfile();
+  const contact = contactDetails(profile);
   return (
     <footer className="footer" id="site-footer">
       <div className="wrapper">
@@ -11,9 +14,8 @@ export default function Footer() {
 
         {/* Store info */}
         <div className="footer__info">
-          <p>Riddhi Siddhi Complex, University Rd.</p>
-          <p>nr. Bhagat Singh Garden, Rajkot, Gujarat 360005</p>
-          <p>Call / WhatsApp: +91 80009 61030</p>
+          {profile?.storeAddress && <p>{profile.storeAddress}</p>}
+          {contact.phoneDisplay && <p>Call / WhatsApp: {contact.phoneDisplay}</p>}
         </div>
 
         {/* Copyright */}

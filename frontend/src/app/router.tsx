@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useParams } from 'react-router-dom';
 
 /* --- Layouts --- */
 import StoreLayout from '../components/layout/StoreLayout';
@@ -13,11 +13,19 @@ import QRPaymentPage from '../features/payments/pages/QRPaymentPage';
 import PaymentVerificationPage from '../features/payments/pages/PaymentVerificationPage';
 import OrderConfirmationPage from '../features/orders/pages/OrderConfirmationPage';
 import MyOrdersPage from '../features/orders/pages/MyOrdersPage';
-import OrderTrackingPage from '../features/orders/pages/OrderTrackingPage';
+import OrderDetailsPage from '../features/orders/pages/OrderDetailsPage';
 import CustomerReviewsPage from '../features/reviews/pages/CustomerReviewsPage';
 import VisitStorePage from '../features/store/pages/VisitStorePage';
 import HelpFAQsPage from '../features/help/pages/HelpFAQsPage';
 import NotFoundPage from '../features/catalog/pages/NotFoundPage';
+import ProductDetailsPage from '../features/catalog/pages/ProductDetailsPage';
+import LoginPage from '../features/account/pages/LoginPage';
+import AccountPage from '../features/account/pages/AccountPage';
+
+function LegacyTrackRedirect() {
+  const { orderId } = useParams();
+  return <Navigate to={orderId ? `/my-orders/${encodeURIComponent(orderId)}` : '/my-orders'} replace />;
+}
 
 /* --- Admin pages (12 modules) --- */
 import AdminDashboardPage from '../features/admin/pages/AdminDashboardPage';
@@ -29,8 +37,6 @@ import AdminDeliveryPage from '../features/admin/pages/AdminDeliveryPage';
 import AdminCustomersPage from '../features/admin/pages/AdminCustomersPage';
 import AdminReviewsPage from '../features/admin/pages/AdminReviewsPage';
 import AdminRefundsPage from '../features/admin/pages/AdminRefundsPage';
-import AdminReportsPage from '../features/admin/pages/AdminReportsPage';
-import AdminNotificationsPage from '../features/admin/pages/AdminNotificationsPage';
 import AdminSettingsPage from '../features/admin/pages/AdminSettingsPage';
 
 export function AppRouter() {
@@ -40,6 +46,8 @@ export function AppRouter() {
       <Route element={<StoreLayout />}>
         <Route index element={<HomePage />} />
 
+        <Route path="products/:slug" element={<ProductDetailsPage />} />
+
         {/* Order flow */}
         <Route path="order" element={<OrderFormPage />} />
         <Route path="order/review" element={<ReviewOrderPage />} />
@@ -47,10 +55,15 @@ export function AppRouter() {
         <Route path="order/verification" element={<PaymentVerificationPage />} />
         <Route path="order/confirmation" element={<OrderConfirmationPage />} />
 
-        {/* My orders & tracking */}
+        {/* My Orders is the customer-facing order-status surface. */}
         <Route path="my-orders" element={<MyOrdersPage />} />
-        <Route path="track" element={<OrderTrackingPage />} />
-        <Route path="track/:orderId" element={<OrderTrackingPage />} />
+        <Route path="my-orders/:orderId" element={<OrderDetailsPage />} />
+        <Route path="track" element={<Navigate to="/my-orders" replace />} />
+        <Route path="track/:orderId" element={<LegacyTrackRedirect />} />
+
+        {/* Account */}
+        <Route path="login" element={<LoginPage />} />
+        <Route path="account" element={<AccountPage />} />
 
         {/* Other pages */}
         <Route path="reviews" element={<CustomerReviewsPage />} />
@@ -74,9 +87,10 @@ export function AppRouter() {
         <Route path="customers" element={<AdminCustomersPage />} />
         <Route path="reviews" element={<AdminReviewsPage />} />
         <Route path="refunds" element={<AdminRefundsPage />} />
-        <Route path="reports" element={<AdminReportsPage />} />
-        <Route path="notifications" element={<AdminNotificationsPage />} />
         <Route path="settings" element={<AdminSettingsPage />} />
+        {/* Reports and Notifications are hidden until built; their page files and database history are kept. */}
+        <Route path="reports" element={<Navigate to="/admin/dashboard" replace />} />
+        <Route path="notifications" element={<Navigate to="/admin/dashboard" replace />} />
       </Route>
 
       {/* ========== 404 fallback ========== */}

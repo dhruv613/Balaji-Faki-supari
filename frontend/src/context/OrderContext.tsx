@@ -1,7 +1,8 @@
 import { createContext, useContext, useEffect, useReducer, type ReactNode, type Dispatch } from 'react';
 import type { User } from '@supabase/supabase-js';
 import type { ProductType, PackSize, OrderFormData, OrderSummary, Order, PaymentStatus, Product, CheckoutQuote } from '../types/orders';
-import { PRODUCTS, getErrorMessage } from '../lib/api';
+import { PRODUCT_SHELL, getErrorMessage } from '../lib/api';
+import { PACK_SIZE_PATTERN, PRODUCT_SLUG_PATTERN } from '../constants/store';
 import { fetchProducts } from '../features/catalog/api/catalogApi';
 import { getCheckoutQuote, getOrder } from '../features/orders/api/ordersApi';
 import { normalizeIndianMobile, readCustomerDetails, validateCustomerDetails } from '../lib/customer';
@@ -13,7 +14,6 @@ export interface OrderState extends OrderFormData {
   orderId: string;
   orderNumber: string;
   serverOrder: Order | null;
-  utrNumber: string;
   screenshotFile: File | null;
   screenshotPreview: string;
   paymentStatus: PaymentStatus | null;
@@ -28,14 +28,14 @@ export const initialState: OrderState = {
   fullName: '', phone: '', address: '', pinCode: '',
   checkoutKey: '', orderLoadStatus: '', orderLoadAttempt: 0,
   orderId: '', orderNumber: '', serverOrder: null,
-  utrNumber: '', screenshotFile: null, screenshotPreview: '', paymentStatus: null,
-  products: PRODUCTS, catalogStatus: 'Loading current prices…', quote: null, quoteStatus: '',
+  screenshotFile: null, screenshotPreview: '', paymentStatus: null,
+  products: PRODUCT_SHELL, catalogStatus: 'Loading current prices…', quote: null, quoteStatus: '',
 };
 
 const orderReset = {
   checkoutKey: '', orderLoadStatus: '',
   orderId: '', orderNumber: '', serverOrder: null, paymentStatus: null,
-  utrNumber: '', screenshotFile: null, screenshotPreview: '',
+  screenshotFile: null, screenshotPreview: '',
 };
 
 export type Action =
@@ -45,7 +45,6 @@ export type Action =
   | { type: 'SET_FIELD'; payload: { field: 'fullName' | 'phone' | 'address' | 'pinCode'; value: string } }
   | { type: 'SET_SERVER_ORDER'; payload: Order }
   | { type: 'SET_PAYMENT_STATUS'; payload: PaymentStatus }
-  | { type: 'SET_UTR'; payload: string }
   | { type: 'SET_SCREENSHOT'; payload: { file: File | null; preview: string } }
   | { type: 'SET_CATALOG'; payload: { products: Product[]; status: string } }
   | { type: 'SET_QUOTE'; payload: { quote: CheckoutQuote | null; status: string } }
@@ -57,11 +56,17 @@ export type Action =
 
 export const MAX_QUANTITY = 20;
 
+/** First pack size that currently has a price, else the first one (never a hard-coded size). */
+function defaultPackSize(products: Product[], type: ProductType): PackSize {
+  const product = products.find((item) => item.type === type);
+  return product?.packSizes.find((size) => product.prices[size] != null) ?? product?.packSizes[0] ?? '250g';
+}
+
 export function reducer(state: OrderState, action: Action): OrderState {
   switch (action.type) {
     case 'SET_PRODUCT':
       if (state.product === action.payload) return state;
-      return { ...state, ...orderReset, product: action.payload, packSize: '250g', quote: null };
+      return { ...state, ...orderReset, product: action.payload, packSize: defaultPackSize(state.products, action.payload), quote: null };
     case 'SET_PACK_SIZE':
       return { ...state, ...orderReset, packSize: action.payload, quote: null };
     case 'SET_QUANTITY':
@@ -73,12 +78,15 @@ export function reducer(state: OrderState, action: Action): OrderState {
       return { ...state, orderLoadStatus: '', orderId: action.payload.id, orderNumber: action.payload.orderNumber, serverOrder: action.payload, paymentStatus: action.payload.paymentStatus };
     case 'SET_PAYMENT_STATUS':
       return { ...state, paymentStatus: action.payload };
-    case 'SET_UTR':
-      return { ...state, utrNumber: action.payload };
     case 'SET_SCREENSHOT':
       return { ...state, screenshotFile: action.payload.file, screenshotPreview: action.payload.preview };
-    case 'SET_CATALOG':
-      return { ...state, products: action.payload.products, catalogStatus: action.payload.status };
+    case 'SET_CATALOG': {
+      // A saved draft can name a product or pack size the catalogue no longer has: fall back to a real one.
+      const { products } = action.payload;
+      const product = products.find((item) => item.type === state.product) ?? products[0];
+      const packSize = product?.packSizes.includes(state.packSize) ? state.packSize : defaultPackSize(products, product?.type ?? state.product);
+      return { ...state, products, catalogStatus: action.payload.status, ...(product ? { product: product.type, packSize } : {}) };
+    }
     case 'SET_QUOTE':
       return { ...state, quote: action.payload.quote, quoteStatus: action.payload.status };
     case 'SET_CHECKOUT_KEY':
@@ -95,7 +103,7 @@ export function reducer(state: OrderState, action: Action): OrderState {
 }
 
 export function buildSummary(state: OrderState): OrderSummary {
-  const product = state.products.find(p => p.type === state.product) ?? PRODUCTS[0];
+  const product = state.products.find(p => p.type === state.product) ?? PRODUCT_SHELL[0];
   const server = state.serverOrder;
   const quote = server ?? state.quote;
   const price = product.prices[state.packSize];
@@ -114,8 +122,8 @@ export type FormErrors = Partial<Record<keyof OrderFormData, string>>;
 
 export function validateForm(state: OrderFormData): FormErrors {
   const errors: FormErrors = { ...validateCustomerDetails(state) };
-  if (!['faki', 'supari'].includes(state.product)) errors.product = 'Choose Faki or Supari';
-  if (!['250g', '500g', '1kg'].includes(state.packSize)) errors.packSize = 'Choose an available pack size';
+  if (!PRODUCT_SLUG_PATTERN.test(state.product)) errors.product = 'Choose a product';
+  if (!PACK_SIZE_PATTERN.test(state.packSize)) errors.packSize = 'Choose an available pack size';
   if (!Number.isInteger(state.quantity) || state.quantity < 1 || state.quantity > MAX_QUANTITY) errors.quantity = `Choose a quantity between 1 and ${MAX_QUANTITY}`;
   const address = state.address.trim();
   if (!address) errors.address = 'Delivery address is required';
@@ -140,8 +148,8 @@ export function restoreDraft(raw: string | null): OrderState {
     if (!saved || typeof saved !== 'object') return { ...initialState };
     const data = saved as Record<string, unknown>;
     const draft = { ...initialState };
-    if (data.product === 'faki' || data.product === 'supari') draft.product = data.product;
-    if (data.packSize === '250g' || data.packSize === '500g' || data.packSize === '1kg') draft.packSize = data.packSize;
+    if (typeof data.product === 'string' && PRODUCT_SLUG_PATTERN.test(data.product)) draft.product = data.product;
+    if (typeof data.packSize === 'string' && PACK_SIZE_PATTERN.test(data.packSize)) draft.packSize = data.packSize;
     if (typeof data.quantity === 'number' && Number.isInteger(data.quantity) && data.quantity >= 1 && data.quantity <= MAX_QUANTITY) draft.quantity = data.quantity;
     for (const field of ['fullName', 'phone', 'address', 'pinCode', 'orderId', 'checkoutKey'] as const) {
       if (typeof data[field] === 'string') draft[field] = data[field].slice(0, 2000);
@@ -159,10 +167,31 @@ export function persistDraft(state: OrderState, userId: string) {
   catch { /* Unavailable storage still permits in-memory checkout. */ }
 }
 
-export function loadState(user: User) {
-  const profile = readCustomerDetails(user.user_metadata);
+export const GUEST_DRAFT_ID = 'guest';
+
+/** True when a visitor has already chosen something worth keeping across the sign-in step. */
+export function hasDraftContent(draft: OrderFormData): boolean {
+  return Boolean(
+    draft.product !== initialState.product || draft.packSize !== initialState.packSize || draft.quantity !== initialState.quantity ||
+    draft.fullName.trim() || draft.phone.trim() || draft.address.trim() || draft.pinCode.trim(),
+  );
+}
+
+/**
+ * Visitors build a draft without an account. When they sign in, a draft they prepared as a guest wins over any older
+ * saved draft of that account, so they land back in checkout with what they chose. Another account's draft is never read.
+ */
+export function loadState(user: User | null) {
+  const profile = readCustomerDetails(user?.user_metadata);
   let draft = { ...initialState };
-  try { draft = restoreDraft(sessionStorage.getItem(`${STORAGE_KEY}:${user.id}`)); }
+  try {
+    const guest = restoreDraft(sessionStorage.getItem(`${STORAGE_KEY}:${GUEST_DRAFT_ID}`));
+    if (!user) draft = guest;
+    else if (hasDraftContent(guest)) {
+      draft = { ...guest, orderId: '', checkoutKey: '' };
+      sessionStorage.removeItem(`${STORAGE_KEY}:${GUEST_DRAFT_ID}`);
+    } else draft = restoreDraft(sessionStorage.getItem(`${STORAGE_KEY}:${user.id}`));
+  }
   catch { /* Unavailable storage still permits in-memory checkout. */ }
   return { ...draft, fullName: draft.fullName || profile.fullName, phone: draft.phone || profile.phone };
 }
@@ -170,9 +199,10 @@ export function loadState(user: User) {
 const OrderContext = createContext<OrderState>(initialState);
 const DispatchContext = createContext<Dispatch<Action>>(() => {});
 
-export function OrderProvider({ children, user }: { children: ReactNode; user: User }) {
+export function OrderProvider({ children, user }: { children: ReactNode; user: User | null }) {
   const [state, dispatch] = useReducer(reducer, user, loadState);
-  useEffect(() => { persistDraft(state, user.id); }, [state, user.id]);
+  const draftOwner = user?.id ?? GUEST_DRAFT_ID;
+  useEffect(() => { persistDraft(state, draftOwner); }, [state, draftOwner]);
   useEffect(() => () => {
     if (state.screenshotPreview) URL.revokeObjectURL(state.screenshotPreview);
   }, [state.screenshotPreview]);
@@ -181,7 +211,7 @@ export function OrderProvider({ children, user }: { children: ReactNode; user: U
     fetchProducts().then(products => {
       if (active) dispatch({ type: 'SET_CATALOG', payload: { products, status: products.length ? '' : 'No products are currently available. Please contact the store.' } });
     }).catch(() => {
-      if (active) dispatch({ type: 'SET_CATALOG', payload: { products: PRODUCTS, status: 'Development preview · Live prices and online ordering are not connected yet.' } });
+      if (active) dispatch({ type: 'SET_CATALOG', payload: { products: PRODUCT_SHELL, status: 'Current prices are unavailable right now. Please try again shortly or contact the store.' } });
     });
     return () => { active = false; };
   }, []);
@@ -197,14 +227,14 @@ export function OrderProvider({ children, user }: { children: ReactNode; user: U
   }, [state.product, state.packSize, state.quantity, state.pinCode]);
   useEffect(() => {
     let active = true;
-    if (state.orderId && !state.serverOrder) {
+    if (user && state.orderId && !state.serverOrder) {
       dispatch({ type: 'SET_ORDER_LOAD_STATUS', payload: 'Loading your existing order…' });
       getOrder(state.orderId).then(order => {
         if (active) dispatch({ type: 'SET_SERVER_ORDER', payload: order });
       }).catch(error => { if (active) dispatch({ type: 'SET_ORDER_LOAD_STATUS', payload: getErrorMessage(error) }); });
     }
     return () => { active = false; };
-  }, [user.id, state.orderId, Boolean(state.serverOrder), state.orderLoadAttempt]);
+  }, [user?.id, state.orderId, Boolean(state.serverOrder), state.orderLoadAttempt]);
   return <OrderContext.Provider value={state}><DispatchContext.Provider value={dispatch}>{children}</DispatchContext.Provider></OrderContext.Provider>;
 }
 

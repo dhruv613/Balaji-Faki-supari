@@ -18,11 +18,12 @@ import type {
   ConfirmOrderRequest,
   UpdateOrderStatusRequest,
   AdminPaymentSubmission,
+  AdminPaymentProofResponse,
   AdminPaymentsQueryParams,
   ApprovePaymentRequest,
+  ReviewPaymentRequest,
   RejectPaymentRequest,
   AdminProduct,
-  CreateAdminProductRequest,
   UpdateAdminProductRequest,
   AdminInventoryResponse,
   StockAdjustmentRequest,
@@ -99,8 +100,8 @@ export async function getAdminDashboard(): Promise<AdminDashboardResponse> {
 /** GET /api/admin/orders */
 export async function getAdminOrders(
   params?: AdminOrdersQueryParams,
-): Promise<PaginatedResponse<AdminOrderSummary>> {
-  return apiFetch<PaginatedResponse<AdminOrderSummary>>(
+): Promise<PaginatedResponse<AdminOrderDetail>> {
+  return apiFetch<PaginatedResponse<AdminOrderDetail>>(
     `${resolveApiPath('/api/admin/orders')}${buildQueryString(params)}`,
   );
 }
@@ -167,6 +168,31 @@ export async function getAdminPaymentById(paymentId: string): Promise<AdminPayme
   );
 }
 
+/** GET /api/admin/payments/{id}/proof — Issue short-lived signed URL for private screenshot */
+export async function getAdminPaymentProof(paymentId: string): Promise<AdminPaymentProofResponse> {
+  return apiFetch<AdminPaymentProofResponse>(
+    resolveApiPath(`/api/admin/payments/${encodeURIComponent(paymentId)}/proof`),
+  );
+}
+
+/**
+ * POST /api/admin/payments/{id}/review
+ * Explicitly moves a persisted proof from SUBMITTED to UNDER_REVIEW.
+ */
+export async function startAdminPaymentReview(
+  paymentId: string,
+  payload: ReviewPaymentRequest = {},
+): Promise<AdminPaymentSubmission> {
+  return apiFetch<AdminPaymentSubmission>(
+    resolveApiPath(`/api/admin/payments/${encodeURIComponent(paymentId)}/review`),
+    {
+      method: 'POST',
+      headers: { 'Idempotency-Key': `admin-review-payment-${paymentId}` },
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
 /**
  * POST /api/admin/payments/{id}/approve
  * Sets PaymentStatus = VERIFIED and OrderStatus = AWAITING_CONFIRMATION atomically.
@@ -180,7 +206,7 @@ export async function approveAdminPayment(
     {
       method: 'POST',
       headers: {
-        'Idempotency-Key': `admin-approve-payment-${paymentId}-${payload.verifiedUtr.trim()}`,
+        'Idempotency-Key': `admin-approve-payment-${paymentId}`,
       },
       body: JSON.stringify(payload),
     },
@@ -213,14 +239,23 @@ export async function getAdminProducts(): Promise<AdminProduct[]> {
   return apiFetch<AdminProduct[]>(resolveApiPath('/api/admin/products'));
 }
 
-/** POST /api/admin/products */
-export async function createAdminProduct(
-  payload: CreateAdminProductRequest,
-): Promise<AdminProduct> {
-  return apiFetch<AdminProduct>(resolveApiPath('/api/admin/products'), {
+/** POST /api/admin/products/{id}/images - upload one product photo (public catalogue bucket) */
+export async function addAdminProductImage(productId: string, file: File, altText: string): Promise<AdminProduct> {
+  const form = new FormData();
+  form.append('image', file);
+  form.append('altText', altText);
+  return apiFetch<AdminProduct>(resolveApiPath(`/api/admin/products/${encodeURIComponent(productId)}/images`), {
     method: 'POST',
-    body: JSON.stringify(payload),
+    body: form,
   });
+}
+
+/** DELETE /api/admin/products/{id}/images/{imageId} */
+export async function deleteAdminProductImage(productId: string, imageId: string): Promise<AdminProduct> {
+  return apiFetch<AdminProduct>(
+    resolveApiPath(`/api/admin/products/${encodeURIComponent(productId)}/images/${encodeURIComponent(imageId)}`),
+    { method: 'DELETE' },
+  );
 }
 
 /** PATCH /api/admin/products/{id} */
@@ -250,9 +285,11 @@ export async function getAdminInventory(): Promise<AdminInventoryResponse> {
 export async function createStockAdjustment(
   payload: StockAdjustmentRequest,
 ): Promise<StockMovementRecord> {
+  // The server validates strictly (extra fields are refused), so only the fields it defines are sent.
+  const { inventoryItemId, adjustmentType, quantity, reason } = payload;
   return apiFetch<StockMovementRecord>(resolveApiPath('/api/admin/inventory/adjustments'), {
     method: 'POST',
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ inventoryItemId, adjustmentType, quantity, reason }),
   });
 }
 
@@ -422,12 +459,42 @@ export async function getAdminSettings(): Promise<AdminStoreSettings> {
   return apiFetch<AdminStoreSettings>(resolveApiPath('/api/admin/settings'));
 }
 
-/** PATCH /api/admin/settings */
+/** PATCH /api/admin/settings - only the fields sent are changed */
 export async function updateAdminSettings(
   payload: UpdateAdminSettingsRequest,
 ): Promise<AdminStoreSettings> {
   return apiFetch<AdminStoreSettings>(resolveApiPath('/api/admin/settings'), {
     method: 'PATCH',
     body: JSON.stringify(payload),
+  });
+}
+
+/** POST /api/admin/settings/confirm - the owner attests that payment, delivery and PIN settings are real */
+export async function confirmBusinessSettings(note?: string): Promise<AdminStoreSettings> {
+  return apiFetch<AdminStoreSettings>(resolveApiPath('/api/admin/settings/confirm'), {
+    method: 'POST',
+    body: JSON.stringify({ confirm: true, note: note?.trim() || undefined }),
+  });
+}
+
+/** POST /api/admin/settings/qr - replaces the private payment QR (withdraws confirmation) */
+export async function uploadPaymentQr(file: File): Promise<AdminStoreSettings> {
+  const form = new FormData();
+  form.append('qr', file);
+  return apiFetch<AdminStoreSettings>(resolveApiPath('/api/admin/settings/qr'), { method: 'POST', body: form });
+}
+
+/** POST /api/admin/settings/photos */
+export async function addStorePhoto(file: File, caption: string): Promise<AdminStoreSettings> {
+  const form = new FormData();
+  form.append('photo', file);
+  form.append('caption', caption);
+  return apiFetch<AdminStoreSettings>(resolveApiPath('/api/admin/settings/photos'), { method: 'POST', body: form });
+}
+
+/** DELETE /api/admin/settings/photos/{id} */
+export async function deleteStorePhoto(photoId: string): Promise<AdminStoreSettings> {
+  return apiFetch<AdminStoreSettings>(resolveApiPath(`/api/admin/settings/photos/${encodeURIComponent(photoId)}`), {
+    method: 'DELETE',
   });
 }

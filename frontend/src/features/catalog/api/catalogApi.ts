@@ -10,3 +10,9 @@ import type { Product } from '../../../types/orders';
 export async function fetchProducts(): Promise<Product[]> {
   return readProducts(await apiFetch<unknown>('/products'));
 }
+
+/** GET /products/{slug} — one active product with images, facts, prices and rating */
+export async function fetchProduct(slug: string): Promise<Product> {
+  const [product] = readProducts([await apiFetch<unknown>(`/products/${encodeURIComponent(slug)}`)]);
+  return product;
+}

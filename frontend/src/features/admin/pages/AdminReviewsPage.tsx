@@ -1,10 +1,9 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import Notice from '../../../components/common/Notice';
 import { env } from '../../../lib/env';
-import { formatPackSize, getErrorMessage } from '../../../lib/api';
+import { formatPackSize, getErrorMessage, resolveApiUrl } from '../../../lib/api';
 import { getAdminReviews, updateAdminReview } from '../api';
 import type { AdminReviewRecord, ReviewModerationStatus } from '../types';
-import { SAMPLE_ADMIN_REVIEWS } from '../lib/referenceData';
 import {
   StatCard,
   StatusBadge,
@@ -13,15 +12,21 @@ import {
   useAdminToast,
 } from '../components';
 
+function isReviewPhotoProxyPath(value: unknown): value is string {
+  return typeof value === 'string' && value.startsWith('/api/');
+}
+
 export default function AdminReviewsPage() {
   const { showToast } = useAdminToast();
-  const [reviews, setReviews] = useState<AdminReviewRecord[]>(SAMPLE_ADMIN_REVIEWS);
+  const [reviews, setReviews] = useState<AdminReviewRecord[]>([]);
   const [query, setQuery] = useState('');
   const [ratingFilter, setRatingFilter] = useState<number | 'ALL'>('ALL');
   const [modFilter, setModFilter] = useState<ReviewModerationStatus | 'ALL'>('ALL');
   const [selectedReview, setSelectedReview] = useState<AdminReviewRecord | null>(null);
   const [replyText, setReplyText] = useState('');
   const [busy, setBusy] = useState(false);
+  const [hideCategory, setHideCategory] = useState('');
+  const [hideDetail, setHideDetail] = useState('');
 
   const [loading, setLoading] = useState(Boolean(env.apiBaseUrl));
   const [error, setError] = useState('');
@@ -67,9 +72,11 @@ export default function AdminReviewsPage() {
       .includes(q);
   });
 
+  // The public average counts published reviews only; hidden reviews stay visible here for audit.
+  const published = reviews.filter((r) => r.moderationStatus === 'PUBLISHED');
   const avgRating =
-    reviews.length > 0
-      ? (reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length).toFixed(1)
+    published.length > 0
+      ? (published.reduce((sum, r) => sum + r.rating, 0) / published.length).toFixed(1)
       : '0.0';
 
   function openReviewDrawer(review: AdminReviewRecord) {
@@ -79,22 +86,23 @@ export default function AdminReviewsPage() {
 
   async function handleModerationUpdate(nextStatus: ReviewModerationStatus) {
     if (!selectedReview) return;
-    if (!env.apiBaseUrl) {
-      showToast(
-        `Integration pending: FastAPI (PATCH /api/admin/reviews/${selectedReview.id}) is not connected. Moderation changes require server persistence.`,
-        'warning',
-      );
+    if (!env.apiBaseUrl) return;
+    const reason = [hideCategory, hideDetail.trim()].filter(Boolean).join(': ');
+    if (nextStatus === 'HIDDEN' && (!hideCategory || reason.length < 3)) {
+      showToast('Choose a reason for hiding this review (spam, abuse, private information or prohibited content).', 'warning');
       return;
     }
     setBusy(true);
     try {
       const updated = await updateAdminReview(selectedReview.id, {
         moderationStatus: nextStatus,
-        adminReply: replyText.trim() || undefined,
+        ...(nextStatus === 'HIDDEN' ? { moderationReason: reason } : {}),
       });
       setReviews((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
       setSelectedReview(updated);
-      showToast(`Review status updated to ${nextStatus}.`, 'success');
+      setHideCategory('');
+      setHideDetail('');
+      showToast(nextStatus === 'HIDDEN' ? 'Review hidden. It stays in admin history.' : 'Review is public again.', 'success');
     } catch (err) {
       showToast(getErrorMessage(err), 'error');
     } finally {
@@ -104,8 +112,19 @@ export default function AdminReviewsPage() {
 
   async function handleSaveReply(e: FormEvent) {
     e.preventDefault();
-    if (!selectedReview) return;
-    await handleModerationUpdate(selectedReview.moderationStatus);
+    if (!selectedReview || !env.apiBaseUrl || busy) return;
+    setBusy(true);
+    try {
+      // Only the reply is sent: saving a reply never changes (or re-asserts) the review visibility.
+      const updated = await updateAdminReview(selectedReview.id, { adminReply: replyText.trim() });
+      setReviews((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
+      setSelectedReview(updated);
+      showToast('Reply saved.', 'success');
+    } catch (err) {
+      showToast(getErrorMessage(err), 'error');
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -124,8 +143,8 @@ export default function AdminReviewsPage() {
       </Notice>
 
       {!isLive && (
-        <Notice tone="info" title="Development reference examples">
-          FastAPI (<code>/api/admin/reviews</code>) is not connected yet. Reviews shown below are the supplied design reference examples.
+        <Notice tone="info" title="Review data unavailable">
+          Connect the local FastAPI server to manage real customer reviews. No sample reviews are shown here.
         </Notice>
       )}
       {error && <Notice tone="error" title="Reviews sync failed">{error}</Notice>}
@@ -328,6 +347,17 @@ export default function AdminReviewsPage() {
               <p>{selectedReview.reviewText}</p>
             </div>
 
+            {(selectedReview.photoUrls ?? []).filter(isReviewPhotoProxyPath).length > 0 && (
+              <section className="card card--tinted" style={{ marginBottom: 20 }} aria-labelledby="admin-review-photos-heading">
+                <h3 id="admin-review-photos-heading" style={{ fontSize: 16, marginBottom: 10 }}>Customer Photos</h3>
+                <div className="review-photo-grid">
+                  {(selectedReview.photoUrls ?? []).filter(isReviewPhotoProxyPath).map((photoUrl, index) => (
+                    <img key={photoUrl} src={resolveApiUrl(photoUrl)} alt={`Customer review photo ${index + 1}`} loading="lazy" />
+                  ))}
+                </div>
+              </section>
+            )}
+
             <form className="card" style={{ marginBottom: 20 }} onSubmit={handleSaveReply}>
               <label htmlFor="admin-reply-input">Official Store Reply</label>
               <textarea
@@ -351,8 +381,27 @@ export default function AdminReviewsPage() {
             <div className="card">
               <h3 style={{ fontSize: 16, marginBottom: 6 }}>Visibility &amp; Moderation</h3>
               <p className="text-small text-secondary" style={{ marginBottom: 12 }}>
-                Do not hide or remove genuine customer reviews simply because of a lower rating. Only hide spam, abusive language, or ineligible non-delivered submissions.
+                Genuine negative reviews must stay public. Hide a review only for spam, abuse, private information or prohibited content; the reason is recorded and the review stays in admin history.
               </p>
+              {selectedReview.moderationStatus === 'HIDDEN' && (
+                <Notice tone="warning" title="Hidden from customers">
+                  Reason on record: {selectedReview.moderationReason || 'not recorded'}. This review is excluded from the public rating and count.
+                </Notice>
+              )}
+              {selectedReview.moderationStatus !== 'HIDDEN' && (
+                <div style={{ marginBottom: 12 }}>
+                  <label htmlFor="hide-category">Reason to hide (required)</label>
+                  <select id="hide-category" className="input" value={hideCategory} onChange={(e) => setHideCategory(e.target.value)} disabled={busy}>
+                    <option value="">Choose a reason…</option>
+                    <option value="Spam">Spam</option>
+                    <option value="Abuse">Abusive language</option>
+                    <option value="Private information">Contains private information</option>
+                    <option value="Prohibited content">Prohibited content</option>
+                  </select>
+                  <label htmlFor="hide-detail" style={{ marginTop: 8 }}>Details for the audit log (optional)</label>
+                  <input id="hide-detail" className="input" value={hideDetail} onChange={(e) => setHideDetail(e.target.value)} maxLength={300} disabled={busy} />
+                </div>
+              )}
               <div className="admin-action-group">
                 <button
                   type="button"
@@ -360,15 +409,15 @@ export default function AdminReviewsPage() {
                   disabled={busy || selectedReview.moderationStatus === 'PUBLISHED'}
                   onClick={() => handleModerationUpdate('PUBLISHED')}
                 >
-                  Publish Review
+                  Make Public Again
                 </button>
                 <button
                   type="button"
                   className="btn btn--outline btn--sm"
-                  disabled={busy || selectedReview.moderationStatus === 'HIDDEN'}
+                  disabled={busy || selectedReview.moderationStatus === 'HIDDEN' || !hideCategory}
                   onClick={() => handleModerationUpdate('HIDDEN')}
                 >
-                  Hide Review (Spam / Policy Violation)
+                  Hide Review
                 </button>
               </div>
             </div>

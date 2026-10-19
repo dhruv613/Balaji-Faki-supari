@@ -5,7 +5,6 @@ import { env } from '../../../lib/env';
 import { getErrorMessage } from '../../../lib/api';
 import { getAdminDeliveries, updateAdminDelivery } from '../api';
 import type { AdminDeliveryRecord, AdminDeliveryStatus } from '../types';
-import { SAMPLE_ADMIN_DELIVERIES } from '../lib/referenceData';
 import {
   ORDER_STATUS_LABELS,
   ALLOWED_DELIVERY_TRANSITIONS,
@@ -48,7 +47,7 @@ export default function AdminDeliveryPage() {
 
   const initialStatus = searchParams.get('status') as AdminDeliveryStatus | null;
 
-  const [deliveries, setDeliveries] = useState<AdminDeliveryRecord[]>(SAMPLE_ADMIN_DELIVERIES);
+  const [deliveries, setDeliveries] = useState<AdminDeliveryRecord[]>([]);
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<AdminDeliveryStatus | 'ALL'>(
     initialStatus && DELIVERY_STATUS_FILTERS.includes(initialStatus) ? initialStatus : 'ALL',
@@ -171,7 +170,7 @@ export default function AdminDeliveryPage() {
     }
   }
 
-  function handleSaveAssignmentDetails(e: FormEvent) {
+  async function handleSaveAssignmentDetails(e: FormEvent) {
     e.preventDefault();
     if (!selected) return;
     if (!env.apiBaseUrl) {
@@ -180,6 +179,26 @@ export default function AdminDeliveryPage() {
         'warning',
       );
       return;
+    }
+    setBusy(true);
+    try {
+      const updated = await updateAdminDelivery(selected.id, {
+        assignedDeliveryPerson: assignedPerson.trim() || undefined,
+        deliveryPhone: deliveryPhone.trim() || undefined,
+        courierTrackingReference: courierRef.trim() || undefined,
+        pickupDate: pickupDate.trim() || undefined,
+        dispatchDate: dispatchDate.trim() || undefined,
+        estimatedDeliveryDate: estimatedDate.trim() || undefined,
+        deliveredDate: deliveredDate.trim() || undefined,
+        deliveryNotes: deliveryNotes.trim() || undefined,
+      });
+      setDeliveries((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+      setSelected(updated);
+      showToast(`Delivery assignment details saved for ${updated.orderNumber}.`, 'success');
+    } catch (err) {
+      showToast(getErrorMessage(err), 'error');
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -196,8 +215,8 @@ export default function AdminDeliveryPage() {
       </div>
 
       {!isLive && (
-        <Notice title="Development reference examples — Fulfillment state machine">
-          FastAPI (<code>/api/admin/deliveries</code>) is not connected yet. Only verified and confirmed orders enter this fulfillment queue. Each step validates its required prior state and records an immutable timestamped event for the customer tracking page.
+        <Notice title="Fulfillment data unavailable">
+          Connect the local FastAPI server to load verified and confirmed orders. No sample delivery records are shown.
         </Notice>
       )}
       {error && <Notice tone="error" title="Delivery queue sync error">{error}</Notice>}
@@ -205,32 +224,32 @@ export default function AdminDeliveryPage() {
       <div className="stats-grid--dense">
         <StatCard
           label="Confirmed (Ready)"
-          value={deliveries.filter((d) => d.status === 'CONFIRMED').length}
+          value={isLive ? deliveries.filter((d) => d.status === 'CONFIRMED').length : 'Unavailable'}
           compact
         />
         <StatCard
           label="Packing"
-          value={deliveries.filter((d) => d.status === 'PACKING').length}
+          value={isLive ? deliveries.filter((d) => d.status === 'PACKING').length : 'Unavailable'}
           compact
         />
         <StatCard
           label="Packed"
-          value={deliveries.filter((d) => d.status === 'PACKED').length}
+          value={isLive ? deliveries.filter((d) => d.status === 'PACKED').length : 'Unavailable'}
           compact
         />
         <StatCard
           label="Picked Up / Shipped"
-          value={deliveries.filter((d) => ['PICKED_UP', 'SHIPPED'].includes(d.status)).length}
+          value={isLive ? deliveries.filter((d) => ['PICKED_UP', 'SHIPPED'].includes(d.status)).length : 'Unavailable'}
           compact
         />
         <StatCard
           label="Out for Delivery"
-          value={deliveries.filter((d) => d.status === 'OUT_FOR_DELIVERY').length}
+          value={isLive ? deliveries.filter((d) => d.status === 'OUT_FOR_DELIVERY').length : 'Unavailable'}
           compact
         />
         <StatCard
           label="Delivered"
-          value={deliveries.filter((d) => d.status === 'DELIVERED').length}
+          value={isLive ? deliveries.filter((d) => d.status === 'DELIVERED').length : 'Unavailable'}
           compact
         />
       </div>
@@ -243,7 +262,7 @@ export default function AdminDeliveryPage() {
             id="delivery-search"
             type="search"
             className="input"
-            placeholder="#BFP-1042, Rahul Mehta, University Road…"
+            placeholder="Order number, customer, address, or rider"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />

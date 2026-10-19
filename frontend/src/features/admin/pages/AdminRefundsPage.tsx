@@ -9,7 +9,6 @@ import {
   recordAdminRefundTransfer,
 } from '../api';
 import type { AdminRefundRecord, AdminRefundStatus } from '../types';
-import { SAMPLE_ADMIN_REFUNDS } from '../lib/referenceData';
 import {
   REFUND_STATUS_LABELS,
   validateRefundCompletion,
@@ -38,7 +37,7 @@ export default function AdminRefundsPage() {
 
   const initialStatus = searchParams.get('status') as AdminRefundStatus | null;
 
-  const [refunds, setRefunds] = useState<AdminRefundRecord[]>(SAMPLE_ADMIN_REFUNDS);
+  const [refunds, setRefunds] = useState<AdminRefundRecord[]>([]);
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<AdminRefundStatus | 'ALL'>(
     initialStatus && REFUND_FILTER_OPTIONS.includes(initialStatus) ? initialStatus : 'ALL',
@@ -47,10 +46,10 @@ export default function AdminRefundsPage() {
 
   // Verified transfer form inputs
   const [refundTxRef, setRefundTxRef] = useState('');
-  const [refundBankAccount, setRefundBankAccount] = useState(
-    'Axis Bank Merchant A/C · 8000961030@okbizaxis',
-  );
-  const [refundDate, setRefundDate] = useState('2026-10-17');
+  const [refundBankAccount, setRefundBankAccount] = useState('');
+  const [refundDate, setRefundDate] = useState('');
+  const [refundEvidence, setRefundEvidence] = useState<'BANK_TRANSFER' | 'LOCAL_TEST'>('BANK_TRANSFER');
+  const [settlementChecked, setSettlementChecked] = useState(false);
   const [verifiedAmountInput, setVerifiedAmountInput] = useState('');
   const [refundNotes, setRefundNotes] = useState('');
   const [validationError, setValidationError] = useState('');
@@ -92,10 +91,10 @@ export default function AdminRefundsPage() {
   function openRefundDrawer(record: AdminRefundRecord) {
     setSelectedRefund(record);
     setRefundTxRef(record.refundTransactionReference ?? '');
-    setRefundBankAccount(
-      record.refundBankAccount ?? 'Axis Bank Merchant A/C · 8000961030@okbizaxis',
-    );
-    setRefundDate(record.refundDate ?? '2026-10-17');
+    setRefundBankAccount(record.refundBankAccount ?? '');
+    setRefundDate(record.refundDate ?? new Date().toISOString().slice(0, 10));
+    setRefundEvidence('BANK_TRANSFER');
+    setSettlementChecked(false);
     setVerifiedAmountInput(
       record.refundAmount !== null ? String(record.refundAmount) : '',
     );
@@ -107,7 +106,7 @@ export default function AdminRefundsPage() {
     if (statusFilter !== 'ALL' && r.refundStatus !== statusFilter) return false;
     const q = query.trim().toLowerCase();
     if (!q) return true;
-    return `${r.orderNumber} ${r.customerName} ${r.originalPaymentUtr} ${r.refundTransactionReference ?? ''}`
+    return `${r.orderNumber} ${r.customerName} ${r.refundTransactionReference ?? ''}`
       .toLowerCase()
       .includes(q);
   });
@@ -154,8 +153,19 @@ export default function AdminRefundsPage() {
       refundBankAccount: refundBankAccount.trim(),
       refundDate: refundDate.trim(),
       verifiedAmount: Number(verifiedAmountInput),
+      evidenceKind: refundEvidence,
+      transferSettlementChecked: refundEvidence === 'BANK_TRANSFER' ? settlementChecked : undefined,
       notes: refundNotes.trim() || undefined,
     };
+
+    if (refundEvidence === 'BANK_TRANSFER' && !settlementChecked) {
+      setValidationError('Confirm that the refund transfer is visible as settled on the actual bank statement. A typed reference alone is not proof.');
+      return;
+    }
+    if (refundEvidence === 'LOCAL_TEST' && !transferPayload.refundTransactionReference.toUpperCase().startsWith('TEST-')) {
+      setValidationError('LOCAL TEST evidence must use a reference that starts with TEST-.');
+      return;
+    }
 
     const check = validateRefundCompletion({
       currentRefundStatus: selectedRefund.refundStatus,
@@ -208,29 +218,29 @@ export default function AdminRefundsPage() {
       </Notice>
 
       {!isLive && (
-        <Notice title="Development reference examples">
-          FastAPI (<code>/api/admin/refunds</code>) is not connected yet. The records below illustrate the two-step refund approval and verified bank transfer recording workflow.
+        <Notice title="Refund data unavailable">
+          Connect the local FastAPI server to load eligible refunds. No sample refund records are shown.
         </Notice>
       )}
       {error && <Notice tone="error" title="Refunds sync error">{error}</Notice>}
 
       <div className="stats-grid">
-        <StatCard label="Total Refund Records" value={refunds.length} />
+        <StatCard label="Total Refund Records" value={isLive ? refunds.length : 'Unavailable'} />
         <StatCard
           label="Pending Refunds"
-          value={refunds.filter((r) => r.refundStatus === 'PENDING').length}
+          value={isLive ? refunds.filter((r) => r.refundStatus === 'PENDING').length : 'Unavailable'}
           subtitle="Awaiting approval"
         />
         <StatCard
           label="Approved / Processing"
-          value={
+          value={isLive ? (
             refunds.filter((r) => ['APPROVED', 'PROCESSING'].includes(r.refundStatus)).length
-          }
+          ) : 'Unavailable'}
           subtitle="Awaiting bank transfer ref"
         />
         <StatCard
           label="Completed Refunds"
-          value={refunds.filter((r) => r.refundStatus === 'COMPLETED').length}
+          value={isLive ? refunds.filter((r) => r.refundStatus === 'COMPLETED').length : 'Unavailable'}
           subtitle="Bank transfer verified"
         />
       </div>
@@ -239,13 +249,13 @@ export default function AdminRefundsPage() {
       <div className="card card--tinted customer-filters">
         <div style={{ flex: '2 1 260px' }}>
           <label htmlFor="refund-search">
-            Search Order ID, Customer, Original UTR, or Refund Ref
+            Search Order ID, Customer, or Refund Ref
           </label>
           <input
             id="refund-search"
             type="search"
             className="input"
-            placeholder="#BFP-1038, Pooja Dave, or AXIS-REF…"
+            placeholder="Order ID, customer, or refund reference"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
@@ -277,7 +287,6 @@ export default function AdminRefundsPage() {
                   <th scope="col">Customer</th>
                   <th scope="col">Refund Amount</th>
                   <th scope="col">Cancellation Reason</th>
-                  <th scope="col">Original Payment UTR</th>
                   <th scope="col">Refund Bank Reference</th>
                   <th scope="col">Refund Date</th>
                   <th scope="col">Refund Status</th>
@@ -297,7 +306,6 @@ export default function AdminRefundsPage() {
                     </td>
                     <td><strong>{formatINR(item.refundAmount)}</strong></td>
                     <td className="text-small" style={{ maxWidth: 240 }}>{item.refundReason}</td>
-                    <td><code>{item.originalPaymentUtr}</code></td>
                     <td>
                       {item.refundTransactionReference ? (
                         <code>{item.refundTransactionReference}</code>
@@ -367,10 +375,6 @@ export default function AdminRefundsPage() {
                 <dt>Refund Amount</dt>
                 <dd>{formatINR(selectedRefund.refundAmount)}</dd>
               </div>
-              <div className="admin-kv-item">
-                <dt>Original Payment UTR</dt>
-                <dd><code>{selectedRefund.originalPaymentUtr}</code></dd>
-              </div>
               <div className="admin-kv-item" style={{ gridColumn: '1 / -1' }}>
                 <dt>Cancellation &amp; Refund Reason</dt>
                 <dd>{selectedRefund.refundReason}</dd>
@@ -384,7 +388,7 @@ export default function AdminRefundsPage() {
                   Step 1 — Approve Refund Eligibility
                 </h3>
                 <p className="text-small text-secondary" style={{ marginBottom: 12 }}>
-                  Confirm that the original payment UTR (<code>{selectedRefund.originalPaymentUtr}</code>) was verified in the bank account and the order is eligible for refund.
+                  Confirm that the original payment was approved and the order is eligible for refund.
                 </p>
                 <button
                   type="button"
@@ -471,6 +475,30 @@ export default function AdminRefundsPage() {
                   disabled={selectedRefund.refundStatus === 'COMPLETED' || busy}
                 />
               </div>
+
+              {selectedRefund.refundStatus !== 'COMPLETED' && (
+                <fieldset style={{ marginBottom: 14 }} disabled={busy}>
+                  <legend>Evidence that the transfer settled</legend>
+                  <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontWeight: 400 }}>
+                    <input type="radio" name="refund-evidence" checked={refundEvidence === 'BANK_TRANSFER'} onChange={() => setRefundEvidence('BANK_TRANSFER')} />
+                    <span>Real bank transfer, visible as settled on the bank statement.</span>
+                  </label>
+                  {!env.isProd && (
+                    <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontWeight: 400 }}>
+                      <input type="radio" name="refund-evidence" checked={refundEvidence === 'LOCAL_TEST'} onChange={() => setRefundEvidence('LOCAL_TEST')} />
+                      <span>LOCAL TEST evidence (development only; reference must start with TEST-).</span>
+                    </label>
+                  )}
+                  {refundEvidence === 'BANK_TRANSFER' ? (
+                    <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontWeight: 600, marginTop: 8 }}>
+                      <input type="checkbox" checked={settlementChecked} onChange={(e) => setSettlementChecked(e.target.checked)} />
+                      <span>I found this refund transfer settled on the actual bank statement. A typed reference alone is not proof.</span>
+                    </label>
+                  ) : (
+                    <Notice tone="warning" title="TEST evidence">Recorded as LOCAL TEST evidence; the server refuses it outside local development.</Notice>
+                  )}
+                </fieldset>
+              )}
 
               {selectedRefund.refundStatus !== 'COMPLETED' ? (
                 <button type="submit" className="btn btn--dark btn--full" disabled={busy}>

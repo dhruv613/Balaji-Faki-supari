@@ -1,558 +1,239 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useState, type ChangeEvent, type FormEvent } from 'react';
 import Notice from '../../../components/common/Notice';
 import { env } from '../../../lib/env';
-import { supabase, useSession } from '../../../lib/supabase';
-import { getErrorMessage } from '../../../lib/api';
-import { getAdminSettings, updateAdminSettings } from '../api';
-import type { AdminStoreSettings } from '../types';
-import { SAMPLE_ADMIN_SETTINGS } from '../lib/referenceData';
-import { ConfirmDialog, LoadingSkeleton, useAdminToast } from '../components';
+import { getErrorMessage, resolveApiUrl } from '../../../lib/api';
+import {
+  addStorePhoto,
+  confirmBusinessSettings,
+  deleteStorePhoto,
+  getAdminSettings,
+  updateAdminSettings,
+  uploadPaymentQr,
+} from '../api';
+import type { AdminStoreSettings, UpdateAdminSettingsRequest } from '../types';
+import { ErrorState, LoadingSkeleton, useAdminToast } from '../components';
 
+const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+
+/** Parses "360001, 360002" into unique 6-digit PIN codes; returns null when an entry is invalid. */
+export function parsePinCodes(input: string): string[] | null {
+  const pins = input.split(/[\s,]+/).map((pin) => pin.trim()).filter(Boolean);
+  if (pins.some((pin) => !/^[1-9]\d{5}$/.test(pin)) || new Set(pins).size !== pins.length) return null;
+  return pins;
+}
+
+/** Builds a PATCH body containing only the fields that actually changed. */
+export function changedSettings(current: AdminStoreSettings, form: SettingsForm): UpdateAdminSettingsRequest | { error: string } {
+  const patch: UpdateAdminSettingsRequest = {};
+  const text = (key: keyof SettingsForm & keyof UpdateAdminSettingsRequest) => {
+    if (form[key] !== (current[key as keyof AdminStoreSettings] ?? '')) (patch as Record<string, unknown>)[key] = form[key];
+  };
+  (['storeName', 'tagline', 'storeAddress', 'phoneNumber', 'supportWhatsapp', 'supportEmail', 'businessHours', 'shopIntro',
+    'productionInfo', 'providerManufacturer', 'packagingInfo', 'officialUpiId', 'officialPayeeName'] as const).forEach(text);
+  const pins = parsePinCodes(form.serviceablePinCodes);
+  if (pins === null) return { error: 'PIN codes must be unique 6-digit numbers separated by commas.' };
+  if (pins.join(',') !== current.serviceablePinCodes.join(',')) patch.serviceablePinCodes = pins;
+  for (const [key, label] of [['deliveryCharges', 'Delivery charge'], ['freeDeliveryThreshold', 'Free-delivery threshold']] as const) {
+    const raw = form[key].trim();
+    const value = raw === '' ? null : Number(raw);
+    if (value !== null && (!Number.isFinite(value) || value < 0)) return { error: `${label} must be a number of rupees, 0 or more.` };
+    if (value !== (current[key] ?? null)) patch[key] = value;
+  }
+  const threshold = Number(form.lowStockThreshold);
+  if (!Number.isInteger(threshold) || threshold < 0) return { error: 'Low-stock threshold must be a whole number, 0 or more.' };
+  if (threshold !== current.lowStockThreshold) patch.lowStockThreshold = threshold;
+  return patch;
+}
+
+export interface SettingsForm {
+  storeName: string; tagline: string; storeAddress: string; phoneNumber: string; supportWhatsapp: string;
+  supportEmail: string; businessHours: string; shopIntro: string; productionInfo: string;
+  providerManufacturer: string; packagingInfo: string; officialUpiId: string; officialPayeeName: string;
+  deliveryCharges: string; freeDeliveryThreshold: string; serviceablePinCodes: string; lowStockThreshold: string;
+}
+
+export function toForm(settings: AdminStoreSettings): SettingsForm {
+  return {
+    storeName: settings.storeName, tagline: settings.tagline, storeAddress: settings.storeAddress,
+    phoneNumber: settings.phoneNumber, supportWhatsapp: settings.supportWhatsapp, supportEmail: settings.supportEmail ?? '',
+    businessHours: settings.businessHours, shopIntro: settings.shopIntro ?? '', productionInfo: settings.productionInfo ?? '',
+    providerManufacturer: settings.providerManufacturer ?? '', packagingInfo: settings.packagingInfo ?? '',
+    officialUpiId: settings.officialUpiId ?? '', officialPayeeName: settings.officialPayeeName ?? '',
+    deliveryCharges: settings.deliveryCharges === null ? '' : String(settings.deliveryCharges),
+    freeDeliveryThreshold: settings.freeDeliveryThreshold === null ? '' : String(settings.freeDeliveryThreshold),
+    serviceablePinCodes: settings.serviceablePinCodes.join(', '),
+    lowStockThreshold: String(settings.lowStockThreshold),
+  };
+}
+
+/** Settings: shop details, payment destination, delivery rules. Nothing is shown or saved until the server answers. */
 export default function AdminSettingsPage() {
-  const { session } = useSession();
   const { showToast } = useAdminToast();
-
-  const [settings, setSettings] = useState<AdminStoreSettings>(SAMPLE_ADMIN_SETTINGS);
-  const [pinCodesInput, setPinCodesInput] = useState(
-    SAMPLE_ADMIN_SETTINGS.serviceablePinCodes.join(', '),
-  );
-  const [deliveryChargesInput, setDeliveryChargesInput] = useState('');
-
-  // Sensitive payment destination confirmation state
-  const [confirmSensitiveOpen, setConfirmSensitiveOpen] = useState(false);
-  const [adminPasswordConfirm, setAdminPasswordConfirm] = useState('');
-  const [busy, setBusy] = useState(false);
-
-  // Admin password change state
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmNewPassword, setConfirmNewPassword] = useState('');
-  const [passwordBusy, setPasswordBusy] = useState(false);
-  const [passwordMessage, setPasswordMessage] = useState('');
-  const [passwordError, setPasswordError] = useState('');
-
+  const [settings, setSettings] = useState<AdminStoreSettings | null>(null);
+  const [form, setForm] = useState<SettingsForm | null>(null);
   const [loading, setLoading] = useState(Boolean(env.apiBaseUrl));
   const [error, setError] = useState('');
-  const [isLive, setIsLive] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [formError, setFormError] = useState('');
+  const [photoCaption, setPhotoCaption] = useState('');
 
-  useEffect(() => {
-    let active = true;
-    if (!env.apiBaseUrl) {
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    setError('');
-    getAdminSettings()
-      .then((res) => {
-        if (active) {
-          setSettings(res);
-          setPinCodesInput(res.serviceablePinCodes.join(', '));
-          setDeliveryChargesInput(
-            res.deliveryCharges !== null ? String(res.deliveryCharges) : '',
-          );
-          setIsLive(true);
-        }
-      })
-      .catch((err) => {
-        if (active) setError(getErrorMessage(err));
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
+  const apply = useCallback((next: AdminStoreSettings) => { setSettings(next); setForm(toForm(next)); }, []);
+  const load = useCallback(() => {
+    if (!env.apiBaseUrl) return;
+    setLoading(true); setError('');
+    getAdminSettings().then(apply).catch((cause) => setError(getErrorMessage(cause))).finally(() => setLoading(false));
+  }, [apply]);
+  useEffect(load, [load]);
 
-  async function handleSaveGeneralSettings(e: FormEvent) {
-    e.preventDefault();
-    if (!env.apiBaseUrl) {
-      showToast(
-        'Integration pending: FastAPI (PATCH /api/admin/settings) is not connected. Store configuration updates require backend persistence.',
-        'warning',
-      );
-      return;
-    }
-
-    const parsedPins = pinCodesInput
-      .split(',')
-      .map((s) => s.trim())
-      .filter((s) => /^[1-9]\d{5}$/.test(s));
-
-    setBusy(true);
+  async function run<T>(action: () => Promise<T>, success: string): Promise<T | undefined> {
+    if (busy) return undefined;
+    setBusy(true); setFormError('');
     try {
-      const updated = await updateAdminSettings({
-        storeName: settings.storeName,
-        storeAddress: settings.storeAddress,
-        phoneNumber: settings.phoneNumber,
-        supportEmail: settings.supportEmail,
-        businessHours: settings.businessHours,
-        deliveryCharges:
-          deliveryChargesInput.trim() === '' ? null : Number(deliveryChargesInput),
-        serviceablePinCodes: parsedPins,
-        lowStockThreshold: settings.lowStockThreshold,
-        orderCancellationPolicy: settings.orderCancellationPolicy,
-        refundPolicy: settings.refundPolicy,
-        emailNotificationPreferences: settings.emailNotificationPreferences,
-      });
-      setSettings(updated);
-      showToast('Store settings updated and logged.', 'success');
-    } catch (err) {
-      showToast(getErrorMessage(err), 'error');
-    } finally {
-      setBusy(false);
-    }
+      const result = await action();
+      showToast(success, 'success');
+      return result;
+    } catch (cause) {
+      setFormError(getErrorMessage(cause));
+      return undefined;
+    } finally { setBusy(false); }
   }
 
-  async function handleSaveSensitivePaymentDestination() {
-    if (adminPasswordConfirm.trim().length < 6) {
-      showToast(
-        'Enter your current Owner Admin password to authorize changing the official UPI payment destination.',
-        'warning',
-      );
-      return;
-    }
-
-    if (!env.apiBaseUrl) {
-      showToast(
-        'Integration pending: FastAPI (/api/admin/settings) is not connected. Payment destination changes require server authorization and audit logging.',
-        'warning',
-      );
-      setConfirmSensitiveOpen(false);
-      setAdminPasswordConfirm('');
-      return;
-    }
-
-    setBusy(true);
-    try {
-      const updated = await updateAdminSettings({
-        officialUpiId: settings.officialUpiId.trim(),
-        officialPayeeName: settings.officialPayeeName.trim(),
-        officialUpiQrImageUrl: settings.officialUpiQrImageUrl.trim(),
-        adminCurrentPasswordForSensitiveChange: adminPasswordConfirm,
-      });
-      setSettings(updated);
-      showToast('Official UPI destination updated and recorded in Admin Audit Log.', 'success');
-      setConfirmSensitiveOpen(false);
-      setAdminPasswordConfirm('');
-    } catch (err) {
-      showToast(getErrorMessage(err), 'error');
-    } finally {
-      setBusy(false);
-    }
+  async function save(event: FormEvent) {
+    event.preventDefault();
+    if (!settings || !form) return; // Save is only possible after a successful load: placeholders can never be saved.
+    const patch = changedSettings(settings, form);
+    if ('error' in patch) { setFormError(patch.error); return; }
+    if (Object.keys(patch).length === 0) { setFormError('Nothing has changed.'); return; }
+    const next = await run(() => updateAdminSettings(patch), 'Settings saved.');
+    if (next) apply(next);
   }
 
-  async function handleChangeAdminPassword(e: FormEvent) {
-    e.preventDefault();
-    setPasswordError('');
-    setPasswordMessage('');
-
-    if (newPassword.length < 8) {
-      setPasswordError('New password must be at least 8 characters long.');
-      return;
-    }
-    if (newPassword !== confirmNewPassword) {
-      setPasswordError('New password and confirmation do not match.');
-      return;
-    }
-    if (!supabase) {
-      setPasswordError('Supabase Auth is not configured in the current environment.');
-      return;
-    }
-
-    setPasswordBusy(true);
-    try {
-      const { error: updateErr } = await supabase.auth.updateUser({
-        password: newPassword,
-      });
-      if (updateErr) throw updateErr;
-      setNewPassword('');
-      setConfirmNewPassword('');
-      setPasswordMessage('Owner Admin password updated through Supabase Auth.');
-      showToast('Password updated.', 'success');
-    } catch (err) {
-      setPasswordError(getErrorMessage(err));
-    } finally {
-      setPasswordBusy(false);
-    }
+  async function pickImage(event: ChangeEvent<HTMLInputElement>, handler: (file: File) => Promise<AdminStoreSettings>, success: string) {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    if (!IMAGE_TYPES.includes(file.type)) { setFormError('Choose a JPG, PNG or WEBP image.'); return; }
+    const next = await run(() => handler(file), success);
+    if (next) apply(next);
   }
+
+  const set = (key: keyof SettingsForm) => (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+    setForm((current) => (current ? { ...current, [key]: event.target.value } : current));
 
   return (
     <div className="wrapper">
       <div className="admin-heading">
         <div>
-          <h1 className="page__header">Store &amp; Security Settings</h1>
-          <p className="page__subtitle">
-            Manage store profile, official UPI payment destination, serviceable PIN codes, policies, and Owner Admin account security.
-          </p>
+          <h1 className="page__header">Settings</h1>
+          <p className="page__subtitle">Shop details, payment destination and delivery rules.</p>
         </div>
-        <span className="badge badge--dark">No Secret Keys Exposed</span>
       </div>
 
-      {!isLive && (
-        <Notice title="Development reference configuration">
-          FastAPI (<code>/api/admin/settings</code>) is not connected yet. Secret keys (Supabase service-role key, database credentials, SMTP secrets) are strictly server-only and never exposed to the browser.
-        </Notice>
-      )}
-      {error && <Notice tone="error" title="Settings load error">{error}</Notice>}
+      {!env.apiBaseUrl && <Notice tone="warning" title="Server not connected">Connect the local FastAPI server to view and change settings. No sample values are shown.</Notice>}
+      {error && <ErrorState message={error} onRetry={load} />}
+      {loading && !settings && <LoadingSkeleton rows={5} />}
 
-      {loading ? (
-        <LoadingSkeleton rows={6} />
-      ) : (
-        <div className="admin-two-col">
-          {/* General Store Profile & Delivery Settings */}
-          <form className="card" onSubmit={handleSaveGeneralSettings}>
-            <h2 className="admin-section-title">1. Store Profile &amp; Delivery Rules</h2>
+      {settings && form && (
+        <form onSubmit={save} noValidate>
+          {formError && <Notice tone="error" title="Not saved">{formError}</Notice>}
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 16 }}>
-              <img
-                src={settings.logoUrl}
-                alt="Balaji Faki Point Logo"
-                style={{
-                  height: 52,
-                  width: 'auto',
-                  padding: 6,
-                  border: '1px solid var(--color-border)',
-                  borderRadius: 10,
-                }}
-              />
-              <div>
-                <strong>Official Brand Logo</strong>
-                <p className="text-small text-secondary">{settings.logoUrl}</p>
-              </div>
-            </div>
-
-            <div className="form-row">
-              <div>
-                <label htmlFor="set-store-name">Store Name</label>
-                <input
-                  id="set-store-name"
-                  className="input"
-                  value={settings.storeName}
-                  onChange={(e) => setSettings({ ...settings, storeName: e.target.value })}
-                  required
-                />
-              </div>
-              <div>
-                <label htmlFor="set-phone">Official Phone / WhatsApp</label>
-                <input
-                  id="set-phone"
-                  className="input"
-                  value={settings.phoneNumber}
-                  onChange={(e) => setSettings({ ...settings, phoneNumber: e.target.value })}
-                  required
-                />
-              </div>
-            </div>
-
-            <div className="form-row">
-              <div>
-                <label htmlFor="set-email">Support Email</label>
-                <input
-                  id="set-email"
-                  type="email"
-                  className="input"
-                  value={settings.supportEmail}
-                  onChange={(e) => setSettings({ ...settings, supportEmail: e.target.value })}
-                  required
-                />
-              </div>
-              <div>
-                <label htmlFor="set-hours">Business Hours</label>
-                <input
-                  id="set-hours"
-                  className="input"
-                  value={settings.businessHours}
-                  onChange={(e) => setSettings({ ...settings, businessHours: e.target.value })}
-                />
-              </div>
-            </div>
-
-            <div style={{ marginBottom: 14 }}>
-              <label htmlFor="set-address">Store Address</label>
-              <textarea
-                id="set-address"
-                className="input"
-                value={settings.storeAddress}
-                onChange={(e) => setSettings({ ...settings, storeAddress: e.target.value })}
-                required
-              />
-            </div>
-
-            <div className="form-row">
-              <div>
-                <label htmlFor="set-del-fee">Delivery Charges (₹ INR)</label>
-                <input
-                  id="set-del-fee"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  className="input"
-                  placeholder="Awaiting server fee"
-                  value={deliveryChargesInput}
-                  onChange={(e) => setDeliveryChargesInput(e.target.value)}
-                />
-              </div>
-              <div>
-                <label htmlFor="set-low-stock">Low Stock Alert Threshold (Packs)</label>
-                <input
-                  id="set-low-stock"
-                  type="number"
-                  min="1"
-                  step="1"
-                  className="input"
-                  value={settings.lowStockThreshold}
-                  onChange={(e) =>
-                    setSettings({
-                      ...settings,
-                      lowStockThreshold: Math.max(1, Number(e.target.value) || 1),
-                    })
-                  }
-                />
-              </div>
-            </div>
-
-            <div style={{ marginBottom: 14 }}>
-              <label htmlFor="set-pins">Serviceable 6-Digit PIN Codes (Comma-separated)</label>
-              <input
-                id="set-pins"
-                className="input"
-                value={pinCodesInput}
-                onChange={(e) => setPinCodesInput(e.target.value)}
-              />
-            </div>
-
-            <div style={{ marginBottom: 14 }}>
-              <label htmlFor="set-cancel-policy">Order Cancellation Policy</label>
-              <textarea
-                id="set-cancel-policy"
-                className="input"
-                value={settings.orderCancellationPolicy}
-                onChange={(e) =>
-                  setSettings({ ...settings, orderCancellationPolicy: e.target.value })
-                }
-              />
-            </div>
-
-            <div style={{ marginBottom: 14 }}>
-              <label htmlFor="set-refund-policy">Refund Policy</label>
-              <textarea
-                id="set-refund-policy"
-                className="input"
-                value={settings.refundPolicy}
-                onChange={(e) => setSettings({ ...settings, refundPolicy: e.target.value })}
-              />
-            </div>
-
-            <fieldset>
-              <legend style={{ fontSize: 16 }}>Email Notification Preferences</legend>
-              <div className="checkbox-row">
-                <input
-                  id="pref-cust-order"
-                  type="checkbox"
-                  checked={settings.emailNotificationPreferences.sendCustomerOrderUpdates}
-                  onChange={(e) =>
-                    setSettings({
-                      ...settings,
-                      emailNotificationPreferences: {
-                        ...settings.emailNotificationPreferences,
-                        sendCustomerOrderUpdates: e.target.checked,
-                      },
-                    })
-                  }
-                />
-                <label htmlFor="pref-cust-order" style={{ marginBottom: 0, fontWeight: 400 }}>
-                  Send customer order &amp; delivery status emails
-                </label>
-              </div>
-              <div className="checkbox-row">
-                <input
-                  id="pref-cust-pay"
-                  type="checkbox"
-                  checked={settings.emailNotificationPreferences.sendCustomerPaymentReceipts}
-                  onChange={(e) =>
-                    setSettings({
-                      ...settings,
-                      emailNotificationPreferences: {
-                        ...settings.emailNotificationPreferences,
-                        sendCustomerPaymentReceipts: e.target.checked,
-                      },
-                    })
-                  }
-                />
-                <label htmlFor="pref-cust-pay" style={{ marginBottom: 0, fontWeight: 400 }}>
-                  Send customer payment verification &amp; refund updates
-                </label>
-              </div>
-              <div className="checkbox-row">
-                <input
-                  id="pref-admin-stock"
-                  type="checkbox"
-                  checked={settings.emailNotificationPreferences.sendAdminLowStockAlerts}
-                  onChange={(e) =>
-                    setSettings({
-                      ...settings,
-                      emailNotificationPreferences: {
-                        ...settings.emailNotificationPreferences,
-                        sendAdminLowStockAlerts: e.target.checked,
-                      },
-                    })
-                  }
-                />
-                <label htmlFor="pref-admin-stock" style={{ marginBottom: 0, fontWeight: 400 }}>
-                  Send Owner Admin low-stock alerts
-                </label>
-              </div>
-            </fieldset>
-
-            <button type="submit" className="btn btn--primary" disabled={busy}>
-              {busy ? 'Saving…' : 'Save Store & Policy Settings'}
+          <section className="card" style={{ marginBottom: 24 }} aria-labelledby="settings-payment-heading">
+            <h2 id="settings-payment-heading">Payment &amp; go-live confirmation</h2>
+            {settings.paymentIsLocalTest && (
+              <Notice tone="warning" title="LOCAL TEST payment details">
+                The payment destination is a test value, not a real receiving account. Replace it before taking real orders.
+              </Notice>
+            )}
+            {settings.businessSettingsConfirmedAt ? (
+              <Notice title="Confirmed">You confirmed these payment, delivery and PIN settings on {new Date(settings.businessSettingsConfirmedAt).toLocaleString('en-IN')}.</Notice>
+            ) : (
+              <Notice tone="info" title="Not confirmed yet">
+                Outside local testing, checkout stays closed until you confirm the payment destination, QR, delivery charge and PIN codes. Changing any of them withdraws the confirmation.
+              </Notice>
+            )}
+            <label htmlFor="set-upi">UPI ID</label>
+            <input id="set-upi" className="input" value={form.officialUpiId} onChange={set('officialUpiId')} disabled={busy} maxLength={120} autoComplete="off" />
+            <label htmlFor="set-payee">Payee name</label>
+            <input id="set-payee" className="input" value={form.officialPayeeName} onChange={set('officialPayeeName')} disabled={busy} maxLength={120} />
+            <p className="text-small" style={{ marginTop: 12 }}><strong>Payment QR</strong></p>
+            {settings.officialUpiQrImageUrl
+              ? <img src={resolveApiUrl(settings.officialUpiQrImageUrl)} alt="Current payment QR" width={180} height={180} style={{ background: '#fff' }} />
+              : <p className="text-secondary text-small">No QR uploaded yet.</p>}
+            <label htmlFor="set-qr">Upload a new QR image</label>
+            <input id="set-qr" className="input" type="file" accept="image/jpeg,image/png,image/webp" disabled={busy}
+              onChange={(event) => void pickImage(event, uploadPaymentQr, 'Payment QR replaced. Confirm the settings again.')} />
+            <button type="button" className="btn btn--primary" style={{ marginTop: 16 }} disabled={busy || Boolean(settings.businessSettingsConfirmedAt) || settings.paymentIsLocalTest}
+              onClick={() => void run(() => confirmBusinessSettings(), 'Settings confirmed.').then((next) => next && apply(next))}>
+              Confirm payment, delivery &amp; PIN settings
             </button>
-          </form>
+            {settings.paymentIsLocalTest && <p className="text-small text-secondary">Replace the LOCAL TEST UPI ID first.</p>}
+          </section>
 
-          {/* Right Column: Official UPI Destination + Admin Account & Password */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-            <section className="card card--tinted" aria-labelledby="upi-dest-heading">
-              <div className="detail-header">
-                <h2 id="upi-dest-heading" className="admin-section-title" style={{ marginBottom: 0 }}>
-                  2. Official UPI Payment Destination
-                </h2>
-                <span className="badge badge--warning">Audit Logged</span>
-              </div>
-              <p className="text-small text-secondary" style={{ marginBottom: 14 }}>
-                Sensitive financial setting. Modifying the official merchant UPI ID or QR image requires Owner Admin password re-verification and creates a high-priority audit log entry.
-              </p>
+          <section className="card" style={{ marginBottom: 24 }} aria-labelledby="settings-delivery-heading">
+            <h2 id="settings-delivery-heading">Delivery &amp; stock</h2>
+            <label htmlFor="set-delivery">Delivery charge (₹, 0 = free)</label>
+            <input id="set-delivery" className="input" inputMode="decimal" value={form.deliveryCharges} onChange={set('deliveryCharges')} disabled={busy} />
+            <label htmlFor="set-free">Free delivery above (₹, blank = none)</label>
+            <input id="set-free" className="input" inputMode="decimal" value={form.freeDeliveryThreshold} onChange={set('freeDeliveryThreshold')} disabled={busy} />
+            <label htmlFor="set-pins">Serviceable PIN codes</label>
+            <textarea id="set-pins" className="input" value={form.serviceablePinCodes} onChange={set('serviceablePinCodes')} disabled={busy} />
+            <label htmlFor="set-low">Low-stock alert at (units)</label>
+            <input id="set-low" className="input" inputMode="numeric" value={form.lowStockThreshold} onChange={set('lowStockThreshold')} disabled={busy} />
+            <p className="text-small text-secondary" style={{ marginTop: 8 }}>
+              Stock held for unpaid orders: {settings.stockReservationExpiryMinutes} minutes. Orders are never cancelled automatically; the release policy is pending the owner&apos;s decision.
+            </p>
+          </section>
 
-              <div style={{ marginBottom: 12 }}>
-                <label htmlFor="set-payee-name">Official Merchant Payee Name</label>
-                <input
-                  id="set-payee-name"
-                  className="input"
-                  value={settings.officialPayeeName}
-                  onChange={(e) =>
-                    setSettings({ ...settings, officialPayeeName: e.target.value })
-                  }
-                />
-              </div>
+          <section className="card" style={{ marginBottom: 24 }} aria-labelledby="settings-shop-heading">
+            <h2 id="settings-shop-heading">Shop details (shown to customers)</h2>
+            <label htmlFor="set-name">Shop name</label>
+            <input id="set-name" className="input" value={form.storeName} onChange={set('storeName')} disabled={busy} maxLength={120} />
+            <label htmlFor="set-tagline">Tagline</label>
+            <input id="set-tagline" className="input" value={form.tagline} onChange={set('tagline')} disabled={busy} maxLength={255} />
+            <label htmlFor="set-address">Address</label>
+            <textarea id="set-address" className="input" value={form.storeAddress} onChange={set('storeAddress')} disabled={busy} maxLength={255} />
+            <label htmlFor="set-hours">Opening hours</label>
+            <input id="set-hours" className="input" value={form.businessHours} onChange={set('businessHours')} disabled={busy} maxLength={120} />
+            <label htmlFor="set-phone">Phone</label>
+            <input id="set-phone" className="input" value={form.phoneNumber} onChange={set('phoneNumber')} disabled={busy} maxLength={32} />
+            <label htmlFor="set-wa">WhatsApp number (digits with country code)</label>
+            <input id="set-wa" className="input" value={form.supportWhatsapp} onChange={set('supportWhatsapp')} disabled={busy} maxLength={32} />
+            <label htmlFor="set-email">Support e-mail (optional)</label>
+            <input id="set-email" className="input" type="email" value={form.supportEmail} onChange={set('supportEmail')} disabled={busy} maxLength={255} />
+            <label htmlFor="set-intro">Shop introduction (optional)</label>
+            <textarea id="set-intro" className="input" value={form.shopIntro} onChange={set('shopIntro')} disabled={busy} maxLength={4000} />
+            <label htmlFor="set-production">How products are prepared (optional)</label>
+            <textarea id="set-production" className="input" value={form.productionInfo} onChange={set('productionInfo')} disabled={busy} maxLength={4000} />
+            <label htmlFor="set-provider">Provider / manufacturer (optional)</label>
+            <textarea id="set-provider" className="input" value={form.providerManufacturer} onChange={set('providerManufacturer')} disabled={busy} maxLength={4000} />
+            <label htmlFor="set-packaging">Packaging (optional)</label>
+            <textarea id="set-packaging" className="input" value={form.packagingInfo} onChange={set('packagingInfo')} disabled={busy} maxLength={4000} />
+            <p className="text-small text-secondary" style={{ marginTop: 8 }}>Leave optional fields empty until you have confirmed facts to publish; empty fields are hidden from customers.</p>
+          </section>
 
-              <div style={{ marginBottom: 12 }}>
-                <label htmlFor="set-upi-id">Official UPI ID</label>
-                <input
-                  id="set-upi-id"
-                  className="input"
-                  value={settings.officialUpiId}
-                  onChange={(e) => setSettings({ ...settings, officialUpiId: e.target.value })}
-                />
-              </div>
+          <button type="submit" className="btn btn--primary" disabled={busy}>{busy ? 'Saving…' : 'Save changes'}</button>
 
-              <div style={{ marginBottom: 16 }}>
-                <label htmlFor="set-qr-url">Official UPI QR Image Storage Path</label>
-                <input
-                  id="set-qr-url"
-                  className="input"
-                  placeholder="Issued by FastAPI from verified merchant storage"
-                  value={settings.officialUpiQrImageUrl}
-                  onChange={(e) =>
-                    setSettings({ ...settings, officialUpiQrImageUrl: e.target.value })
-                  }
-                />
-              </div>
-
-              <button
-                type="button"
-                className="btn btn--dark"
-                onClick={() => setConfirmSensitiveOpen(true)}
-              >
-                Authorize &amp; Update UPI Destination
-              </button>
-            </section>
-
-            {/* Admin Account Information & Change Password */}
-            <section className="card" aria-labelledby="admin-acc-heading">
-              <h2 id="admin-acc-heading" className="admin-section-title">
-                3. Owner Admin Account &amp; Password
-              </h2>
-              <dl className="admin-kv-grid">
-                <div className="admin-kv-item">
-                  <dt>Signed-In Email</dt>
-                  <dd>{session?.user?.email ?? settings.adminAccount.email}</dd>
-                </div>
-                <div className="admin-kv-item">
-                  <dt>Provisioned Role</dt>
-                  <dd><span className="badge badge--dark">OWNER_ADMIN</span></dd>
-                </div>
-              </dl>
-
-              <form onSubmit={handleChangeAdminPassword}>
-                <h3 style={{ fontSize: 18, marginBottom: 10 }}>Change Owner Admin Password</h3>
-                {passwordError && <Notice tone="error">{passwordError}</Notice>}
-                {passwordMessage && <Notice tone="success">{passwordMessage}</Notice>}
-
-                <div className="form-row">
-                  <div>
-                    <label htmlFor="admin-new-pass">New Password</label>
-                    <input
-                      id="admin-new-pass"
-                      type="password"
-                      autoComplete="new-password"
-                      className="input"
-                      placeholder="At least 8 characters"
-                      value={newPassword}
-                      onChange={(e) => setNewPassword(e.target.value)}
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label htmlFor="admin-confirm-pass">Confirm New Password</label>
-                    <input
-                      id="admin-confirm-pass"
-                      type="password"
-                      autoComplete="new-password"
-                      className="input"
-                      placeholder="Repeat new password"
-                      value={confirmNewPassword}
-                      onChange={(e) => setConfirmNewPassword(e.target.value)}
-                      required
-                    />
-                  </div>
-                </div>
-
-                <button type="submit" className="btn btn--outline" disabled={passwordBusy}>
-                  {passwordBusy ? 'Updating Password…' : 'Update Password'}
-                </button>
-              </form>
-            </section>
-          </div>
-        </div>
+          <section className="card" style={{ marginTop: 24 }} aria-labelledby="settings-photos-heading">
+            <h2 id="settings-photos-heading">Shop photos</h2>
+            {settings.photos.length === 0 && <p className="text-secondary">No photos yet. Upload real photos of the shop.</p>}
+            <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }}>
+              {settings.photos.map((photo) => (
+                <figure key={photo.id} style={{ margin: 0 }}>
+                  <img src={photo.url} alt={photo.caption || 'Shop photo'} style={{ width: '100%', height: 'auto' }} />
+                  <figcaption className="text-small">{photo.caption}</figcaption>
+                  <button type="button" className="btn btn--sm" disabled={busy}
+                    onClick={() => void run(() => deleteStorePhoto(photo.id), 'Photo removed.').then((next) => next && apply(next))}>Remove</button>
+                </figure>
+              ))}
+            </div>
+            <label htmlFor="set-photo-caption" style={{ marginTop: 16 }}>Caption (optional)</label>
+            <input id="set-photo-caption" className="input" value={photoCaption} onChange={(event) => setPhotoCaption(event.target.value)} maxLength={255} disabled={busy} />
+            <label htmlFor="set-photo">Add a photo</label>
+            <input id="set-photo" className="input" type="file" accept="image/jpeg,image/png,image/webp" disabled={busy}
+              onChange={(event) => void pickImage(event, (file) => addStorePhoto(file, photoCaption), 'Photo added.').then(() => setPhotoCaption(''))} />
+          </section>
+        </form>
       )}
-
-      {/* Confirmation Dialog for Sensitive UPI Destination Change */}
-      <ConfirmDialog
-        open={confirmSensitiveOpen}
-        title="Confirm Sensitive UPI Destination Change"
-        description="Changing the official merchant UPI ID or QR image affects where customer payments are directed. Re-enter your Owner Admin password to authorize and audit-log this change."
-        confirmLabel="Verify & Save UPI Settings"
-        tone="danger"
-        busy={busy}
-        onConfirm={handleSaveSensitivePaymentDestination}
-        onCancel={() => {
-          setConfirmSensitiveOpen(false);
-          setAdminPasswordConfirm('');
-        }}
-      >
-        <div style={{ marginTop: 12 }}>
-          <label htmlFor="sensitive-auth-password">Current Owner Admin Password</label>
-          <input
-            id="sensitive-auth-password"
-            type="password"
-            autoComplete="current-password"
-            className="input"
-            placeholder="Enter password to authorize…"
-            value={adminPasswordConfirm}
-            onChange={(e) => setAdminPasswordConfirm(e.target.value)}
-          />
-        </div>
-      </ConfirmDialog>
     </div>
   );
 }

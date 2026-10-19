@@ -10,6 +10,7 @@ import type {
   PaymentStatus as CustomerPaymentStatus,
   ProductType,
   PackSize,
+  ProductInformation,
   AdminCustomer,
 } from '../../../types/orders';
 
@@ -18,6 +19,7 @@ export type {
   CustomerPaymentStatus,
   ProductType,
   PackSize,
+  ProductInformation,
   AdminCustomer,
 };
 
@@ -33,6 +35,7 @@ export interface AuthenticatedUserProfile {
   fullName: string;
   phone?: string;
   role: UserRole;
+  isActive?: boolean;
   createdAt: string;
   lastSignInAt?: string;
 }
@@ -130,49 +133,29 @@ export interface AdminAuditEntry {
 /*  4. MODULE 01 — DASHBOARD                                          */
 /* ================================================================== */
 
-export interface AdminDashboardMetrics {
-  totalOrders: number;
-  todaysOrders: number;
-  verifiedPaymentReceiptsCount: number;
-  verifiedPaymentReceiptsAmount: number;
-  pendingPaymentsCount: number;
-  ordersAwaitingConfirmation: number;
-  packingOrders: number;
-  packedOrders: number;
-  outForDeliveryOrders: number;
-  deliveredOrdersCount: number;
-  deliveredOrderSalesAmount: number;
-  pendingRefundsCount: number;
-  completedRefundsAmount: number;
-  lowStockProductsCount: number;
-  /** Total product units sold across delivered/completed orders */
-  productsSoldCount?: number;
-  /** Actual calculated net profit in INR, or null when cost prices are not configured */
-  netProfitAmount?: number | null;
+export type NetProfitStatus = 'OK' | 'NOT_CONFIGURED';
+
+export interface AdminPendingConfirmation {
+  paymentId: string;
+  orderId: string;
+  orderNumber: string;
+  customerName: string;
+  amount: number | null;
+  status: 'SUBMITTED' | 'UNDER_REVIEW';
+  submittedAt: string;
 }
 
-export interface SalesChartPoint {
-  date: string;
-  label: string;
-  deliveredSalesAmount: number;
-  verifiedReceiptsAmount: number;
-  refundedAmount: number;
-  orderCount: number;
-}
-
-export interface StatusDistributionItem {
-  status: AdminOrderStatus;
-  count: number;
-}
-
+/** The dashboard shows exactly three things; every figure is computed from real orders. */
 export interface AdminDashboardResponse {
-  metrics: AdminDashboardMetrics;
-  recentOrders: AdminOrderSummary[];
-  recentPayments: AdminPaymentSubmission[];
-  salesOverview: SalesChartPoint[];
-  statusDistribution: StatusDistributionItem[];
-  recentActivity: AdminAuditEntry[];
-  ordersRequiringAttention: AdminOrderSummary[];
+  productsSold: number;
+  netProfit: {
+    /** INR, or null when a required cost price is missing. */
+    amount: number | null;
+    status: NetProfitStatus;
+    reason: string | null;
+    note: string | null;
+  };
+  pendingPaymentConfirmations: AdminPendingConfirmation[];
 }
 
 /* ================================================================== */
@@ -229,12 +212,9 @@ export interface AdminOrderDetail extends AdminOrderSummary {
   paymentDetails: {
     paymentId?: string;
     status: AdminPaymentStatus;
-    utrNumber?: string;
     submittedAt?: string;
     verifiedAt?: string;
     verifiedBy?: string;
-    bankCreditReference?: string;
-    receivingBankAccount?: string;
     rejectionReason?: string;
   };
   timeline: AdminOrderTimelineEvent[];
@@ -258,26 +238,16 @@ export interface UpdateOrderStatusRequest {
   status: AdminOrderStatus;
   notes?: string;
   cancellationReason?: string;
+  failureReason?: string;
 }
 
 /* ================================================================== */
-/*  6. MODULE 03 — MANUAL PAYMENT VERIFICATION                        */
+/*  6. MODULE 03 — PAYMENT SCREENSHOT REVIEW                          */
 /* ================================================================== */
-
-export interface BankCreditVerificationDetails {
-  receivingBankAccount: string;
-  verifiedAmount: number;
-  verifiedUtr: string;
-  transactionStatus: 'CREDITED' | 'PENDING_SETTLEMENT' | 'NOT_FOUND' | 'MISMATCH';
-  bankCreditReference: string;
-  bankTimestamp?: string;
-  verifiedByAdmin?: string;
-  verifiedAt?: string;
-}
 
 export interface PaymentVerificationHistoryItem {
   id: string;
-  action: 'SUBMITTED' | 'UNDER_REVIEW' | 'BANK_CHECKED' | 'APPROVED' | 'REJECTED' | 'PROOF_REQUESTED';
+  action: 'SUBMITTED' | 'UNDER_REVIEW' | 'APPROVED' | 'REJECTED' | 'PROOF_REQUESTED';
   actorName: string;
   timestamp: string;
   notes: string;
@@ -291,14 +261,12 @@ export interface AdminPaymentSubmission {
   customerPhone: string;
   productSummary?: string;
   expectedAmount: number | null;
-  submittedUtr: string;
   /** Private Supabase Storage object path; viewed only via short-lived signed URL from FastAPI */
   privateScreenshotPath: string;
   signedScreenshotUrl?: string;
   submissionDate: string;
   paymentStatus: AdminPaymentStatus;
   orderStatus: AdminOrderStatus;
-  bankCredit?: BankCreditVerificationDetails;
   rejectionReason?: string;
   verificationHistory: PaymentVerificationHistoryItem[];
 }
@@ -310,17 +278,24 @@ export interface AdminPaymentsQueryParams extends PaginationParams {
 }
 
 export interface ApprovePaymentRequest {
-  receivingBankAccount: string;
-  verifiedAmount: number;
-  verifiedUtr: string;
-  transactionStatus: 'CREDITED';
-  bankCreditReference: string;
+  notes?: string;
+}
+
+export interface ReviewPaymentRequest {
   notes?: string;
 }
 
 export interface RejectPaymentRequest {
   reason: string;
   requestCorrectedProof?: boolean;
+}
+
+export interface AdminPaymentProofResponse {
+  paymentId: string;
+  orderId: string;
+  privateStoragePath: string;
+  signedUrl: string;
+  expiresAt: string;
 }
 
 /* ================================================================== */
@@ -338,6 +313,15 @@ export interface AdminProductVariant {
   availableQuantity: number;
   reservedQuantity: number;
   isAvailable: boolean;
+  /** false = development price not yet approved by the owner. */
+  priceConfirmed: boolean;
+}
+
+export interface AdminProductImage {
+  id: string;
+  url: string;
+  alt: string;
+  position: number;
 }
 
 export interface AdminProduct {
@@ -349,45 +333,31 @@ export interface AdminProduct {
   description: string;
   descriptionGu?: string;
   imageUrl: string;
+  information?: ProductInformation;
+  images: AdminProductImage[];
   active: boolean;
   variants: AdminProductVariant[];
   updatedAt: string;
 }
 
-export interface CreateAdminProductRequest {
-  type: ProductType;
-  name: string;
-  nameGu: string;
-  category: string;
-  description: string;
-  descriptionGu?: string;
-  imageUrl: string;
-  active: boolean;
-  variants: Array<{
-    packSize: PackSize;
-    sku: string;
-    costPrice?: number | null;
-    price: number | null;
-    availableQuantity: number;
-    isAvailable: boolean;
-  }>;
-}
-
+/**
+ * Partial update: only the keys present are changed. An omitted price or availability is never cleared or reset;
+ * `price: null` explicitly removes the price (the pack then cannot be ordered).
+ */
 export interface UpdateAdminProductRequest {
   name?: string;
   nameGu?: string;
   category?: string;
   description?: string;
-  descriptionGu?: string;
-  imageUrl?: string;
   active?: boolean;
+  information?: Partial<ProductInformation>;
   variants?: Array<{
-    id?: string;
     packSize: PackSize;
     costPrice?: number | null;
-    price: number | null;
-    availableQuantity?: number;
-    isAvailable: boolean;
+    price?: number | null;
+    /** Approve the current selling price as a real, owner-confirmed price. */
+    priceConfirmed?: boolean;
+    isAvailable?: boolean;
   }>;
 }
 
@@ -498,7 +468,7 @@ export interface AdminDeliveriesQueryParams extends PaginationParams {
 }
 
 export interface UpdateDeliveryRequest {
-  status: AdminDeliveryStatus;
+  status?: AdminDeliveryStatus;
   assignedDeliveryPerson?: string;
   deliveryPhone?: string;
   courierTrackingReference?: string;
@@ -569,6 +539,10 @@ export interface AdminReviewRecord {
   adminReply?: string;
   adminRepliedAt?: string;
   moderatedBy?: string;
+  /** Why the review is hidden (spam, abuse, private information, prohibited content). */
+  moderationReason?: string | null;
+  /** Short-lived FastAPI proxy paths for review photo moderation. */
+  photoUrls?: string[];
 }
 
 export interface AdminReviewsQueryParams extends PaginationParams {
@@ -579,6 +553,8 @@ export interface AdminReviewsQueryParams extends PaginationParams {
 export interface UpdateAdminReviewRequest {
   moderationStatus?: ReviewModerationStatus;
   adminReply?: string;
+  /** Required (3+ characters) when hiding a review; recorded in the audit log. */
+  moderationReason?: string;
 }
 
 /* ================================================================== */
@@ -595,7 +571,6 @@ export interface AdminRefundRecord {
   cancellationRequestedBy: 'CUSTOMER' | 'ADMIN';
   refundAmount: number | null;
   refundReason: string;
-  originalPaymentUtr: string;
   originalPaymentId: string;
   refundTransactionReference?: string;
   refundBankAccount?: string;
@@ -622,6 +597,9 @@ export interface RecordRefundTransferRequest {
   refundBankAccount: string;
   refundDate: string;
   verifiedAmount: number;
+  /** BANK_TRANSFER = settled transfer seen on the real bank statement; LOCAL_TEST = labelled development evidence. */
+  evidenceKind: 'BANK_TRANSFER' | 'LOCAL_TEST';
+  transferSettlementChecked?: boolean;
   notes?: string;
 }
 
@@ -741,36 +719,49 @@ export interface AdminNotificationsResponse {
 /*  15. MODULE 12 — STORE SETTINGS                                    */
 /* ================================================================== */
 
+export interface AdminStorePhoto {
+  id: string;
+  url: string;
+  caption: string;
+}
+
+/** Shop details, payment destination and delivery rules, all stored in the database. */
 export interface AdminStoreSettings {
   storeName: string;
-  logoUrl: string;
+  storeNameGu?: string;
+  tagline: string;
   storeAddress: string;
   phoneNumber: string;
+  supportWhatsapp: string;
   supportEmail: string;
   businessHours: string;
+  shopIntro: string;
+  productionInfo: string;
+  providerManufacturer: string;
+  packagingInfo: string;
+  photos: AdminStorePhoto[];
   officialUpiId: string;
   officialPayeeName: string;
+  /** Short-lived signed path for the private payment QR; empty when none is uploaded. */
   officialUpiQrImageUrl: string;
   deliveryCharges: number | null;
+  freeDeliveryThreshold: number | null;
   serviceablePinCodes: string[];
   lowStockThreshold: number;
   stockReservationExpiryMinutes: number;
-  orderCancellationPolicy: string;
-  refundPolicy: string;
-  emailNotificationPreferences: {
-    sendCustomerOrderUpdates: boolean;
-    sendCustomerPaymentReceipts: boolean;
-    sendAdminNewOrderAlerts: boolean;
-    sendAdminLowStockAlerts: boolean;
-  };
-  adminAccount: {
-    email: string;
-    role: UserRole;
-    lastUpdatedAt?: string;
-  };
+  /** null until the owner confirms payment, delivery and PIN settings; checkout stays closed outside local mode. */
+  businessSettingsConfirmedAt: string | null;
+  /** true while the UPI ID is a LOCAL TEST value. */
+  paymentIsLocalTest: boolean;
+  adminAccount: { email: string; role: UserRole };
 }
 
-export interface UpdateAdminSettingsRequest extends Partial<Omit<AdminStoreSettings, 'adminAccount'>> {
-  /** Required when modifying officialUpiId, officialPayeeName, or officialUpiQrImageUrl */
-  adminCurrentPasswordForSensitiveChange?: string;
-}
+export type UpdateAdminSettingsRequest = Partial<
+  Pick<
+    AdminStoreSettings,
+    | 'storeName' | 'storeNameGu' | 'tagline' | 'storeAddress' | 'phoneNumber' | 'supportWhatsapp' | 'supportEmail'
+    | 'businessHours' | 'shopIntro' | 'productionInfo' | 'providerManufacturer' | 'packagingInfo'
+    | 'officialUpiId' | 'officialPayeeName' | 'deliveryCharges' | 'freeDeliveryThreshold' | 'serviceablePinCodes'
+    | 'lowStockThreshold' | 'stockReservationExpiryMinutes'
+  >
+>;

@@ -1,47 +1,95 @@
 /**
- * Supabase client & Simple Database-Backed Authentication (browser-side).
+ * Supabase client & genuine Supabase Auth JWT session management (browser-side).
  *
- * Login behavior:
- * - Checks `public.user_profiles` via RPC `public.simple_auth_login(p_email, p_password)`:
- *   - If email is NOT in Database -> creates account in DB and logs in immediately (no email confirmation).
- *   - If email IS in Database -> verifies password and logs in immediately.
- * - Updates customer profile details (`fullName`, `phone`) directly in `public.user_profiles`
- *   and `public.customers` via RPC `public.simple_auth_update_profile`.
+ * Security invariants:
+ * - Uses genuine Supabase Auth (`signInWithPassword`, `signUp`, `updateUser`, `signOut`, `getSession`).
+ * - Never fabricates synthetic browser sessions or substitutes the public `anon` key as a user `access_token`.
+ * - Purges legacy `bfp-simple-db-session-*` entries from `localStorage` on startup and sign-out.
+ * - Verifies that active sessions carry a valid 3-part user JWT (`sub === user.id`, non-`anon` role).
  */
 
 import { createClient, type Session, type User } from '@supabase/supabase-js';
+import { useSyncExternalStore } from 'react';
 import { env } from './env';
-import { useEffect, useState } from 'react';
 
-const SESSION_STORAGE_KEY = 'bfp-simple-db-session-v2';
+export const LEGACY_SYNTHETIC_SESSION_KEYS = [
+  'bfp-simple-db-session-v1',
+  'bfp-simple-db-session-v2',
+] as const;
 
-interface SimpleDbUserPayload {
-  id: string;
-  email: string;
-  fullName?: string;
-  phone?: string;
-  role?: 'CUSTOMER' | 'OWNER_ADMIN';
-  isActive?: boolean;
+export function purgeLegacySyntheticSessions(
+  storage: Pick<Storage, 'removeItem'> | null = typeof window !== 'undefined' && window.localStorage
+    ? window.localStorage
+    : null,
+): void {
+  if (!storage) return;
+  for (const key of LEGACY_SYNTHETIC_SESSION_KEYS) {
+    try {
+      storage.removeItem(key);
+    } catch {
+      // Ignore storage access errors in restricted environments
+    }
+  }
 }
 
-interface SimpleDbLoginResult {
-  action: 'CREATED' | 'LOGGED_IN';
-  user: SimpleDbUserPayload;
+function decodeJwtPayload(token: string): Record<string, unknown> | null {
+  const parts = token.split('.');
+  if (parts.length !== 3 || !parts[1]) return null;
+  try {
+    const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, '=');
+    const g = globalThis as {
+      atob?: (data: string) => string;
+      Buffer?: { from(data: string, encoding: string): { toString(encoding: string): string } };
+    };
+    const json =
+      typeof g.atob === 'function'
+        ? g.atob(padded)
+        : g.Buffer
+          ? g.Buffer.from(padded, 'base64').toString('utf8')
+          : '';
+    if (!json) return null;
+    const parsed: unknown = JSON.parse(json);
+    return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
- * Clean, unmutated Supabase client for PostgREST RPC & table calls.
- * Keeping `rawSupabase` separate from our custom `auth` facade ensures
- * PostgREST never receives a synthetic non-JWT `Authorization: Bearer` header.
+ * Verifies that a session contains a genuine signed Supabase Auth user JWT
+ * rather than a synthetic session token or the public `anon` API key.
  */
+export function isGenuineSupabaseUserSession(
+  session: Session | null | undefined,
+): session is Session {
+  if (!session || typeof session !== 'object') return false;
+  if (!session.user || typeof session.user.id !== 'string' || !session.user.id.trim()) return false;
+  if (typeof session.access_token !== 'string' || !session.access_token.trim()) return false;
+  if (env.supabaseAnonKey && session.access_token === env.supabaseAnonKey) return false;
+  if (session.access_token.startsWith('bfp-session-')) return false;
+
+  const payload = decodeJwtPayload(session.access_token);
+  if (!payload) return false;
+
+  // Genuine Supabase Auth user JWTs must carry `sub` matching `session.user.id` and `role === 'authenticated'`
+  if (typeof payload.sub !== 'string' || payload.sub !== session.user.id) return false;
+  if (payload.role === 'anon' || payload.role === 'service_role') return false;
+  if (typeof payload.exp === 'number' && payload.exp * 1000 <= Date.now()) return false;
+
+  return true;
+}
+
+purgeLegacySyntheticSessions();
+
 const rawSupabase = (() => {
   if (!env.supabaseUrl || !env.supabaseAnonKey) return null;
   try {
     return createClient(env.supabaseUrl, env.supabaseAnonKey, {
       auth: {
-        persistSession: false,
-        autoRefreshToken: false,
-        detectSessionInUrl: false,
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
       },
     });
   } catch {
@@ -49,224 +97,131 @@ const rawSupabase = (() => {
   }
 })();
 
-type AuthListener = (event: string, session: Session | null) => void;
-const listeners = new Set<AuthListener>();
-
-function buildSessionFromDbUser(dbUser: SimpleDbUserPayload): Session {
-  const nowSec = Math.floor(Date.now() / 1000);
-  const user: User = {
-    id: dbUser.id,
-    aud: 'authenticated',
-    role: 'authenticated',
-    email: dbUser.email,
-    email_confirmed_at: new Date().toISOString(),
-    app_metadata: {
-      provider: 'email',
-      role: dbUser.role ?? 'CUSTOMER',
-    },
-    user_metadata: {
-      fullName: dbUser.fullName ?? '',
-      phone: dbUser.phone ?? '',
-      role: dbUser.role ?? 'CUSTOMER',
-    },
-    identities: [],
-    created_at: new Date().toISOString(),
-  };
-
-  return {
-    access_token: env.supabaseAnonKey || `bfp-session-${dbUser.id}`,
-    refresh_token: `bfp-refresh-${dbUser.id}`,
-    expires_in: 60 * 60 * 24 * 30,
-    expires_at: nowSec + 60 * 60 * 24 * 30,
-    token_type: 'bearer',
-    user,
-  };
-}
-
-function readStoredSession(): Session | null {
-  if (typeof window === 'undefined' || !window.localStorage) return null;
-  try {
-    // Clean up old v1 key that stored a non-JWT access_token
-    window.localStorage.removeItem('bfp-simple-db-session-v1');
-    const raw = window.localStorage.getItem(SESSION_STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Session;
-    if (!parsed?.user?.id || !parsed?.user?.email) return null;
-    return parsed;
-  } catch {
-    return null;
-  }
-}
-
-function writeStoredSession(session: Session | null): void {
-  if (typeof window === 'undefined' || !window.localStorage) return;
-  try {
-    if (!session) {
-      window.localStorage.removeItem(SESSION_STORAGE_KEY);
-    } else {
-      window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
-    }
-  } catch {
-    // Ignore storage quota errors
-  }
-}
-
-let currentSession: Session | null = readStoredSession();
-
-function notifyListeners(event: string, session: Session | null): void {
-  currentSession = session;
-  writeStoredSession(session);
-  for (const listener of listeners) {
-    listener(event, session);
-  }
-}
-
-async function authenticateWithDatabase(credentials: {
-  email: string;
-  password: string;
-}): Promise<{
-  data: { session: Session | null; user: User | null; action?: 'CREATED' | 'LOGGED_IN' };
-  error: Error | null;
-}> {
-  if (!rawSupabase) {
-    return {
-      data: { session: null, user: null },
-      error: new Error('Database connection is not configured.'),
-    };
-  }
-
-  const cleanEmail = credentials.email.trim().toLowerCase();
-  const { data, error } = await rawSupabase.rpc('simple_auth_login', {
-    p_email: cleanEmail,
-    p_password: credentials.password,
-  });
-
-  if (error) {
-    return {
-      data: { session: null, user: null },
-      error: new Error(error.message || 'Invalid login credentials'),
-    };
-  }
-
-  const result = data as unknown as SimpleDbLoginResult;
-  if (!result?.user?.id) {
-    return {
-      data: { session: null, user: null },
-      error: new Error('Unexpected response from database login.'),
-    };
-  }
-
-  const session = buildSessionFromDbUser(result.user);
-  notifyListeners('SIGNED_IN', session);
-
-  return {
-    data: {
-      session,
-      user: session.user,
-      action: result.action,
-    },
-    error: null,
-  };
-}
-
 export const supabase = rawSupabase
   ? {
       from: rawSupabase.from.bind(rawSupabase),
       rpc: rawSupabase.rpc.bind(rawSupabase),
       storage: rawSupabase.storage,
       auth: {
-        async getSession() {
-          return { data: { session: currentSession }, error: null };
+        async getSession(): Promise<{ data: { session: Session | null }; error: Error | null }> {
+          purgeLegacySyntheticSessions();
+          const { data, error } = await rawSupabase.auth.getSession();
+          if (error) {
+            return { data: { session: null }, error };
+          }
+          if (data.session && !isGenuineSupabaseUserSession(data.session)) {
+            await rawSupabase.auth.signOut().catch(() => {});
+            return { data: { session: null }, error: null };
+          }
+          return { data: { session: data.session }, error: null };
         },
         async signInWithPassword(credentials: { email: string; password: string }) {
-          return authenticateWithDatabase(credentials);
+          purgeLegacySyntheticSessions();
+          return rawSupabase.auth.signInWithPassword({
+            email: credentials.email.trim().toLowerCase(),
+            password: credentials.password,
+          });
         },
-        async signUp(credentials: { email: string; password: string }) {
-          return authenticateWithDatabase(credentials);
+        async signUp(
+          credentials: { email: string; password: string },
+          profile?: { fullName?: string; phone?: string },
+        ) {
+          purgeLegacySyntheticSessions();
+          // Contact details only: role and privilege flags can never be supplied from the browser.
+          const data = profile
+            ? { fullName: (profile.fullName ?? '').trim(), phone: (profile.phone ?? '').trim() }
+            : undefined;
+          return rawSupabase.auth.signUp({
+            email: credentials.email.trim().toLowerCase(),
+            password: credentials.password,
+            ...(data ? { options: { data } } : {}),
+          });
         },
         async updateUser(attributes: {
           password?: string;
           data?: { fullName?: string; phone?: string; [key: string]: unknown };
         }): Promise<{ data: { user: User | null }; error: Error | null }> {
-          if (!currentSession) {
-            return { data: { user: null }, error: new Error('Not signed in.') };
+          // Strip any attempt to pass role or privilege flags in editable user_metadata
+          const sanitizedData = attributes.data ? { ...attributes.data } : undefined;
+          if (sanitizedData) {
+            delete sanitizedData.role;
+            delete sanitizedData.is_active;
+            delete sanitizedData.isActive;
           }
-          const fullName =
-            typeof attributes.data?.fullName === 'string'
-              ? attributes.data.fullName
-              : (currentSession.user.user_metadata?.fullName as string | undefined) ?? '';
-          const phone =
-            typeof attributes.data?.phone === 'string'
-              ? attributes.data.phone
-              : (currentSession.user.user_metadata?.phone as string | undefined) ?? '';
 
-          const { data, error } = await rawSupabase.rpc('simple_auth_update_profile', {
-            p_user_id: currentSession.user.id,
-            p_full_name: fullName,
-            p_phone: phone,
+          const { data, error } = await rawSupabase.auth.updateUser({
+            ...(attributes.password !== undefined ? { password: attributes.password } : {}),
+            ...(sanitizedData !== undefined ? { data: sanitizedData } : {}),
           });
 
           if (error) {
-            return {
-              data: { user: null },
-              error: new Error(error.message || 'Unable to save your details.'),
-            };
+            return { data: { user: null }, error };
           }
 
-          const updatedUser = data as unknown as SimpleDbUserPayload;
-          const nextSession = buildSessionFromDbUser({
-            id: currentSession.user.id,
-            email: currentSession.user.email ?? updatedUser?.email ?? '',
-            fullName: updatedUser?.fullName ?? fullName,
-            phone: updatedUser?.phone ?? phone,
-            role:
-              updatedUser?.role ??
-              (currentSession.user.app_metadata?.role as 'CUSTOMER' | 'OWNER_ADMIN') ??
-              'CUSTOMER',
-          });
-          notifyListeners('USER_UPDATED', nextSession);
-          return { data: { user: nextSession.user }, error: null };
+          const fullName =
+            typeof sanitizedData?.fullName === 'string' ? sanitizedData.fullName.trim() : '';
+          const phone =
+            typeof sanitizedData?.phone === 'string' ? sanitizedData.phone.trim() : '';
+          if (fullName && phone) {
+            // Best-effort sync to public.user_profiles & public.customers via authenticated RPC
+            await rawSupabase
+              .rpc('sync_my_profile', {
+                p_full_name: fullName,
+                p_phone: phone,
+              })
+              .then(() => undefined, () => undefined);
+          }
+
+          return { data: { user: data.user }, error: null };
         },
         async signOut(): Promise<{ error: Error | null }> {
-          notifyListeners('SIGNED_OUT', null);
-          return { error: null };
+          purgeLegacySyntheticSessions();
+          const { error } = await rawSupabase.auth.signOut();
+          return { error };
         },
         onAuthStateChange(callback: (event: string, session: Session | null) => void) {
-          listeners.add(callback);
-          queueMicrotask(() => {
-            if (listeners.has(callback)) {
-              callback('INITIAL_SESSION', currentSession);
-            }
+          return rawSupabase.auth.onAuthStateChange((event, session) => {
+            const verified = isGenuineSupabaseUserSession(session) ? session : null;
+            callback(event, verified);
           });
-          return {
-            data: {
-              subscription: {
-                unsubscribe() {
-                  listeners.delete(callback);
-                },
-              },
-            },
-          };
         },
       },
     }
   : null;
 
-export function useSession() {
-  const [session, setSession] = useState<Session | null>(() => currentSession);
-  const [loading, setLoading] = useState<boolean>(false);
+/* One shared session store: every component sees the same session and loading state. */
+export interface SessionSnapshot {
+  session: Session | null;
+  loading: boolean;
+}
 
-  useEffect(() => {
-    if (!supabase) return;
-    setSession(currentSession);
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, current) => {
-      setSession(current);
-      setLoading(false);
-    });
-    return () => subscription.unsubscribe();
-  }, []);
+let snapshot: SessionSnapshot = { session: null, loading: Boolean(supabase) };
+const listeners = new Set<() => void>();
+let started = false;
 
-  return { session, loading };
+function publish(next: SessionSnapshot) {
+  snapshot = next;
+  listeners.forEach((listener) => listener());
+}
+
+function startSessionStore() {
+  if (started || !supabase) return;
+  started = true;
+  supabase.auth
+    .getSession()
+    .then(({ data }) => publish({ session: data.session, loading: false }))
+    .catch(() => publish({ session: null, loading: false }));
+  supabase.auth.onAuthStateChange((_event, current) => publish({ session: current, loading: false }));
+}
+
+function subscribeToSession(listener: () => void) {
+  startSessionStore();
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+export function useSession(): SessionSnapshot {
+  return useSyncExternalStore(subscribeToSession, () => snapshot, () => snapshot);
 }

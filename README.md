@@ -1,15 +1,15 @@
 # Balaji Faki Point — E-Commerce Store & 12-Module Admin Management Panel
 
-Production-oriented e-commerce ordering website and Owner Admin Management Panel for **Balaji Faki Point** (online Faki & Supari ordering), built with React 19, TypeScript, Vite 6, React Router v7, and Supabase PostgreSQL.
+Local-development e-commerce ordering website and Owner Admin Management Panel for **Balaji Faki Point** (online Faki & Supari ordering), built with React 19, TypeScript, Vite 6, React Router v7, and Supabase PostgreSQL.
 
 ---
 
 ## 1. Technology Stack
 
 - **Frontend**: React 19 + TypeScript + Vite 6 + React Router v7 + custom CSS design tokens (`#FF7420`, `#B93C06`, `#141210`, `#5C534B`, `#FFF4EA`, `#EADFD3`, `#1F7A4D`, `Gloock` headings, `Hind Vadodara` body, Gujarati support).
-- **Database & Platform**: PostgreSQL hosted on Supabase (`zyzkoolgwbczvvetjnwf`) with Row-Level Security (RLS), private Storage bucket (`payment-proofs`), and 18 operational tables.
+- **Database & Platform**: Local Supabase PostgreSQL with Row-Level Security (RLS), private Storage bucket (`payment-proofs`), and operational tables.
 - **Target Backend**: Python FastAPI + SQLAlchemy 2.0 + Pydantic v2 + Alembic (contracts defined in [`docs/api/api-contracts.md`](docs/api/api-contracts.md)).
-- **Deployment**: Vercel (`vercel.json` & `frontend/vercel.json` SPA rewrites).
+- **Deployment**: Not part of this local-development workflow.
 
 ---
 
@@ -87,7 +87,7 @@ Balaji Faki Website/
 ├── scripts/
 │   └── verify-all.mjs          # End-to-end verification script (typecheck + tests + build + structure)
 ├── supabase/
-│   ├── config.toml             # Linked to Supabase project zyzkoolgwbczvvetjnwf
+│   ├── config.toml             # Local Supabase configuration
 │   └── migrations/             # 3 applied PostgreSQL schema, RLS & DB-login migrations
 ├── .env.example                # Public frontend & server environment variable template
 ├── .gitignore
@@ -123,15 +123,47 @@ npm run verify
 
 ---
 
+## 3a. Full local stack (React + FastAPI + local Supabase)
+
+Everything runs on this machine. **Never** run `supabase link`, `db push`, `--linked` or any command against the online project;
+`npm run verify` includes `scripts/check-local-only.mjs`, which fails if any active config could reach it.
+
+```powershell
+# 0. Docker Desktop (Linux engine) must be running.
+supabase start                         # local Postgres 55322, Auth/API 55321, Storage; prints local keys (do not paste them anywhere public)
+supabase db reset                      # LOCAL database only: applies supabase/migrations in order
+# Put the local keys from `supabase status` into backend/.env and frontend/.env (they are gitignored).
+python -m pip install -r backend/requirements.txt
+python scripts/check-db-security.py    # private-data vs public-access assertions on the local database (rolled back)
+cd backend; python -m app.db.seed --dev --dev-admin   # explicit DEVELOPMENT data + a local Owner Admin (credentials -> .local-dev-credentials.json, gitignored)
+cd backend; python -m uvicorn app.main:app --port 8000
+npm run dev                            # http://localhost:5173
+```
+
+Rules the code enforces:
+
+- Request handlers never create prices, stock, products or settings. Only `python -m app.db.seed --dev` does, and it never overwrites
+  existing rows. Only **Faki 1 kg = Rs 1,000** is an owner-confirmed price; every other seeded price is a development price shown with a badge.
+- `BFP_ENV=local` (set in `backend/.env`) enables development-only conveniences (LOCAL TEST refund-transfer evidence, a per-process signing key).
+  Any other value fails closed, and checkout stays closed until the owner confirms prices and payment settings in Admin → Settings.
+- Payment settings seeded for development are LOCAL TEST values, not a real receiving account.
+- Admin access needs a successful `GET /api/me` with `OWNER_ADMIN`; the browser never decides.
+
+Tests: `npm run typecheck`, `npm test`, `python -m unittest discover -s backend/tests`, `node scripts/check-local-only.mjs`.
+The backend suite runs on SQLite; **PostgreSQL, RLS, Auth and Storage behaviour is only proven by running `scripts/check-db-security.py` and the
+smoke checks against the local Supabase stack** (see `docs/CLAUDE_CHANGE_PLAN.md` for what has and has not been verified).
+
+---
+
 ## 4. Environment Configuration
 
 Keep your existing `.env` / `frontend/.env` or copy `.env.example` to `.env`:
 
 ```ini
-VITE_API_BASE_URL=
-VITE_SUPABASE_URL=https://zyzkoolgwbczvvetjnwf.supabase.co
-VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_phYXIe4ZP9RTX4Gx1cM26w_8agJ2Ug7
-VITE_SUPABASE_ANON_KEY=sb_publishable_phYXIe4ZP9RTX4Gx1cM26w_8agJ2Ug7
+VITE_API_BASE_URL=http://127.0.0.1:8000/api
+VITE_SUPABASE_URL=http://127.0.0.1:55321
+VITE_SUPABASE_PUBLISHABLE_KEY=
+VITE_SUPABASE_ANON_KEY=
 VITE_SUPPORT_WHATSAPP=918000961030
 ```
 
@@ -146,7 +178,8 @@ VITE_SUPPORT_WHATSAPP=918000961030
 - [System Architecture](docs/architecture/system-architecture.md)
 - [API Contracts (Customer & Admin)](docs/api/api-contracts.md)
 - [Database Schema & Migrations](docs/database/schema-and-migrations.md)
-- [Vercel & Supabase Deployment Guide](docs/deployment/vercel-and-supabase.md)
+- [Vercel Deployment Guide (frontend + FastAPI backend, current)](docs/VERCEL_DEPLOYMENT.md)
+- [Vercel & Supabase Deployment Guide (historical)](docs/deployment/vercel-and-supabase.md)
 - [Testing & Validation Guide](docs/testing/test-plan-and-results.md)
 - [UI Design Reference Map](docs/design-reference/README.md)
 - [Design QA Report](docs/testing/design-qa.md)

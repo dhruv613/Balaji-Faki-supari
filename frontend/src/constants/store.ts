@@ -1,7 +1,7 @@
-import type { PackSize, ProductType } from '../types/orders';
 
 export const STORE_NAME = 'Balaji Faki Point';
 export const STORE_CITY = 'Rajkot';
 export const SUPPORTED_PIN_PREFIX = '360';
-export const PACK_SIZES: readonly PackSize[] = ['250g', '500g', '1kg'];
-export const PRODUCT_TYPES: readonly ProductType[] = ['faki', 'supari'];
+/** Accepted formats only; which products and pack sizes exist is decided by the catalogue. */
+export const PRODUCT_SLUG_PATTERN = /^[a-z0-9-]{1,32}$/;
+export const PACK_SIZE_PATTERN = /^[0-9]{1,4}(g|kg|ml|l)$/;

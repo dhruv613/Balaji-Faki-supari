@@ -34,11 +34,9 @@ const {
   validateOrderTransition,
   getAllowedNextOrderStatuses,
   validateDeliveryTransition,
-  validatePaymentApproval,
   computePostPaymentApprovalState,
   validateRefundCompletion,
   validateStockAdjustment,
-  isAuthorizedOwnerAdmin,
 } = stateMachine;
 
 /* ================================================================== */
@@ -64,60 +62,35 @@ const adminApi = load('src/features/admin/api/index.ts', {
 const routeGuard = load('src/features/admin/components/AdminRouteGuard.tsx', {
   '../../../lib/supabase': authStub,
   '../../../lib/env': { env },
+  '../../../components/common/EmailSignIn': { default: () => null },
   '../../../components/common/Notice': { default: () => null },
   '../api': adminApi,
-  '../lib/orderStateMachine': stateMachine,
 });
+const evaluate = routeGuard.evaluateAdminRouteAccess;
 
-// Unauthenticated user cannot access admin routes
-assert.equal(isAuthorizedOwnerAdmin(null), false);
-assert.equal(
-  routeGuard.evaluateAdminRouteAccess({
-    user: null,
-    serverRole: null,
-    apiConnected: true,
-  }).allowed,
-  false,
-);
-assert.equal(
-  routeGuard.evaluateAdminRouteAccess({
-    user: null,
-    serverRole: null,
-    apiConnected: true,
-  }).status,
-  'DENIED_UNAUTHENTICATED',
-);
+// Unauthenticated user cannot access admin routes.
+assert.equal(evaluate({ user: null, serverRole: null, apiConnected: true }).allowed, false);
+assert.equal(evaluate({ user: null, serverRole: null, apiConnected: true }).status, 'DENIED_UNAUTHENTICATED');
 
-// Customer cannot access admin routes even if devPreviewAcknowledged is true
-assert.equal(isAuthorizedOwnerAdmin({ role: 'CUSTOMER' }), false);
-assert.equal(
-  routeGuard.evaluateAdminRouteAccess({
-    user: { id: 'cust-1', email: 'customer@example.com', user_metadata: { role: 'CUSTOMER' } },
-    serverRole: 'CUSTOMER',
-    apiConnected: false,
-    devPreviewAcknowledged: true,
-  }).allowed,
-  false,
-);
-assert.equal(
-  routeGuard.evaluateAdminRouteAccess({
-    user: { id: 'cust-1', email: 'customer@example.com' },
-    serverRole: 'CUSTOMER',
-    apiConnected: true,
-  }).status,
-  'DENIED_CUSTOMER',
-);
+// Customers are denied.
+assert.equal(evaluate({ user: { id: 'cust-1' }, serverRole: 'CUSTOMER', apiConnected: true }).status, 'DENIED_CUSTOMER');
+assert.equal(evaluate({ user: { id: 'cust-1' }, serverRole: 'CUSTOMER', apiConnected: false }).allowed, false);
 
-// Owner Admin verified by server is allowed
-assert.equal(isAuthorizedOwnerAdmin({ role: 'OWNER_ADMIN' }), true);
-assert.equal(
-  routeGuard.evaluateAdminRouteAccess({
-    user: { id: 'admin-1', email: 'owner@balajifaki.com' },
-    serverRole: 'OWNER_ADMIN',
-    apiConnected: true,
-  }).allowed,
-  true,
-);
+// Only a successful server check (GET /api/me -> OWNER_ADMIN) opens the Admin Panel.
+assert.equal(evaluate({ user: { id: 'admin-1' }, serverRole: 'OWNER_ADMIN', apiConnected: true }).allowed, true);
+assert.equal(evaluate({ user: { id: 'admin-1' }, serverRole: 'OWNER_ADMIN', apiConnected: true }).status, 'AUTHORIZED_ADMIN');
+
+// If /api/me failed (no server role) or the API is not configured, the panel stays locked even for a user whose
+// browser-held claims say OWNER_ADMIN: claims never unlock the UI.
+const forged = { id: 'attacker-1', email: 'attacker@example.com', app_metadata: { role: 'OWNER_ADMIN' }, user_metadata: { role: 'OWNER_ADMIN' } };
+assert.equal(evaluate({ user: forged, serverRole: null, apiConnected: true }).allowed, false);
+assert.equal(evaluate({ user: forged, serverRole: null, apiConnected: true }).status, 'DENIED_UNVERIFIED');
+assert.equal(evaluate({ user: forged, serverRole: 'OWNER_ADMIN', apiConnected: false }).allowed, false);
+assert.equal(evaluate({ user: forged, serverRole: 'CUSTOMER', apiConnected: true }).allowed, false);
+assert.equal(typeof stateMachine.isAuthorizedOwnerAdmin, 'undefined', 'claim-based admin shortcut must not exist');
+const guardSource = readFileSync(new URL('../src/features/admin/components/AdminRouteGuard.tsx', import.meta.url), 'utf8');
+assert.doesNotMatch(guardSource, /user_profiles|app_metadata|user_metadata/, 'the guard reads no browser claims or tables');
+assert.doesNotMatch(guardSource, /@gmail\.com|@example\./, 'no personal e-mail placeholder');
 
 /* ================================================================== */
 /*  2. ORDER & PAYMENT SEPARATION INVARIANTS                          */
@@ -183,86 +156,6 @@ assert.equal(postApproval.paymentStatus, 'VERIFIED');
 assert.equal(postApproval.orderStatus, 'AWAITING_CONFIRMATION');
 assert.notEqual(postApproval.orderStatus, 'PACKING');
 assert.notEqual(postApproval.orderStatus, 'SHIPPED');
-
-/* ================================================================== */
-/*  3. MANUAL PAYMENT VERIFICATION RULES                              */
-/* ================================================================== */
-
-const validApprovalInput = {
-  receivingBankAccount: 'HDFC Bank •••• 4821',
-  verifiedAmount: 420,
-  verifiedUtr: '429104857123',
-  bankCreditReference: 'HDFC-CR-20261017-991',
-  transactionStatus: 'CREDITED',
-  verificationNote: 'Verified in merchant statement.',
-};
-
-assert.equal(
-  validatePaymentApproval({
-    currentPaymentStatus: 'UNDER_REVIEW',
-    expectedAmount: 420,
-    submittedUtr: '429104857123',
-    approvalInput: validApprovalInput,
-  }).allowed,
-  true,
-);
-
-// Duplicate payment approval is blocked
-assert.equal(
-  validatePaymentApproval({
-    currentPaymentStatus: 'VERIFIED',
-    expectedAmount: 420,
-    submittedUtr: '429104857123',
-    approvalInput: validApprovalInput,
-  }).allowed,
-  false,
-);
-
-// Duplicate UTR across orders is blocked
-assert.equal(
-  validatePaymentApproval({
-    currentPaymentStatus: 'SUBMITTED',
-    expectedAmount: 420,
-    submittedUtr: '429104857123',
-    approvalInput: validApprovalInput,
-    existingVerifiedUtrs: ['429104857123'],
-  }).allowed,
-  false,
-);
-
-// Duplicate bank credit reference is blocked
-assert.equal(
-  validatePaymentApproval({
-    currentPaymentStatus: 'SUBMITTED',
-    expectedAmount: 420,
-    submittedUtr: '429104857123',
-    approvalInput: validApprovalInput,
-    existingBankCreditRefs: ['HDFC-CR-20261017-991'],
-  }).allowed,
-  false,
-);
-
-// Mismatched amount is blocked
-assert.equal(
-  validatePaymentApproval({
-    currentPaymentStatus: 'SUBMITTED',
-    expectedAmount: 420,
-    submittedUtr: '429104857123',
-    approvalInput: { ...validApprovalInput, verifiedAmount: 400 },
-  }).allowed,
-  false,
-);
-
-// Mismatched UTR vs customer submitted UTR is blocked
-assert.equal(
-  validatePaymentApproval({
-    currentPaymentStatus: 'SUBMITTED',
-    expectedAmount: 420,
-    submittedUtr: '429104857123',
-    approvalInput: { ...validApprovalInput, verifiedUtr: '999999999999' },
-  }).allowed,
-  false,
-);
 
 /* ================================================================== */
 /*  4. ORDER & DELIVERY STEP-SKIPPING AND CANCELLED ORDER BLOCKING    */
@@ -382,13 +275,14 @@ fakeFetch = async (url, options) => {
   return new Response(JSON.stringify({ ok: true }), { status: 200 });
 };
 
-await adminApi.approveAdminPayment('pay-101', validApprovalInput);
+await adminApi.approveAdminPayment('pay-101', { notes: 'Screenshot checked' });
 assert.equal(capturedRequest.url, 'https://api.balajifaki.test/api/admin/payments/pay-101/approve');
 assert.equal(capturedRequest.options.method, 'POST');
+assert.deepEqual(JSON.parse(capturedRequest.options.body), { notes: 'Screenshot checked' }, 'only a note is sent: no UTR or bank details');
 assert.equal(capturedRequest.options.headers.get('Authorization'), 'Bearer owner-admin-jwt-token');
 assert.equal(
   capturedRequest.options.headers.get('Idempotency-Key'),
-  'admin-approve-payment-pay-101-429104857123',
+  'admin-approve-payment-pay-101',
 );
 
 /* ================================================================== */
@@ -440,6 +334,29 @@ assert.match(migrationSql, /create or replace function private\.is_owner_admin\(
 assert.match(migrationSql, /'payment-proofs'/);
 assert.match(migrationSql, /cost_price_paise/);
 assert.match(migrationSql, /unit_cost_paise/);
+
+const remediationSql = readFileSync(
+  new URL('../../supabase/migrations/20261018000000_remediate_auth_and_rls_security.sql', import.meta.url),
+  'utf8',
+);
+assert.match(remediationSql, /drop function public\.simple_auth_login\(text, text\)/);
+assert.match(remediationSql, /drop function public\.simple_auth_update_profile\(uuid, text, text\)/);
+assert.match(remediationSql, /drop policy if exists "user_profiles_simple_auth_select" on public\.user_profiles/);
+assert.match(remediationSql, /drop policy if exists "user_profiles_simple_auth_insert" on public\.user_profiles/);
+assert.match(remediationSql, /drop policy if exists "user_profiles_simple_auth_update" on public\.user_profiles/);
+assert.match(remediationSql, /drop policy if exists "customers_simple_auth_select" on public\.customers/);
+assert.match(remediationSql, /drop policy if exists "customers_simple_auth_insert" on public\.customers/);
+assert.match(remediationSql, /drop policy if exists "customers_simple_auth_update" on public\.customers/);
+assert.match(remediationSql, /create table if not exists private\.legacy_db_auth_accounts/);
+assert.match(remediationSql, /drop column password_hash/);
+assert.match(remediationSql, /create policy "user_profiles_select_own_or_admin"/);
+assert.match(remediationSql, /create policy "user_profiles_insert_own_customer"/);
+assert.match(remediationSql, /create policy "user_profiles_update_own"/);
+assert.match(remediationSql, /create policy "customers_select_own_or_admin"/);
+assert.match(remediationSql, /create policy "customers_insert_own_or_admin"/);
+assert.match(remediationSql, /create policy "customers_update_own_or_admin"/);
+assert.match(remediationSql, /create or replace function private\.enforce_user_profile_role_security\(\)/);
+assert.match(remediationSql, /create or replace function public\.sync_my_profile\(/);
 
 /* ================================================================== */
 /*  8. DASHBOARD METRICS (PRODUCTS SOLD & NET PROFIT) & ACTION FLOW   */
@@ -571,6 +488,8 @@ const adminComponentsBarrel = {
   ImagePreview: ImagePreviewMod.default,
   AdminTimeline: AdminTimelineMod.default,
   LoadingSkeleton: AdminStatesMod.LoadingSkeleton,
+  EmptyState: AdminStatesMod.EmptyState,
+  ErrorState: AdminStatesMod.ErrorState,
   useAdminToast: () => ({ showToast: () => {} }),
   AdminToastProvider: AdminToastMod.AdminToastProvider,
 };
@@ -590,30 +509,102 @@ const DashboardPage = load('src/features/admin/pages/AdminDashboardPage.tsx', co
 const PricesPage = load('src/features/admin/pages/AdminProductsPage.tsx', commonPageStubs).default;
 const OrdersPage = load('src/features/admin/pages/AdminOrdersPage.tsx', commonPageStubs).default;
 const FeedbackPage = load('src/features/admin/pages/AdminReviewsPage.tsx', commonPageStubs).default;
+const PaymentsPage = load('src/features/admin/pages/AdminPaymentsPage.tsx', commonPageStubs).default;
+const DeliveryPage = load('src/features/admin/pages/AdminDeliveryPage.tsx', commonPageStubs).default;
+const InventoryPage = load('src/features/admin/pages/AdminInventoryPage.tsx', commonPageStubs).default;
+const RefundsPage = load('src/features/admin/pages/AdminRefundsPage.tsx', commonPageStubs).default;
+
+for (const pagePath of [
+  'src/features/admin/pages/AdminDashboardPage.tsx',
+  'src/features/admin/pages/AdminOrdersPage.tsx',
+  'src/features/admin/pages/AdminProductsPage.tsx',
+  'src/features/admin/pages/AdminPaymentsPage.tsx',
+  'src/features/admin/pages/AdminDeliveryPage.tsx',
+  'src/features/admin/pages/AdminInventoryPage.tsx',
+  'src/features/admin/pages/AdminRefundsPage.tsx',
+]) {
+  assert.doesNotMatch(
+    readFileSync(new URL(`../${pagePath}`, import.meta.url), 'utf8'),
+    /SAMPLE_ADMIN_/,
+    `${pagePath} must not render operational sample data`,
+  );
+}
 
 const dashboardHtml = renderToStaticMarkup(
   React.createElement(MemoryRouter, { initialEntries: ['/admin/dashboard'] }, React.createElement(DashboardPage)),
 );
-assert.match(dashboardHtml, /Products Sold/);
-assert.match(dashboardHtml, /1 Item/);
-assert.match(dashboardHtml, /Net Profit/);
-assert.match(dashboardHtml, /Not configured/);
-assert.match(dashboardHtml, /Pending Payment Confirmations/);
-for (const col of [
-  'Order ID',
-  'Customer Name',
-  'Product',
-  'Total Amount',
-  'Payment UTR',
-  'Payment Screenshot',
-  'Submitted Date',
-  'Payment Status',
-  'Review Payment Action',
-]) {
-  assert.match(dashboardHtml, new RegExp(col), `Dashboard table missing column: ${col}`);
+assert.match(dashboardHtml, /Dashboard/);
+assert.match(dashboardHtml, /Connect the local FastAPI server to see live figures\. No sample figures are shown/);
+assert.doesNotMatch(dashboardHtml, /#BFP-|Products Sold/, 'offline dashboard shows no figures at all');
+const { DashboardView } = load('src/features/admin/pages/AdminDashboardPage.tsx', commonPageStubs);
+const view = (data) => renderToStaticMarkup(React.createElement(MemoryRouter, null, React.createElement(DashboardView, { data })));
+const liveData = {
+  productsSold: 12,
+  netProfit: { amount: 3400, status: 'OK', reason: null, note: null },
+  pendingPaymentConfirmations: [
+    { paymentId: 'p1', orderId: 'o1', orderNumber: '#BFP-1001', customerName: 'Hetal Patel', amount: 1040, status: 'UNDER_REVIEW', submittedAt: '2026-10-19T10:00:00Z' },
+  ],
+};
+const liveHtml = view(liveData);
+for (const label of ['Products Sold', 'Net Profit', 'Pending Payment Confirmations', '#BFP-1001', 'Hetal Patel']) {
+  assert.match(liveHtml, new RegExp(label), `Dashboard missing: ${label}`);
 }
-assert.doesNotMatch(dashboardHtml, /Sales &amp; Order Volume Overview/);
-assert.doesNotMatch(dashboardHtml, /Recent Admin Audit Activity/);
+assert.match(liveHtml, />12</);
+assert.ok(liveHtml.includes('/admin/payments?payment=p1'), 'each row links to payment review');
+assert.match(liveHtml, /₹3,400/);
+// Exactly three elements: no charts, extra metric cards or activity feeds.
+assert.equal((liveHtml.match(/stat-card__label/g) ?? []).length, 2, 'two metric cards only');
+assert.equal((liveHtml.match(/<table/g) ?? []).length, 1, 'one table only');
+assert.doesNotMatch(liveHtml, /Sales|Recent|chart|Low stock|Pending refunds/i);
+// Missing costs: never a fictional profit.
+const unconfigured = view({ ...liveData, netProfit: { amount: null, status: 'NOT_CONFIGURED', reason: 'Cost price is not configured for: Faki 500g.', note: null } });
+assert.match(unconfigured, /Not configured/);
+assert.match(unconfigured, /Faki 500g/);
+assert.doesNotMatch(unconfigured, /₹0/);
+assert.match(view({ ...liveData, netProfit: { ...liveData.netProfit, note: 'Includes products whose prices or costs are development data not yet approved by the owner.' } }), /development data/);
+assert.match(view({ ...liveData, pendingPaymentConfirmations: [] }), /No payment screenshots are waiting/);
+
+// Settings: pure helpers - only changed fields are sent, PIN codes validated, nothing saved from placeholders.
+const SettingsMod = load('src/features/admin/pages/AdminSettingsPage.tsx', { ...commonPageStubs, '../api': adminApi });
+const baseSettings = {
+  storeName: 'Balaji Faki Point', tagline: 'Fresh', storeAddress: 'Rajkot', phoneNumber: '+91 80009 61030', supportWhatsapp: '918000961030',
+  supportEmail: '', businessHours: 'Call the store', shopIntro: '', productionInfo: '', providerManufacturer: '', packagingInfo: '',
+  photos: [], officialUpiId: 'local-test@upi', officialPayeeName: 'LOCAL TEST - do not pay', officialUpiQrImageUrl: '',
+  deliveryCharges: 0, freeDeliveryThreshold: null, serviceablePinCodes: ['360001', '360005'], lowStockThreshold: 10,
+  stockReservationExpiryMinutes: 30, businessSettingsConfirmedAt: null, paymentIsLocalTest: true, adminAccount: { email: 'o@x.test', role: 'OWNER_ADMIN' },
+};
+const baseForm = SettingsMod.toForm(baseSettings);
+assert.equal(JSON.stringify(SettingsMod.changedSettings(baseSettings, baseForm)), '{}', 'unchanged form sends nothing');
+assert.equal(JSON.stringify(SettingsMod.changedSettings(baseSettings, { ...baseForm, tagline: 'Fresher' })), '{"tagline":"Fresher"}');
+assert.equal(JSON.stringify(SettingsMod.changedSettings(baseSettings, { ...baseForm, deliveryCharges: '40', freeDeliveryThreshold: '1500' })), '{"deliveryCharges":40,"freeDeliveryThreshold":1500}');
+assert.equal(JSON.stringify(SettingsMod.changedSettings(baseSettings, { ...baseForm, serviceablePinCodes: '360005, 360001' })), '{"serviceablePinCodes":["360005","360001"]}');
+for (const bad of [{ serviceablePinCodes: '123' }, { serviceablePinCodes: '360001, 360001' }, { deliveryCharges: '-5' }, { deliveryCharges: 'abc' }, { lowStockThreshold: '1.5' }]) {
+  assert.ok('error' in SettingsMod.changedSettings(baseSettings, { ...baseForm, ...bad }), JSON.stringify(bad));
+}
+assert.deepEqual(JSON.parse(JSON.stringify(SettingsMod.parsePinCodes('360001  360002,360003'))), ['360001', '360002', '360003']);
+const settingsSource = readFileSync(new URL('../src/features/admin/pages/AdminSettingsPage.tsx', import.meta.url), 'utf8');
+assert.doesNotMatch(settingsSource, /SAMPLE_|okbizaxis|dp334218|supabase\.auth\.updateUser/, 'no sample values or client-side credential handling');
+const settingsHtml = renderToStaticMarkup(React.createElement(MemoryRouter, null, React.createElement(SettingsMod.default)));
+assert.match(settingsHtml, /No sample values are shown/);
+assert.doesNotMatch(settingsHtml, /Save changes/, 'nothing can be saved before the server answered');
+
+// Price Management: only changed fields are sent; approving a price is explicit; nothing is cleared by accident.
+const { buildVariantPatch } = load('src/features/admin/pages/AdminProductsPage.tsx', commonPageStubs);
+const variant = { id: 'v1', packSize: '500g', sku: 'S', costPrice: 180, price: 500, availableQuantity: 5, reservedQuantity: 0, isAvailable: false, priceConfirmed: false };
+const patchOf = (edit) => JSON.parse(JSON.stringify(buildVariantPatch(variant, { cost: '180', price: '500', available: false, approve: false, ...edit })));
+assert.deepEqual(patchOf({}).patch, { packSize: '500g' }, 'an untouched row sends nothing');
+assert.deepEqual(patchOf({ price: '550' }).patch, { packSize: '500g', price: 550 }, 'only the price');
+assert.deepEqual(patchOf({ available: true }).patch, { packSize: '500g', isAvailable: true }, 'availability only when toggled');
+assert.deepEqual(patchOf({ price: '550', approve: true }).patch, { packSize: '500g', price: 550, priceConfirmed: true });
+assert.deepEqual(patchOf({ approve: true }).patch, { packSize: '500g', priceConfirmed: true }, 'approve the existing development price');
+assert.deepEqual(patchOf({ cost: '' }).patch, { packSize: '500g', costPrice: null }, 'clearing is explicit');
+for (const bad of [{ price: '-1' }, { price: 'abc' }, { cost: '-5' }, { price: '', approve: true }]) {
+  assert.ok(patchOf(bad).error, JSON.stringify(bad));
+}
+const approved = { ...variant, priceConfirmed: true };
+assert.deepEqual(JSON.parse(JSON.stringify(buildVariantPatch(approved, { cost: '180', price: '500', available: false, approve: true }).patch)), { packSize: '500g' }, 'already approved: no change');
+const productsSource = readFileSync(new URL('../src/features/admin/pages/AdminProductsPage.tsx', import.meta.url), 'utf8');
+assert.doesNotMatch(productsSource, /createAdminProduct|imageUrl|SAMPLE_/, 'no create flow (fixed catalogue) and no free-text image URLs');
 
 const pricesHtml = renderToStaticMarkup(
   React.createElement(MemoryRouter, { initialEntries: ['/admin/prices'] }, React.createElement(PricesPage)),
@@ -622,9 +613,9 @@ assert.match(pricesHtml, /Price Management/);
 for (const col of ['Product', 'Pack Size', 'Cost Price', 'Selling Price', 'Action']) {
   assert.match(pricesHtml, new RegExp(col), `Price Management missing column: ${col}`);
 }
-assert.match(pricesHtml, /250g/);
-assert.match(pricesHtml, /500g/);
-assert.match(pricesHtml, /1kg/);
+assert.match(pricesHtml, /No sample product or price records are shown/);
+assert.match(pricesHtml, /No products are available from the local catalog yet/);
+assert.doesNotMatch(pricesHtml, /Faki Premium Blend/);
 
 const ordersHtml = renderToStaticMarkup(
   React.createElement(MemoryRouter, { initialEntries: ['/admin/orders'] }, React.createElement(OrdersPage)),
@@ -643,15 +634,47 @@ for (const col of [
 ]) {
   assert.match(ordersHtml, new RegExp(col), `Order Management missing column: ${col}`);
 }
-assert.match(ordersHtml, /Confirm Order/);
-assert.match(ordersHtml, /Start Packing/);
+assert.match(ordersHtml, /No sample orders are shown/);
+assert.match(ordersHtml, /No orders match the current search and status filters/);
+assert.doesNotMatch(ordersHtml, /#BFP-/);
 
 const feedbackHtml = renderToStaticMarkup(
   React.createElement(MemoryRouter, { initialEntries: ['/admin/feedback'] }, React.createElement(FeedbackPage)),
 );
 assert.match(feedbackHtml, /Feedback Management/);
 assert.match(feedbackHtml, /Star Rating/);
-assert.match(feedbackHtml, /View \/ Reply/);
+assert.match(feedbackHtml, /Review data unavailable/);
+assert.match(feedbackHtml, /No feedback entries match these filters/);
+assert.doesNotMatch(feedbackHtml, /View \/ Reply/);
+
+const paymentsHtml = renderToStaticMarkup(
+  React.createElement(MemoryRouter, { initialEntries: ['/admin/payments'] }, React.createElement(PaymentsPage)),
+);
+assert.match(paymentsHtml, /Payment data unavailable/);
+assert.match(paymentsHtml, /No sample payments are shown/);
+assert.match(paymentsHtml, /No payment submissions match these filters/);
+
+const deliveryHtml = renderToStaticMarkup(
+  React.createElement(MemoryRouter, { initialEntries: ['/admin/delivery'] }, React.createElement(DeliveryPage)),
+);
+assert.match(deliveryHtml, /Fulfillment data unavailable/);
+assert.match(deliveryHtml, /No sample delivery records are shown/);
+assert.match(deliveryHtml, /No fulfillment records match these filters/);
+
+const inventoryHtml = renderToStaticMarkup(
+  React.createElement(MemoryRouter, { initialEntries: ['/admin/inventory'] }, React.createElement(InventoryPage)),
+);
+assert.match(inventoryHtml, /Inventory data unavailable/);
+assert.match(inventoryHtml, /No sample inventory or movements are shown/);
+assert.match(inventoryHtml, /No inventory variants match the current filters/);
+assert.match(inventoryHtml, /No stock movements are available from the local inventory service/);
+
+const refundsHtml = renderToStaticMarkup(
+  React.createElement(MemoryRouter, { initialEntries: ['/admin/refunds'] }, React.createElement(RefundsPage)),
+);
+assert.match(refundsHtml, /Refund data unavailable/);
+assert.match(refundsHtml, /No sample refund records are shown/);
+assert.match(refundsHtml, /No cancellation or refund records match these filters/);
 
 console.log(
   'Admin panel & Supabase DB: 18 tables, RLS policies, RBAC route guard, 4-page navigation, minimal Dashboard (Products Sold + Net Profit + Pending Payment Confirmations), Price Management, Order Management, Feedback Management, and typed API client passed.',

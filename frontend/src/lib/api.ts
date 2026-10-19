@@ -22,12 +22,23 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Resolves a FastAPI path whether the configured base URL includes `/api` or not.
+ */
+export function resolveApiUrl(path: string): string {
+  const normalized = path.startsWith('/') ? path : `/${path}`;
+  const apiPath = env.apiBaseUrl.endsWith('/api') && normalized.startsWith('/api/')
+    ? normalized.slice(4)
+    : normalized;
+  return `${env.apiBaseUrl}${apiPath}`;
+}
+
 export async function apiFetch<T>(
   path: string,
   options: RequestInit = {},
 ): Promise<T> {
   if (!env.apiBaseUrl) throw new ApiError(0, 'Online ordering is not connected yet. Please contact the store.');
-  const url = `${env.apiBaseUrl}${path}`;
+  const url = resolveApiUrl(path);
   const isFormData = options.body instanceof FormData;
 
   const headers = new Headers(options.headers);
@@ -86,31 +97,52 @@ export function getErrorMessage(err: unknown): string {
   return 'Something went wrong. Please try again.';
 }
 
-/* ---------- Placeholder product catalogue ---------- */
-/* These display-only prices will be replaced by server data. */
+/* ---------- Catalogue shell ---------- */
+/* Names only. Prices always come from the database through FastAPI; while they load, or if the server is
+   unreachable, every price is `null` ("Awaiting price") instead of an invented number. */
 
-export const PRODUCTS: Product[] = [
+export const PRODUCT_SHELL: Product[] = [
   {
     type: 'faki',
     name: 'Faki',
     nameGu: 'ફાકી',
     packSizes: ['250g', '500g', '1kg'],
-    prices: {
-      '250g': null,
-      '500g': null,
-      '1kg': null,
-    },
+    prices: { '250g': null, '500g': null, '1kg': null },
   },
   {
     type: 'supari',
     name: 'Supari',
     nameGu: 'સુપારી',
     packSizes: ['250g', '500g', '1kg'],
-    prices: {
-      '250g': null,
-      '500g': null,
-      '1kg': null,
-    },
+    prices: { '250g': null, '500g': null, '1kg': null },
+  },
+  {
+    type: 'mitho-mavo',
+    name: 'Mitho Mavo',
+    nameGu: 'મીઠો માવો',
+    packSizes: ['250g', '500g', '1kg'],
+    prices: { '250g': null, '500g': null, '1kg': null },
+  },
+  {
+    type: 'water',
+    name: 'Water Bottle',
+    nameGu: 'પાણીની બોટલ',
+    packSizes: ['1l'],
+    prices: { '1l': null },
+  },
+  {
+    type: 'chuno',
+    name: 'Chuno',
+    nameGu: 'ચુનો',
+    packSizes: ['250g', '500g', '1kg'],
+    prices: { '250g': null, '500g': null, '1kg': null },
+  },
+  {
+    type: 'tamaku',
+    name: 'Tamaku',
+    nameGu: 'તમાકુ',
+    packSizes: ['250g', '500g', '1kg'],
+    prices: { '250g': null, '500g': null, '1kg': null },
   },
 ];
 
@@ -120,6 +152,8 @@ export function formatINR(amount: number | null): string {
   return `₹${amount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 }
 
+/** 250g -> "250 g", 1kg -> "1 kg", 500ml -> "500 ml", 1l -> "1 L" */
 export function formatPackSize(size: string): string {
-  return size === '1kg' ? '1 kg' : size.replace('g', ' g');
+  const match = /^([0-9]+)(g|kg|ml|l)$/.exec(size);
+  return match ? `${match[1]} ${match[2] === 'l' ? 'L' : match[2]}` : size;
 }
