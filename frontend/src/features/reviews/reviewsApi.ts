@@ -1,6 +1,7 @@
 import { apiFetch } from '../../lib/api';
 
 export type ReviewProduct = 'faki' | 'supari';
+export type ReviewSort = 'newest' | 'oldest' | 'highest' | 'lowest';
 
 export interface PublishedReview {
   id: string;
@@ -14,10 +15,22 @@ export interface PublishedReview {
   reviewText: string;
   verifiedPurchase: boolean;
   createdAt: string;
-  /** Public FastAPI proxy paths for moderated customer photos. */
+  /** Public FastAPI proxy paths for customer photos of published reviews. */
   photoUrls: string[];
   adminReply?: string | null;
   adminRepliedAt?: string | null;
+}
+
+/** Published reviews only: hidden reviews are excluded from the average, count and distribution. */
+export interface ReviewSummary {
+  average: number | null;
+  count: number;
+  distribution: Record<'1' | '2' | '3' | '4' | '5', number>;
+}
+
+export interface ReviewList {
+  items: PublishedReview[];
+  summary: ReviewSummary;
 }
 
 function readReview(value: unknown): PublishedReview {
@@ -47,13 +60,30 @@ function readReview(value: unknown): PublishedReview {
   return { ...review, photoUrls } as unknown as PublishedReview;
 }
 
-export async function getPublishedReviews(product?: ReviewProduct): Promise<PublishedReview[]> {
-  const suffix = product ? `?product=${encodeURIComponent(product)}` : '';
-  const data = await apiFetch<unknown>(`/reviews${suffix}`);
+export function readReviewSummary(value: unknown): ReviewSummary {
+  const summary = value as Partial<ReviewSummary> | null;
+  const distribution = summary?.distribution as Record<string, unknown> | undefined;
+  if (
+    !summary || typeof summary.count !== 'number' || !distribution ||
+    !(summary.average === null || typeof summary.average === 'number') ||
+    !['1', '2', '3', '4', '5'].every((star) => typeof distribution[star] === 'number')
+  ) {
+    throw new Error('The server returned an unreadable review summary.');
+  }
+  return summary as ReviewSummary;
+}
+
+export async function getPublishedReviews(product?: ReviewProduct, sort: ReviewSort = 'newest'): Promise<ReviewList> {
+  const query = new URLSearchParams({ sort });
+  if (product) query.set('product', product);
+  const data = await apiFetch<unknown>(`/reviews?${query.toString()}`);
   if (!data || typeof data !== 'object' || !Array.isArray((data as { items?: unknown }).items)) {
     throw new Error('The server returned an unreadable review list.');
   }
-  return (data as { items: unknown[] }).items.map(readReview);
+  return {
+    items: (data as { items: unknown[] }).items.map(readReview),
+    summary: readReviewSummary((data as { summary?: unknown }).summary),
+  };
 }
 
 export async function submitReview(

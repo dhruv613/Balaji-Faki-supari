@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { FAQItem } from '../../../types/orders';
-import { env } from '../../../lib/env';
+import { contactDetails, useStoreProfile } from '../../store/storeApi';
 
 const FAQS: FAQItem[] = [
   {
@@ -31,6 +31,8 @@ const FAQS: FAQItem[] = [
 ];
 
 export default function HelpFAQsPage() {
+  const { profile } = useStoreProfile();
+  const contact = contactDetails(profile);
   const [search, setSearch] = useState('');
   const query = search.trim().toLocaleLowerCase();
   const filtered = FAQS.filter(faq => `${faq.question} ${faq.answer}`.toLocaleLowerCase().includes(query));
@@ -87,16 +89,16 @@ export default function HelpFAQsPage() {
             <h3>Still need help?</h3>
             <p className="contact-sidebar__subtitle">Talk to us directly.</p>
 
-            <a
-              href="tel:+918000961030"
+            {contact.telHref && <a
+              href={contact.telHref}
               className="btn btn--primary btn--full"
             >
               <svg className="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 005 5L15 13l5 2v4a2 2 0 01-2 2A16 16 0 013 6a2 2 0 012-2z" /></svg>
-              Call +91 80009 61030
-            </a>
+              Call {contact.phoneDisplay}
+            </a>}
 
-            <a
-              href={`https://wa.me/${env.supportWhatsApp}`}
+            {contact.whatsappHref && <a
+              href={contact.whatsappHref}
               target="_blank"
               rel="noopener noreferrer"
               className="btn btn--full"
@@ -104,7 +106,7 @@ export default function HelpFAQsPage() {
             >
               <svg className="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z" /></svg>
               WhatsApp us
-            </a>
+            </a>}
 
             <Link
               to="/store"

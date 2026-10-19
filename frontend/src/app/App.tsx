@@ -1,21 +1,18 @@
 import { AppRouter } from './router';
 import { OrderProvider } from '../context/OrderContext';
-import AuthGate from '../components/common/AuthGate';
+import { useSession } from '../lib/supabase';
 
 /**
  * Root Application shell.
- * Enforces authentication + profile completion (`AuthGate`),
- * scopes checkout draft state to the signed-in user (`OrderProvider`),
- * and mounts customer & admin routes (`AppRouter`).
+ * Browsing is public. `OrderProvider` scopes the checkout draft to the signed-in account (or to a guest draft that
+ * moves into the account at sign-in); protected pages ask for sign-in themselves, in place.
  */
 export default function App() {
+  const { session } = useSession();
+  const user = session?.user ?? null;
   return (
-    <AuthGate>
-      {(user) => (
-        <OrderProvider key={user.id} user={user}>
-          <AppRouter />
-        </OrderProvider>
-      )}
-    </AuthGate>
+    <OrderProvider key={user?.id ?? 'guest'} user={user}>
+      <AppRouter />
+    </OrderProvider>
   );
 }

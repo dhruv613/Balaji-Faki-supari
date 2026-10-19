@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useReducer, type ReactNode, type Dispatch } from 'react';
 import type { User } from '@supabase/supabase-js';
 import type { ProductType, PackSize, OrderFormData, OrderSummary, Order, PaymentStatus, Product, CheckoutQuote } from '../types/orders';
-import { PRODUCTS, getErrorMessage } from '../lib/api';
+import { PRODUCT_SHELL, getErrorMessage } from '../lib/api';
 import { fetchProducts } from '../features/catalog/api/catalogApi';
 import { getCheckoutQuote, getOrder } from '../features/orders/api/ordersApi';
 import { normalizeIndianMobile, readCustomerDetails, validateCustomerDetails } from '../lib/customer';
@@ -29,7 +29,7 @@ export const initialState: OrderState = {
   checkoutKey: '', orderLoadStatus: '', orderLoadAttempt: 0,
   orderId: '', orderNumber: '', serverOrder: null,
   utrNumber: '', screenshotFile: null, screenshotPreview: '', paymentStatus: null,
-  products: PRODUCTS, catalogStatus: 'Loading current prices…', quote: null, quoteStatus: '',
+  products: PRODUCT_SHELL, catalogStatus: 'Loading current prices…', quote: null, quoteStatus: '',
 };
 
 const orderReset = {
@@ -95,7 +95,7 @@ export function reducer(state: OrderState, action: Action): OrderState {
 }
 
 export function buildSummary(state: OrderState): OrderSummary {
-  const product = state.products.find(p => p.type === state.product) ?? PRODUCTS[0];
+  const product = state.products.find(p => p.type === state.product) ?? PRODUCT_SHELL[0];
   const server = state.serverOrder;
   const quote = server ?? state.quote;
   const price = product.prices[state.packSize];
@@ -159,10 +159,31 @@ export function persistDraft(state: OrderState, userId: string) {
   catch { /* Unavailable storage still permits in-memory checkout. */ }
 }
 
-export function loadState(user: User) {
-  const profile = readCustomerDetails(user.user_metadata);
+export const GUEST_DRAFT_ID = 'guest';
+
+/** True when a visitor has already chosen something worth keeping across the sign-in step. */
+export function hasDraftContent(draft: OrderFormData): boolean {
+  return Boolean(
+    draft.product !== initialState.product || draft.packSize !== initialState.packSize || draft.quantity !== initialState.quantity ||
+    draft.fullName.trim() || draft.phone.trim() || draft.address.trim() || draft.pinCode.trim(),
+  );
+}
+
+/**
+ * Visitors build a draft without an account. When they sign in, a draft they prepared as a guest wins over any older
+ * saved draft of that account, so they land back in checkout with what they chose. Another account's draft is never read.
+ */
+export function loadState(user: User | null) {
+  const profile = readCustomerDetails(user?.user_metadata);
   let draft = { ...initialState };
-  try { draft = restoreDraft(sessionStorage.getItem(`${STORAGE_KEY}:${user.id}`)); }
+  try {
+    const guest = restoreDraft(sessionStorage.getItem(`${STORAGE_KEY}:${GUEST_DRAFT_ID}`));
+    if (!user) draft = guest;
+    else if (hasDraftContent(guest)) {
+      draft = { ...guest, orderId: '', checkoutKey: '' };
+      sessionStorage.removeItem(`${STORAGE_KEY}:${GUEST_DRAFT_ID}`);
+    } else draft = restoreDraft(sessionStorage.getItem(`${STORAGE_KEY}:${user.id}`));
+  }
   catch { /* Unavailable storage still permits in-memory checkout. */ }
   return { ...draft, fullName: draft.fullName || profile.fullName, phone: draft.phone || profile.phone };
 }
@@ -170,9 +191,10 @@ export function loadState(user: User) {
 const OrderContext = createContext<OrderState>(initialState);
 const DispatchContext = createContext<Dispatch<Action>>(() => {});
 
-export function OrderProvider({ children, user }: { children: ReactNode; user: User }) {
+export function OrderProvider({ children, user }: { children: ReactNode; user: User | null }) {
   const [state, dispatch] = useReducer(reducer, user, loadState);
-  useEffect(() => { persistDraft(state, user.id); }, [state, user.id]);
+  const draftOwner = user?.id ?? GUEST_DRAFT_ID;
+  useEffect(() => { persistDraft(state, draftOwner); }, [state, draftOwner]);
   useEffect(() => () => {
     if (state.screenshotPreview) URL.revokeObjectURL(state.screenshotPreview);
   }, [state.screenshotPreview]);
@@ -181,7 +203,7 @@ export function OrderProvider({ children, user }: { children: ReactNode; user: U
     fetchProducts().then(products => {
       if (active) dispatch({ type: 'SET_CATALOG', payload: { products, status: products.length ? '' : 'No products are currently available. Please contact the store.' } });
     }).catch(() => {
-      if (active) dispatch({ type: 'SET_CATALOG', payload: { products: PRODUCTS, status: 'Development preview · Live prices and online ordering are not connected yet.' } });
+      if (active) dispatch({ type: 'SET_CATALOG', payload: { products: PRODUCT_SHELL, status: 'Current prices are unavailable right now. Please try again shortly or contact the store.' } });
     });
     return () => { active = false; };
   }, []);
@@ -197,14 +219,14 @@ export function OrderProvider({ children, user }: { children: ReactNode; user: U
   }, [state.product, state.packSize, state.quantity, state.pinCode]);
   useEffect(() => {
     let active = true;
-    if (state.orderId && !state.serverOrder) {
+    if (user && state.orderId && !state.serverOrder) {
       dispatch({ type: 'SET_ORDER_LOAD_STATUS', payload: 'Loading your existing order…' });
       getOrder(state.orderId).then(order => {
         if (active) dispatch({ type: 'SET_SERVER_ORDER', payload: order });
       }).catch(error => { if (active) dispatch({ type: 'SET_ORDER_LOAD_STATUS', payload: getErrorMessage(error) }); });
     }
     return () => { active = false; };
-  }, [user.id, state.orderId, Boolean(state.serverOrder), state.orderLoadAttempt]);
+  }, [user?.id, state.orderId, Boolean(state.serverOrder), state.orderLoadAttempt]);
   return <OrderContext.Provider value={state}><DispatchContext.Provider value={dispatch}>{children}</DispatchContext.Provider></OrderContext.Provider>;
 }
 

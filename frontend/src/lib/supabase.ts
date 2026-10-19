@@ -9,7 +9,7 @@
  */
 
 import { createClient, type Session, type User } from '@supabase/supabase-js';
-import { useEffect, useState } from 'react';
+import { useSyncExternalStore } from 'react';
 import { env } from './env';
 
 export const LEGACY_SYNTHETIC_SESSION_KEYS = [
@@ -122,11 +122,19 @@ export const supabase = rawSupabase
             password: credentials.password,
           });
         },
-        async signUp(credentials: { email: string; password: string }) {
+        async signUp(
+          credentials: { email: string; password: string },
+          profile?: { fullName?: string; phone?: string },
+        ) {
           purgeLegacySyntheticSessions();
+          // Contact details only: role and privilege flags can never be supplied from the browser.
+          const data = profile
+            ? { fullName: (profile.fullName ?? '').trim(), phone: (profile.phone ?? '').trim() }
+            : undefined;
           return rawSupabase.auth.signUp({
             email: credentials.email.trim().toLowerCase(),
             password: credentials.password,
+            ...(data ? { options: { data } } : {}),
           });
         },
         async updateUser(attributes: {
@@ -181,46 +189,39 @@ export const supabase = rawSupabase
     }
   : null;
 
-export function useSession() {
-  const [session, setSession] = useState<Session | null>(null);
-  const [loading, setLoading] = useState<boolean>(Boolean(supabase));
+/* One shared session store: every component sees the same session and loading state. */
+export interface SessionSnapshot {
+  session: Session | null;
+  loading: boolean;
+}
 
-  useEffect(() => {
-    if (!supabase) {
-      setLoading(false);
-      return;
-    }
-    let active = true;
+let snapshot: SessionSnapshot = { session: null, loading: Boolean(supabase) };
+const listeners = new Set<() => void>();
+let started = false;
 
-    supabase.auth
-      .getSession()
-      .then(({ data }) => {
-        if (active) {
-          setSession(data.session);
-          setLoading(false);
-        }
-      })
-      .catch(() => {
-        if (active) {
-          setSession(null);
-          setLoading(false);
-        }
-      });
+function publish(next: SessionSnapshot) {
+  snapshot = next;
+  listeners.forEach((listener) => listener());
+}
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, current) => {
-      if (active) {
-        setSession(current);
-        setLoading(false);
-      }
-    });
+function startSessionStore() {
+  if (started || !supabase) return;
+  started = true;
+  supabase.auth
+    .getSession()
+    .then(({ data }) => publish({ session: data.session, loading: false }))
+    .catch(() => publish({ session: null, loading: false }));
+  supabase.auth.onAuthStateChange((_event, current) => publish({ session: current, loading: false }));
+}
 
-    return () => {
-      active = false;
-      subscription.unsubscribe();
-    };
-  }, []);
+function subscribeToSession(listener: () => void) {
+  startSessionStore();
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
 
-  return { session, loading };
+export function useSession(): SessionSnapshot {
+  return useSyncExternalStore(subscribeToSession, () => snapshot, () => snapshot);
 }

@@ -123,7 +123,14 @@ export default function ReviewOrderPage() {
       <div className="two-col review-layout">
         {/* ---- Main: Items & Delivery ---- */}
         <div className="two-col__main">
-          {!session && <EmailSignIn />}
+          {!session && (
+            <>
+              <Notice tone="warning" title="Sign in to place your order" id="review-signin-notice">
+                Your order details are saved on this device. Sign in or create an account to place the order; you will come straight back to this page.
+              </Notice>
+              <EmailSignIn />
+            </>
+          )}
           {state.quoteStatus && <p className="text-small text-secondary catalog-status" role="status">{state.quoteStatus}</p>}
           {/* Items card */}
           <section className="card" style={{ marginBottom: 24 }} aria-labelledby="items-heading">

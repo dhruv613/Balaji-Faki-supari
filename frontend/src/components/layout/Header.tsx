@@ -58,7 +58,7 @@ export default function Header() {
           {session ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <Link
-                to="/my-orders"
+                to="/account"
                 className="text-small"
                 style={{ fontWeight: 600, textDecoration: 'none', color: 'var(--text)' }}
                 title={session.user.email}
@@ -76,7 +76,11 @@ export default function Header() {
                 </button>
               )}
             </div>
-          ) : null}
+          ) : (
+            <Link to="/login" className="text-small" style={{ fontWeight: 600, textDecoration: 'none', color: 'var(--text)' }}>
+              Sign in
+            </Link>
+          )}
           <Link to="/order" className="btn btn--primary">
             Order Now
           </Link>

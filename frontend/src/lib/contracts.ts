@@ -65,8 +65,22 @@ function invalid(): never {
   throw new Error('The server returned incomplete order or payment information. Please contact the store before paying.');
 }
 
+const optionalProductInformationKeys = ['shelfLife', 'packaging', 'safetyDisclosures'] as const;
+
 function productInformation(value: unknown): boolean {
-  return record(value) && productInformationKeys.every((key) => typeof value[key] === 'string');
+  return (
+    record(value) &&
+    productInformationKeys.every((key) => typeof value[key] === 'string') &&
+    optionalProductInformationKeys.every((key) => value[key] === undefined || typeof value[key] === 'string')
+  );
+}
+
+function productImages(value: unknown): boolean {
+  return (
+    value === undefined ||
+    (Array.isArray(value) &&
+      value.every((image) => record(image) && text(image.id) && text(image.url) && typeof image.alt === 'string'))
+  );
 }
 
 export function readQuote(value: unknown): CheckoutQuote {
@@ -86,6 +100,9 @@ export function readProducts(value: unknown): Product[] {
       (product.description !== undefined && typeof product.description !== 'string') ||
       (product.imageUrl !== undefined && typeof product.imageUrl !== 'string') ||
       (product.information !== undefined && !productInformation(product.information)) ||
+      !productImages(product.images) ||
+      (product.averageRating !== undefined && product.averageRating !== null && typeof product.averageRating !== 'number') ||
+      (product.reviewCount !== undefined && typeof product.reviewCount !== 'number') ||
       !Array.isArray(product.packSizes) ||
       !product.packSizes.length ||
       !record(product.prices)

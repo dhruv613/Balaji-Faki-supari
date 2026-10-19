@@ -97,31 +97,24 @@ export function getErrorMessage(err: unknown): string {
   return 'Something went wrong. Please try again.';
 }
 
-/* ---------- Placeholder product catalogue ---------- */
-/* Temporary local preview prices. FastAPI remains the source of truth when connected. */
+/* ---------- Catalogue shell ---------- */
+/* Names only. Prices always come from the database through FastAPI; while they load, or if the server is
+   unreachable, every price is `null` ("Awaiting price") instead of an invented number. */
 
-export const PRODUCTS: Product[] = [
+export const PRODUCT_SHELL: Product[] = [
   {
     type: 'faki',
     name: 'Faki',
     nameGu: 'ફાકી',
     packSizes: ['250g', '500g', '1kg'],
-    prices: {
-      '250g': 250,
-      '500g': 500,
-      '1kg': 1000,
-    },
+    prices: { '250g': null, '500g': null, '1kg': null },
   },
   {
     type: 'supari',
     name: 'Supari',
     nameGu: 'સુપારી',
     packSizes: ['250g', '500g', '1kg'],
-    prices: {
-      '250g': 200,
-      '500g': 400,
-      '1kg': 800,
-    },
+    prices: { '250g': null, '500g': null, '1kg': null },
   },
 ];
 

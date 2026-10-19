@@ -18,6 +18,9 @@ import CustomerReviewsPage from '../features/reviews/pages/CustomerReviewsPage';
 import VisitStorePage from '../features/store/pages/VisitStorePage';
 import HelpFAQsPage from '../features/help/pages/HelpFAQsPage';
 import NotFoundPage from '../features/catalog/pages/NotFoundPage';
+import ProductDetailsPage from '../features/catalog/pages/ProductDetailsPage';
+import LoginPage from '../features/account/pages/LoginPage';
+import AccountPage from '../features/account/pages/AccountPage';
 
 function LegacyTrackRedirect() {
   const { orderId } = useParams();
@@ -45,6 +48,8 @@ export function AppRouter() {
       <Route element={<StoreLayout />}>
         <Route index element={<HomePage />} />
 
+        <Route path="products/:slug" element={<ProductDetailsPage />} />
+
         {/* Order flow */}
         <Route path="order" element={<OrderFormPage />} />
         <Route path="order/review" element={<ReviewOrderPage />} />
@@ -57,6 +62,10 @@ export function AppRouter() {
         <Route path="my-orders/:orderId" element={<OrderDetailsPage />} />
         <Route path="track" element={<Navigate to="/my-orders" replace />} />
         <Route path="track/:orderId" element={<LegacyTrackRedirect />} />
+
+        {/* Account */}
+        <Route path="login" element={<LoginPage />} />
+        <Route path="account" element={<AccountPage />} />
 
         {/* Other pages */}
         <Route path="reviews" element={<CustomerReviewsPage />} />

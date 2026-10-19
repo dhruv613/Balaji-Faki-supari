@@ -10,6 +10,17 @@ export interface ProductInformation {
   productionPackaging: string;
   providerManufacturer: string;
   safetyStorage: string;
+  /** Optional owner-supplied facts; empty or missing means "not provided" and is never shown. */
+  shelfLife?: string;
+  packaging?: string;
+  safetyDisclosures?: string;
+}
+
+export interface ProductImage {
+  id: string;
+  url: string;
+  alt: string;
+  position: number;
 }
 
 export type CanonicalOrderStatus =
@@ -78,9 +89,15 @@ export interface Product {
   description?: string;
   imageUrl?: string;
   information?: ProductInformation;
+  images?: ProductImage[];
   packSizes: PackSize[];
-  /** Display-only placeholder prices — real prices come from the server */
+  /** Selling prices from the database. `null` = unavailable or not yet priced. */
   prices: Record<PackSize, number | null>;
+  /** false = development price the owner has not approved yet. */
+  priceConfirmed?: Record<PackSize, boolean>;
+  inStock?: Record<PackSize, boolean>;
+  averageRating?: number | null;
+  reviewCount?: number;
 }
 
 export interface OrderFormData {

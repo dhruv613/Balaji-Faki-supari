@@ -1,19 +1,23 @@
 import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import Notice from '../../../components/common/Notice';
 import { formatPackSize, getErrorMessage, resolveApiUrl } from '../../../lib/api';
 import { useSession } from '../../../lib/supabase';
 import { getMyOrders } from '../../orders/api/ordersApi';
 import type { Order } from '../../../types/orders';
+import Stars from '../../../components/common/Stars';
 import {
   getPublishedReviews,
   submitReview,
   type PublishedReview,
   type ReviewProduct,
+  type ReviewSort,
+  type ReviewSummary,
 } from '../reviewsApi';
 
 type ProductFilter = 'all' | ReviewProduct;
-type ReviewSort = 'newest' | 'highest' | 'lowest';
+
+const EMPTY_SUMMARY: ReviewSummary = { average: null, count: 0, distribution: { '1': 0, '2': 0, '3': 0, '4': 0, '5': 0 } };
 
 const MAX_REVIEW_PHOTOS = 5;
 const MAX_REVIEW_PHOTO_BYTES = 5 * 1024 * 1024;
@@ -34,21 +38,18 @@ export function validateReviewPhotos(files: readonly Pick<File, 'name' | 'size' 
   return null;
 }
 
-function Stars({ rating }: { rating: number }) {
-  return <span className="stars" role="img" aria-label={`${rating} out of 5 stars`}>
-    {[1, 2, 3, 4, 5].map((star) => <svg key={star} className="icon icon--sm" viewBox="0 0 24 24" aria-hidden="true" style={{ fill: star <= rating ? 'currentColor' : 'none' }}><path d="M12 3.5l2.6 5.4 5.9.8-4.3 4.1 1 5.9L12 16.9 6.8 19.7l1-5.9L3.5 9.7l5.9-.8z" /></svg>)}
-  </span>;
-}
-
 function productLabel(product: ProductFilter): string {
   return product === 'all' ? 'All products' : product === 'faki' ? 'Faki' : 'Supari';
 }
 
 export default function CustomerReviewsPage() {
   const { session, loading: authLoading } = useSession();
-  const [productFilter, setProductFilter] = useState<ProductFilter>('all');
+  const [searchParams] = useSearchParams();
+  const initialProduct = searchParams.get('product');
+  const [productFilter, setProductFilter] = useState<ProductFilter>(initialProduct === 'faki' || initialProduct === 'supari' ? initialProduct : 'all');
   const [sort, setSort] = useState<ReviewSort>('newest');
   const [reviews, setReviews] = useState<PublishedReview[]>([]);
+  const [summary, setSummary] = useState<ReviewSummary>(EMPTY_SUMMARY);
   const [eligibleOrders, setEligibleOrders] = useState<Order[]>([]);
   const [selectedOrderId, setSelectedOrderId] = useState('');
   const [rating, setRating] = useState(5);
@@ -74,12 +75,12 @@ export default function CustomerReviewsPage() {
     let active = true;
     setLoadingReviews(true);
     setPageError('');
-    getPublishedReviews(productFilter === 'all' ? undefined : productFilter)
-      .then((items) => { if (active) setReviews(items); })
+    getPublishedReviews(productFilter === 'all' ? undefined : productFilter, sort)
+      .then((list) => { if (active) { setReviews(list.items); setSummary(list.summary); } })
       .catch((error) => { if (active) setPageError(getErrorMessage(error)); })
       .finally(() => { if (active) setLoadingReviews(false); });
     return () => { active = false; };
-  }, [productFilter]);
+  }, [productFilter, sort]);
 
   useEffect(() => {
     if (!session) {
@@ -101,13 +102,8 @@ export default function CustomerReviewsPage() {
     return () => { active = false; };
   }, [session?.user.id]);
 
-  const sortedReviews = useMemo(() => [...reviews].sort((left, right) => {
-    if (sort === 'highest') return right.rating - left.rating || Date.parse(right.createdAt) - Date.parse(left.createdAt);
-    if (sort === 'lowest') return left.rating - right.rating || Date.parse(right.createdAt) - Date.parse(left.createdAt);
-    return Date.parse(right.createdAt) - Date.parse(left.createdAt);
-  }), [reviews, sort]);
-  const average = reviews.length ? (reviews.reduce((sum, review) => sum + review.rating, 0) / reviews.length).toFixed(1) : '0.0';
-  const distribution = [5, 4, 3, 2, 1].map((star) => ({ star, count: reviews.filter((review) => review.rating === star).length }));
+  const average = summary.average === null ? '–' : summary.average.toFixed(1);
+  const distribution = ([5, 4, 3, 2, 1] as const).map((star) => ({ star, count: summary.distribution[String(star) as '1'] }));
 
   function handlePhotoSelection(event: ChangeEvent<HTMLInputElement>) {
     const nextPhotos = [...reviewPhotos, ...Array.from(event.target.files ?? [])];
@@ -150,7 +146,10 @@ export default function CustomerReviewsPage() {
       setSelectedOrderId('');
       setReviewText('');
       setReviewPhotos([]);
-      setNotice('Thanks. Your verified-purchase review was submitted for moderation.');
+      setNotice('Thank you. Your verified-purchase review is now published.');
+      getPublishedReviews(productFilter === 'all' ? undefined : productFilter, sort)
+        .then((list) => { setReviews(list.items); setSummary(list.summary); })
+        .catch(() => undefined);
     } catch (error) {
       setFormError(getErrorMessage(error));
     } finally {
@@ -166,12 +165,12 @@ export default function CustomerReviewsPage() {
       <div className="reviews-layout">
         <aside className="card card--tinted review-summary" aria-label="Customer review summary">
           <div className="amount-display">{average}</div>
-          <div className="review-meta"><Stars rating={Math.round(Number(average))} /><span className="text-small text-secondary">out of 5</span></div>
-          <p className="text-small text-secondary">Based on {reviews.length} published {productLabel(productFilter).toLowerCase()} review{reviews.length === 1 ? '' : 's'}</p>
+          <div className="review-meta">{summary.average !== null && <Stars rating={summary.average} />}<span className="text-small text-secondary">out of 5</span></div>
+          <p className="text-small text-secondary">Based on {summary.count} genuine {productLabel(productFilter).toLowerCase()} review{summary.count === 1 ? '' : 's'}</p>
           <div className="rating-bars">
             {distribution.map((item) => <div className="rating-bar" key={item.star}>
               <span>{item.star} stars</span>
-              <div className="rating-bar__track"><div className="rating-bar__fill" style={{ width: `${reviews.length ? item.count / reviews.length * 100 : 0}%` }} /></div>
+              <div className="rating-bar__track"><div className="rating-bar__fill" style={{ width: `${summary.count ? item.count / summary.count * 100 : 0}%` }} /></div>
               <span>{item.count}</span>
             </div>)}
           </div>
@@ -182,6 +181,7 @@ export default function CustomerReviewsPage() {
           <label htmlFor="review-sort" style={{ marginTop: 18 }}>Sort by</label>
           <select id="review-sort" className="input" value={sort} onChange={(event) => setSort(event.target.value as ReviewSort)}>
             <option value="newest">Most recent</option>
+            <option value="oldest">Oldest first</option>
             <option value="highest">Highest rated</option>
             <option value="lowest">Lowest rated</option>
           </select>
@@ -190,8 +190,8 @@ export default function CustomerReviewsPage() {
         <div className="reviews-grid" aria-live="polite">
           {loadingReviews && <p className="text-secondary">Loading published reviews…</p>}
           {pageError && <Notice tone="warning" title="Reviews are unavailable">{pageError}</Notice>}
-          {!loadingReviews && !pageError && sortedReviews.length === 0 && <p className="text-secondary">No published reviews for this product yet.</p>}
-          {sortedReviews.map((review) => <article className="review-card" key={review.id}>
+          {!loadingReviews && !pageError && reviews.length === 0 && <p className="text-secondary">No published reviews for this product yet.</p>}
+          {reviews.map((review) => <article className="review-card" key={review.id}>
             <div className="review-card__header">
               <span className="review-avatar">{review.customerName.split(' ').map((part) => part[0]).join('').slice(0, 2)}</span>
               <div><strong>{review.customerName}</strong><p className="review-location text-small text-secondary">{review.area || 'Rajkot'}</p></div>
@@ -209,9 +209,9 @@ export default function CustomerReviewsPage() {
 
       <section className="card card--tinted review-feedback" aria-labelledby="feedback-heading">
         <h2 id="feedback-heading" style={{ fontSize: 24 }}>Write a review</h2>
-        <p className="text-secondary" style={{ margin: '8px 0 20px' }}>Only delivered orders can be reviewed. Reviews are published after store moderation.</p>
+        <p className="text-secondary" style={{ margin: '8px 0 20px' }}>Only delivered orders can be reviewed. Your review is published right away; the shop only hides spam, abuse or private information.</p>
         {authLoading && <p role="status">Checking your sign-in…</p>}
-        {!authLoading && !session && <Notice title="Sign in to review a purchase">Open <Link to="/my-orders">My Orders</Link> to sign in and choose a delivered order.</Notice>}
+        {!authLoading && !session && <Notice title="Sign in to review a purchase"><Link to="/login?next=/reviews">Sign in</Link> to choose a delivered order and write your review.</Notice>}
         {!authLoading && session && loadingOrders && <p role="status">Checking your delivered orders…</p>}
         {!authLoading && session && !loadingOrders && eligibleOrders.length === 0 && <Notice title="No delivered order available">A review becomes available after an order is marked Delivered.</Notice>}
         {!authLoading && session && !loadingOrders && eligibleOrders.length > 0 && <form noValidate onSubmit={handleSubmit}>
