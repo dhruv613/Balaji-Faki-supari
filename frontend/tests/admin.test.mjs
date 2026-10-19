@@ -34,7 +34,6 @@ const {
   validateOrderTransition,
   getAllowedNextOrderStatuses,
   validateDeliveryTransition,
-  validatePaymentApproval,
   computePostPaymentApprovalState,
   validateRefundCompletion,
   validateStockAdjustment,
@@ -159,97 +158,6 @@ assert.notEqual(postApproval.orderStatus, 'PACKING');
 assert.notEqual(postApproval.orderStatus, 'SHIPPED');
 
 /* ================================================================== */
-/*  3. MANUAL PAYMENT VERIFICATION RULES                              */
-/* ================================================================== */
-
-const validApprovalInput = {
-  receivingBankAccount: 'HDFC Bank •••• 4821',
-  verifiedAmount: 420,
-  verifiedUtr: '429104857123',
-  bankCreditReference: 'HDFC-CR-20261017-991',
-  transactionStatus: 'CREDITED',
-  verificationNote: 'Verified in merchant statement.',
-};
-
-assert.equal(
-  validatePaymentApproval({
-    currentPaymentStatus: 'UNDER_REVIEW',
-    expectedAmount: 420,
-    submittedUtr: '429104857123',
-    approvalInput: validApprovalInput,
-  }).allowed,
-  true,
-);
-
-// Duplicate payment approval is blocked
-assert.equal(
-  validatePaymentApproval({
-    currentPaymentStatus: 'VERIFIED',
-    expectedAmount: 420,
-    submittedUtr: '429104857123',
-    approvalInput: validApprovalInput,
-  }).allowed,
-  false,
-);
-
-// Duplicate UTR across orders is blocked
-assert.equal(
-  validatePaymentApproval({
-    currentPaymentStatus: 'UNDER_REVIEW',
-    expectedAmount: 420,
-    submittedUtr: '429104857123',
-    approvalInput: validApprovalInput,
-    existingVerifiedUtrs: ['429104857123'],
-  }).allowed,
-  false,
-);
-
-// Duplicate bank credit reference is blocked
-assert.equal(
-  validatePaymentApproval({
-    currentPaymentStatus: 'UNDER_REVIEW',
-    expectedAmount: 420,
-    submittedUtr: '429104857123',
-    approvalInput: validApprovalInput,
-    existingBankCreditRefs: ['HDFC-CR-20261017-991'],
-  }).allowed,
-  false,
-);
-
-// Mismatched amount is blocked
-assert.equal(
-  validatePaymentApproval({
-    currentPaymentStatus: 'UNDER_REVIEW',
-    expectedAmount: 420,
-    submittedUtr: '429104857123',
-    approvalInput: { ...validApprovalInput, verifiedAmount: 400 },
-  }).allowed,
-  false,
-);
-
-// Mismatched UTR vs customer submitted UTR is blocked
-assert.equal(
-  validatePaymentApproval({
-    currentPaymentStatus: 'UNDER_REVIEW',
-    expectedAmount: 420,
-    submittedUtr: '429104857123',
-    approvalInput: { ...validApprovalInput, verifiedUtr: '999999999999' },
-  }).allowed,
-  false,
-);
-
-// Payment approval must follow the explicit SUBMITTED -> UNDER_REVIEW action.
-assert.equal(
-  validatePaymentApproval({
-    currentPaymentStatus: 'SUBMITTED',
-    expectedAmount: 420,
-    submittedUtr: '429104857123',
-    approvalInput: validApprovalInput,
-  }).allowed,
-  false,
-);
-
-/* ================================================================== */
 /*  4. ORDER & DELIVERY STEP-SKIPPING AND CANCELLED ORDER BLOCKING    */
 /* ================================================================== */
 
@@ -367,13 +275,14 @@ fakeFetch = async (url, options) => {
   return new Response(JSON.stringify({ ok: true }), { status: 200 });
 };
 
-await adminApi.approveAdminPayment('pay-101', validApprovalInput);
+await adminApi.approveAdminPayment('pay-101', { notes: 'Screenshot checked' });
 assert.equal(capturedRequest.url, 'https://api.balajifaki.test/api/admin/payments/pay-101/approve');
 assert.equal(capturedRequest.options.method, 'POST');
+assert.deepEqual(JSON.parse(capturedRequest.options.body), { notes: 'Screenshot checked' }, 'only a note is sent: no UTR or bank details');
 assert.equal(capturedRequest.options.headers.get('Authorization'), 'Bearer owner-admin-jwt-token');
 assert.equal(
   capturedRequest.options.headers.get('Idempotency-Key'),
-  'admin-approve-payment-pay-101-429104857123',
+  'admin-approve-payment-pay-101',
 );
 
 /* ================================================================== */
@@ -633,11 +542,11 @@ const liveData = {
   productsSold: 12,
   netProfit: { amount: 3400, status: 'OK', reason: null, note: null },
   pendingPaymentConfirmations: [
-    { paymentId: 'p1', orderId: 'o1', orderNumber: '#BFP-1001', customerName: 'Hetal Patel', amount: 1040, utr: '412399887766', status: 'UNDER_REVIEW', submittedAt: '2026-10-19T10:00:00Z' },
+    { paymentId: 'p1', orderId: 'o1', orderNumber: '#BFP-1001', customerName: 'Hetal Patel', amount: 1040, status: 'UNDER_REVIEW', submittedAt: '2026-10-19T10:00:00Z' },
   ],
 };
 const liveHtml = view(liveData);
-for (const label of ['Products Sold', 'Net Profit', 'Pending Payment Confirmations', '#BFP-1001', 'Hetal Patel', '412399887766']) {
+for (const label of ['Products Sold', 'Net Profit', 'Pending Payment Confirmations', '#BFP-1001', 'Hetal Patel']) {
   assert.match(liveHtml, new RegExp(label), `Dashboard missing: ${label}`);
 }
 assert.match(liveHtml, />12</);

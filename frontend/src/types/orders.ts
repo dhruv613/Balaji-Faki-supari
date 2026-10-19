@@ -137,7 +137,6 @@ export interface Order {
   pinCode: string;
   status: OrderStatus;
   paymentStatus: PaymentStatus;
-  utrNumber?: string | null;
   screenshotUrl?: string;
   createdAt: string;
   updatedAt: string;
@@ -182,7 +181,6 @@ export interface PaymentSubmissionResult {
   orderNumber?: string;
   paymentStatus: PaymentStatus;
   orderStatus?: OrderStatus;
-  utrMasked?: string;
   submittedAt?: string;
   message: string;
 }
@@ -193,15 +191,13 @@ export interface PaymentStatusResponse {
   status: PaymentStatus;
   orderStatus: OrderStatus;
   message?: string;
-  /** Masked UTR as stored on the server, e.g. 4XXXXXXXX912 */
-  utrMasked?: string | null;
   /** Status of the most recent attempt; attempts are never deleted. */
   latestAttemptStatus?: string | null;
   /** Admin-entered reason when the latest proof was rejected and the order awaits a new attempt. */
   rejectionReason?: string | null;
   /** true while a new proof can be submitted (order awaiting payment, no attempt under review). */
   canSubmitProof?: boolean;
-  attempts?: Array<{ id: string; status: string; utrMasked?: string | null; submittedAt?: string | null; rejectionReason?: string | null }>;
+  attempts?: Array<{ id: string; status: string; submittedAt?: string | null; rejectionReason?: string | null }>;
 }
 
 export interface TrackingEvent {

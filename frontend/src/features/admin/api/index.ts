@@ -206,7 +206,7 @@ export async function approveAdminPayment(
     {
       method: 'POST',
       headers: {
-        'Idempotency-Key': `admin-approve-payment-${paymentId}-${payload.verifiedUtr.trim()}`,
+        'Idempotency-Key': `admin-approve-payment-${paymentId}`,
       },
       body: JSON.stringify(payload),
     },

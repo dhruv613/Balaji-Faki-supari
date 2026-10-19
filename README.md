@@ -144,7 +144,7 @@ Rules the code enforces:
 
 - Request handlers never create prices, stock, products or settings. Only `python -m app.db.seed --dev` does, and it never overwrites
   existing rows. Only **Faki 1 kg = Rs 1,000** is an owner-confirmed price; every other seeded price is a development price shown with a badge.
-- `BFP_ENV=local` (set in `backend/.env`) enables development-only conveniences (TEST bank-credit evidence, a per-process signing key).
+- `BFP_ENV=local` (set in `backend/.env`) enables development-only conveniences (LOCAL TEST refund-transfer evidence, a per-process signing key).
   Any other value fails closed, and checkout stays closed until the owner confirms prices and payment settings in Admin → Settings.
 - Payment settings seeded for development are LOCAL TEST values, not a real receiving account.
 - Admin access needs a successful `GET /api/me` with `OWNER_ADMIN`; the browser never decides.

@@ -26,7 +26,7 @@ progress = buildCustomerProgress({ status: 'PENDING_PAYMENT', paymentStatus: 'RE
 assert.match(progress.banner.title, /not accepted/);
 progress = buildCustomerProgress({ status: 'PAYMENT_REVIEW', paymentStatus: 'SUBMITTED' }, [at('PENDING_PAYMENT', 0), at('PAYMENT_REVIEW', 1)]);
 assert.equal(progress.banner.title, 'Payment verification pending');
-assert.match(progress.banner.text, /screenshot alone does not confirm/);
+assert.match(progress.banner.text, /not confirmed until the shop approves/);
 assert.equal(progress.showSteps, false);
 progress = buildCustomerProgress({ status: 'AWAITING_CONFIRMATION', paymentStatus: 'VERIFIED' }, []);
 assert.equal(progress.banner.title, 'Payment verified');

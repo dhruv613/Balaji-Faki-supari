@@ -348,7 +348,7 @@ class PaymentAttempt(Base):
         GUID(), ForeignKey("user_profiles.id", ondelete="RESTRICT"), nullable=False, index=True
     )
     expected_amount_paise: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    submitted_utr: Mapped[str] = mapped_column(String(12), nullable=False)
+    submitted_utr: Mapped[Optional[str]] = mapped_column(String(12), nullable=True)
     verified_utr: Mapped[Optional[str]] = mapped_column(String(12), nullable=True)
     screenshot_storage_path: Mapped[str] = mapped_column(String(512), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="SUBMITTED", index=True)
@@ -555,7 +555,7 @@ class Refund(Base):
     original_payment_id: Mapped[str] = mapped_column(
         GUID(), ForeignKey("payment_attempts.id", ondelete="RESTRICT"), nullable=False
     )
-    original_payment_utr: Mapped[str] = mapped_column(String(12), nullable=False)
+    original_payment_utr: Mapped[Optional[str]] = mapped_column(String(12), nullable=True)
     refund_amount_paise: Mapped[int] = mapped_column(BigInteger, nullable=False)
     verified_refund_amount_paise: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     refund_reason: Mapped[str] = mapped_column(Text, nullable=False)

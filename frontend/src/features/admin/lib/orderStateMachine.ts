@@ -21,7 +21,6 @@ import type {
   AdminOrderDetail,
   AdminProduct,
   AdminRefundRecord,
-  ApprovePaymentRequest,
   RecordRefundTransferRequest,
   StockAdjustmentRequest,
   UserRole,
@@ -242,120 +241,8 @@ export function validateDeliveryTransition(
 }
 
 /* ================================================================== */
-/*  3. MANUAL PAYMENT VERIFICATION RULES (MODULE 03)                  */
+/*  3. PAYMENT APPROVAL RESULT (MODULE 03)                            */
 /* ================================================================== */
-
-export interface PaymentApprovalValidationInput {
-  currentPaymentStatus: AdminPaymentStatus;
-  expectedAmount: number | null;
-  submittedUtr: string;
-  approvalInput: ApprovePaymentRequest;
-  existingVerifiedUtrs?: string[];
-  existingBankCreditRefs?: string[];
-}
-
-/**
- * Enforces strict manual payment approval rules:
- * - Cannot approve an already VERIFIED payment (prevents duplicate updates).
- * - Expected amount must be known and match verifiedAmount exactly.
- * - UTR must be 12 digits and match the submitted UTR.
- * - No duplicate verified UTR or duplicate bank-credit reference.
- * - Receiving bank account and bank credit reference are mandatory.
- * - Transaction status must be 'CREDITED'.
- */
-export function validatePaymentApproval(
-  params: PaymentApprovalValidationInput,
-): StateTransitionCheck {
-  const {
-    currentPaymentStatus,
-    expectedAmount,
-    submittedUtr,
-    approvalInput,
-    existingVerifiedUtrs = [],
-    existingBankCreditRefs = [],
-  } = params;
-
-  if (currentPaymentStatus === 'VERIFIED') {
-    return {
-      allowed: false,
-      reason: 'Payment is already VERIFIED. Duplicate payment approval is blocked.',
-    };
-  }
-
-  if (currentPaymentStatus !== 'UNDER_REVIEW') {
-    return {
-      allowed: false,
-      reason: `Payment in ${currentPaymentStatus} state must enter UNDER_REVIEW before approval.`,
-    };
-  }
-
-  if (expectedAmount === null || !Number.isFinite(expectedAmount) || expectedAmount <= 0) {
-    return {
-      allowed: false,
-      reason: 'Expected order amount is unavailable. Cannot verify payment.',
-    };
-  }
-
-  if (!approvalInput.receivingBankAccount || approvalInput.receivingBankAccount.trim().length < 4) {
-    return {
-      allowed: false,
-      reason: 'Receiving bank account must be confirmed before approval.',
-    };
-  }
-
-  if (!approvalInput.bankCreditReference || approvalInput.bankCreditReference.trim().length < 4) {
-    return {
-      allowed: false,
-      reason: 'Bank credit reference is required to prove actual bank settlement.',
-    };
-  }
-
-  const cleanUtr = approvalInput.verifiedUtr.trim();
-  if (!/^\d{12}$/.test(cleanUtr)) {
-    return {
-      allowed: false,
-      reason: 'Verified UTR must be an exact 12-digit UPI transaction reference.',
-    };
-  }
-
-  if (submittedUtr.trim() && cleanUtr !== submittedUtr.trim()) {
-    return {
-      allowed: false,
-      reason: 'Verified bank UTR does not match the customer-submitted UTR.',
-    };
-  }
-
-  if (existingVerifiedUtrs.includes(cleanUtr)) {
-    return {
-      allowed: false,
-      reason: `Duplicate UTR detected (${cleanUtr}). This UTR is already assigned to another verified payment.`,
-    };
-  }
-
-  const cleanBankRef = approvalInput.bankCreditReference.trim();
-  if (existingBankCreditRefs.includes(cleanBankRef)) {
-    return {
-      allowed: false,
-      reason: `Duplicate bank credit reference (${cleanBankRef}). This bank credit is already linked to another order.`,
-    };
-  }
-
-  if (Math.abs(approvalInput.verifiedAmount - expectedAmount) >= 0.01) {
-    return {
-      allowed: false,
-      reason: `Verified bank credit amount (₹${approvalInput.verifiedAmount}) does not match expected order amount (₹${expectedAmount}).`,
-    };
-  }
-
-  if (approvalInput.transactionStatus !== 'CREDITED') {
-    return {
-      allowed: false,
-      reason: 'Bank transaction status must be CREDITED before approving payment.',
-    };
-  }
-
-  return { allowed: true };
-}
 
 /**
  * Computes the resulting state after a valid payment approval.

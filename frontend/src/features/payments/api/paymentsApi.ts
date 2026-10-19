@@ -2,7 +2,7 @@
  * Payments API — typed functions for FastAPI integration.
  *
  * Payment verification is ALWAYS server-side. The frontend only
- * submits UTR / screenshot and polls for status. It never marks a
+ * uploads the payment screenshot and polls for status. It never marks a
  * payment as verified.
  */
 
@@ -34,17 +34,16 @@ function defaultKeyStorage(): KeyStorage | null {
 
 /**
  * One Idempotency-Key per payment ATTEMPT. Retrying the same submission (network drop, double click, reload) reuses
- * the key, so the server returns the same attempt instead of creating a second one. A genuinely new attempt (different UTR
- * or screenshot, or a new attempt number after a rejection) gets a new key.
+ * the key, so the server returns the same attempt instead of creating a second one. A genuinely new attempt (different
+ * screenshot, or a new attempt number after a rejection) gets a new key.
  */
 export function paymentAttemptKey(
   orderId: string,
-  utrNumber: string,
   screenshot: Pick<File, 'name' | 'size' | 'type' | 'lastModified'>,
   attemptNumber = 0,
   storage: KeyStorage | null = defaultKeyStorage(),
 ): string {
-  const fingerprint = [orderId, utrNumber.trim(), screenshot.name, screenshot.size, screenshot.type, screenshot.lastModified, attemptNumber].join('|');
+  const fingerprint = [orderId, screenshot.name, screenshot.size, screenshot.type, screenshot.lastModified, attemptNumber].join('|');
   const storageKey = `bfp-payment-attempt:${fingerprint}`;
   try {
     const existing = storage?.getItem(storageKey);
@@ -56,7 +55,7 @@ export function paymentAttemptKey(
 }
 
 /**
- * POST /payments/:orderId/submit — multipart upload of UTR + screenshot.
+ * POST /payments/:orderId/submit — multipart upload of the payment screenshot (the only evidence the shop asks for).
  *
  * FastAPI stores the screenshot in the PRIVATE `payment-proofs` bucket and
  * records the submission with Payment = SUBMITTED and Order = PAYMENT_REVIEW.
@@ -64,12 +63,11 @@ export function paymentAttemptKey(
  */
 export async function submitPayment(
   orderId: string,
-  payload: { utrNumber: string; screenshot: File; attemptNumber?: number },
+  payload: { screenshot: File; attemptNumber?: number },
 ): Promise<PaymentSubmissionResult> {
-  const invalid = validateUtr(payload.utrNumber) ?? validateScreenshot(payload.screenshot);
+  const invalid = validateScreenshot(payload.screenshot);
   if (invalid) throw new Error(invalid);
   const form = new FormData();
-  form.append('utr', payload.utrNumber.trim());
   form.append('screenshot', payload.screenshot);
 
   const result = await apiFetch<PaymentSubmissionResult>(
@@ -77,7 +75,7 @@ export async function submitPayment(
     {
       method: 'POST',
       body: form,
-      headers: { 'Idempotency-Key': paymentAttemptKey(orderId, payload.utrNumber, payload.screenshot, payload.attemptNumber ?? 0) },
+      headers: { 'Idempotency-Key': paymentAttemptKey(orderId, payload.screenshot, payload.attemptNumber ?? 0) },
     },
   );
   if (!VALID_SUBMISSION_STATUSES.includes(String(result?.paymentStatus))) {
@@ -101,19 +99,6 @@ export function validateScreenshot(file: File | null): string | null {
   if (file.size === 0) return 'The screenshot file is empty.';
   if (file.size > SCREENSHOT_MAX_BYTES) return 'Screenshot must be smaller than 5 MB.';
   return null;
-}
-
-/** UPI UTR / RRN is a 12-digit number. */
-export function validateUtr(utr: string): string | null {
-  if (!utr.trim()) return 'Enter your UPI transaction ID (UTR).';
-  if (!/^\d{12}$/.test(utr.trim())) return 'UTR must be exactly 12 digits.';
-  return null;
-}
-
-/** Mask a UTR for display: 412345678912 → 4XXXXXXXX912 */
-export function maskUtr(utr: string): string {
-  if (utr.length < 5) return utr;
-  return `${utr[0]}${'X'.repeat(utr.length - 4)}${utr.slice(-3)}`;
 }
 
 export function isPaymentSubmittedOrVerified(status: PaymentStatus | null | undefined): boolean {

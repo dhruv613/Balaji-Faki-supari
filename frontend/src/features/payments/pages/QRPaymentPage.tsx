@@ -14,7 +14,6 @@ import {
   isPaymentSubmittedOrVerified,
   submitPayment,
   validateScreenshot,
-  validateUtr,
 } from '../api/paymentsApi';
 
 function formatCountdown(ms: number): string {
@@ -89,7 +88,6 @@ export default function QRPaymentPage() {
   const qrImageUrl = payment?.qrImageUrl;
   if (!payment) return <div className="wrapper"><OrderStepper currentStep={3} /><NoActiveOrder title="Payment instructions unavailable" message="The server has not issued payment instructions for this order. Please contact the store before paying." /></div>;
 
-  const utrError = touched ? validateUtr(state.utrNumber) : null;
   const screenshotError = touched ? fileError ?? validateScreenshot(state.screenshotFile) : fileError;
 
   async function handleCopyUPI() {
@@ -123,12 +121,7 @@ export default function QRPaymentPage() {
     setTouched(true);
     setSubmitError(null);
 
-    const utrMsg = validateUtr(state.utrNumber);
     const fileMsg = validateScreenshot(state.screenshotFile);
-    if (utrMsg) {
-      document.getElementById('utr-input')?.focus();
-      return;
-    }
     if (fileMsg || !state.screenshotFile) {
       document.getElementById('upload-screenshot-btn')?.focus();
       return;
@@ -139,7 +132,6 @@ export default function QRPaymentPage() {
       // FastAPI stores the screenshot in private Supabase Storage and sets
       // Payment = SUBMITTED and Order = PAYMENT_REVIEW. This is NOT verified payment.
       const result = await submitPayment(order!.id, {
-        utrNumber: state.utrNumber.trim(),
         screenshot: state.screenshotFile,
         attemptNumber: history?.attempts?.length ?? 0,
       });
@@ -181,8 +173,8 @@ export default function QRPaymentPage() {
 
       {history?.rejectionReason && (
         <Notice tone="warning" title="Your last payment proof was not accepted" id="payment-rejected-notice">
-          {history.rejectionReason} Your earlier submission stays on record. If you have paid, upload a clear screenshot and the
-          correct 12-digit UTR below; please do not pay again.
+          {history.rejectionReason} Your earlier submission stays on record. If you have paid, upload a clear screenshot of the
+          payment below; please do not pay again.
         </Notice>
       )}
 
@@ -194,7 +186,7 @@ export default function QRPaymentPage() {
 
       {expired && (
         <Notice tone="warning" title="This payment window has expired" id="payment-expired-notice">
-          If you have already paid, enter your UTR and screenshot below. If you haven't paid,
+          If you have already paid, upload your payment screenshot below. If you haven't paid,
           please don't pay now. Contact the store to confirm the order's payment instructions.
         </Notice>
       )}
@@ -202,7 +194,7 @@ export default function QRPaymentPage() {
       {submitError?.kind === 'offline' && (
         <Notice tone="warning" title="Payment submission isn't connected" id="submit-offline-notice">
           We couldn't confirm whether the server received your payment details. Please don't pay again.
-          Contact support with your UTR if the status remains unclear.
+          Contact support if the status remains unclear.
         </Notice>
       )}
 
@@ -300,29 +292,8 @@ export default function QRPaymentPage() {
             <ol style={{ paddingLeft: 20, margin: '16px 0', color: 'var(--color-text-secondary)' }}>
               <li>Open any UPI app and scan this QR.</li>
               <li>Pay the exact amount shown.</li>
-              <li>Enter your UPI transaction ID below.</li>
+              <li>Upload a screenshot of the successful payment below.</li>
             </ol>
-
-            <div style={{ marginBottom: 16 }}>
-              <label htmlFor="utr-input"><strong>UPI transaction ID (UTR)</strong></label>
-              <input
-                id="utr-input"
-                disabled={submitting}
-                className={`input${utrError ? ' input--error' : ''}`}
-                type="text"
-                inputMode="numeric"
-                autoComplete="off"
-                maxLength={12}
-                placeholder="12-digit transaction ID"
-                value={state.utrNumber}
-                aria-invalid={utrError ? true : undefined}
-                aria-describedby={utrError ? 'utr-error' : undefined}
-                onChange={(e) =>
-                  dispatch({ type: 'SET_UTR', payload: e.target.value.replace(/\D/g, '').slice(0, 12) })
-                }
-              />
-              {utrError && <p className="field-error" id="utr-error">{utrError}</p>}
-            </div>
 
             {/* Screenshot upload (required) */}
             <input
@@ -386,13 +357,13 @@ export default function QRPaymentPage() {
                   <span className="spinner" aria-hidden="true" /> Submitting…
                 </>
               ) : (
-                'I\u2019ve paid — verify payment'
+                'I\u2019ve paid — submit screenshot'
               )}
             </button>
 
             <p className="text-secondary text-small" style={{ textAlign: 'center', marginTop: 12 }}>
-              Uploading a screenshot doesn't confirm payment. Our team verifies every
-              payment against the bank credit before your order becomes active.
+              Uploading a screenshot doesn't confirm payment. Our team checks your
+              screenshot before your order becomes active.
             </p>
           </div>
         </section>

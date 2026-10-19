@@ -45,7 +45,7 @@ Online ordering of Faki and Supari. Customer journey: browse → understand ingr
 | ID | Rule |
 |---|---|
 | R-01 | Proof submission does not verify payment. |
-| R-02 | `VERIFIED` requires independent matching bank-credit evidence (unique bank reference, matching UTR and amount). |
+| R-02 | ~~`VERIFIED` requires independent matching bank-credit evidence.~~ **Superseded 2026-10-19 (owner): `VERIFIED` is set by the owner after viewing the customer's uploaded screenshot; no UTR or bank record.** |
 | R-03 | Payment approval does not confirm the order; the admin confirms separately. |
 | R-04 | No fulfilment (packing and later) before verified payment **and** confirmed order. |
 | R-05 | Every transition is validated on the server; status history keeps timestamp and actor. |

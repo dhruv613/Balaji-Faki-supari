@@ -106,7 +106,7 @@ export default function AdminRefundsPage() {
     if (statusFilter !== 'ALL' && r.refundStatus !== statusFilter) return false;
     const q = query.trim().toLowerCase();
     if (!q) return true;
-    return `${r.orderNumber} ${r.customerName} ${r.originalPaymentUtr} ${r.refundTransactionReference ?? ''}`
+    return `${r.orderNumber} ${r.customerName} ${r.refundTransactionReference ?? ''}`
       .toLowerCase()
       .includes(q);
   });
@@ -249,13 +249,13 @@ export default function AdminRefundsPage() {
       <div className="card card--tinted customer-filters">
         <div style={{ flex: '2 1 260px' }}>
           <label htmlFor="refund-search">
-            Search Order ID, Customer, Original UTR, or Refund Ref
+            Search Order ID, Customer, or Refund Ref
           </label>
           <input
             id="refund-search"
             type="search"
             className="input"
-            placeholder="Order ID, customer, UTR, or refund reference"
+            placeholder="Order ID, customer, or refund reference"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
@@ -287,7 +287,6 @@ export default function AdminRefundsPage() {
                   <th scope="col">Customer</th>
                   <th scope="col">Refund Amount</th>
                   <th scope="col">Cancellation Reason</th>
-                  <th scope="col">Original Payment UTR</th>
                   <th scope="col">Refund Bank Reference</th>
                   <th scope="col">Refund Date</th>
                   <th scope="col">Refund Status</th>
@@ -307,7 +306,6 @@ export default function AdminRefundsPage() {
                     </td>
                     <td><strong>{formatINR(item.refundAmount)}</strong></td>
                     <td className="text-small" style={{ maxWidth: 240 }}>{item.refundReason}</td>
-                    <td><code>{item.originalPaymentUtr}</code></td>
                     <td>
                       {item.refundTransactionReference ? (
                         <code>{item.refundTransactionReference}</code>
@@ -377,10 +375,6 @@ export default function AdminRefundsPage() {
                 <dt>Refund Amount</dt>
                 <dd>{formatINR(selectedRefund.refundAmount)}</dd>
               </div>
-              <div className="admin-kv-item">
-                <dt>Original Payment UTR</dt>
-                <dd><code>{selectedRefund.originalPaymentUtr}</code></dd>
-              </div>
               <div className="admin-kv-item" style={{ gridColumn: '1 / -1' }}>
                 <dt>Cancellation &amp; Refund Reason</dt>
                 <dd>{selectedRefund.refundReason}</dd>
@@ -394,7 +388,7 @@ export default function AdminRefundsPage() {
                   Step 1 — Approve Refund Eligibility
                 </h3>
                 <p className="text-small text-secondary" style={{ marginBottom: 12 }}>
-                  Confirm that the original payment UTR (<code>{selectedRefund.originalPaymentUtr}</code>) was verified in the bank account and the order is eligible for refund.
+                  Confirm that the original payment was approved and the order is eligible for refund.
                 </p>
                 <button
                   type="button"

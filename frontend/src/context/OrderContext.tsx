@@ -13,7 +13,6 @@ export interface OrderState extends OrderFormData {
   orderId: string;
   orderNumber: string;
   serverOrder: Order | null;
-  utrNumber: string;
   screenshotFile: File | null;
   screenshotPreview: string;
   paymentStatus: PaymentStatus | null;
@@ -28,14 +27,14 @@ export const initialState: OrderState = {
   fullName: '', phone: '', address: '', pinCode: '',
   checkoutKey: '', orderLoadStatus: '', orderLoadAttempt: 0,
   orderId: '', orderNumber: '', serverOrder: null,
-  utrNumber: '', screenshotFile: null, screenshotPreview: '', paymentStatus: null,
+  screenshotFile: null, screenshotPreview: '', paymentStatus: null,
   products: PRODUCT_SHELL, catalogStatus: 'Loading current prices…', quote: null, quoteStatus: '',
 };
 
 const orderReset = {
   checkoutKey: '', orderLoadStatus: '',
   orderId: '', orderNumber: '', serverOrder: null, paymentStatus: null,
-  utrNumber: '', screenshotFile: null, screenshotPreview: '',
+  screenshotFile: null, screenshotPreview: '',
 };
 
 export type Action =
@@ -45,7 +44,6 @@ export type Action =
   | { type: 'SET_FIELD'; payload: { field: 'fullName' | 'phone' | 'address' | 'pinCode'; value: string } }
   | { type: 'SET_SERVER_ORDER'; payload: Order }
   | { type: 'SET_PAYMENT_STATUS'; payload: PaymentStatus }
-  | { type: 'SET_UTR'; payload: string }
   | { type: 'SET_SCREENSHOT'; payload: { file: File | null; preview: string } }
   | { type: 'SET_CATALOG'; payload: { products: Product[]; status: string } }
   | { type: 'SET_QUOTE'; payload: { quote: CheckoutQuote | null; status: string } }
@@ -73,8 +71,6 @@ export function reducer(state: OrderState, action: Action): OrderState {
       return { ...state, orderLoadStatus: '', orderId: action.payload.id, orderNumber: action.payload.orderNumber, serverOrder: action.payload, paymentStatus: action.payload.paymentStatus };
     case 'SET_PAYMENT_STATUS':
       return { ...state, paymentStatus: action.payload };
-    case 'SET_UTR':
-      return { ...state, utrNumber: action.payload };
     case 'SET_SCREENSHOT':
       return { ...state, screenshotFile: action.payload.file, screenshotPreview: action.payload.preview };
     case 'SET_CATALOG':

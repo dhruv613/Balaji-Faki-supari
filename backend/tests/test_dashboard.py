@@ -62,12 +62,12 @@ class DashboardTests(unittest.TestCase):
     def _refund(self, db, order: Order, amount: int, status: str) -> Refund:
         attempt = PaymentAttempt(
             order_id=order.id, user_id=self.buyer_id, expected_amount_paise=order.total_paise,
-            submitted_utr="412399887700", screenshot_storage_path="p", status="VERIFIED",
+            screenshot_storage_path="p", status="VERIFIED",
         )
         db.add(attempt)
         db.flush()
         refund = Refund(
-            order_id=order.id, original_payment_id=attempt.id, original_payment_utr="412399887700",
+            order_id=order.id, original_payment_id=attempt.id,
             refund_amount_paise=amount, refund_reason="Test", status=status,
             verified_refund_amount_paise=amount if status == "COMPLETED" else None,
         )
@@ -123,7 +123,7 @@ class DashboardTests(unittest.TestCase):
                 order = self._order(db, f"#BFP-{index}", "BFP-FAKI-1KG", 1, status="PAYMENT_REVIEW", payment="SUBMITTED")
                 rows.append(PaymentAttempt(
                     order_id=order.id, user_id=self.buyer_id, expected_amount_paise=order.total_paise,
-                    submitted_utr=f"41239988776{index}", screenshot_storage_path="p", status=status,
+                    screenshot_storage_path="p", status=status,
                     submitted_at=datetime(2026, 10, 19, 10, 5 - index, tzinfo=timezone.utc),
                 ))
             db.add_all(rows)
@@ -132,7 +132,7 @@ class DashboardTests(unittest.TestCase):
             self.assertEqual([row["status"] for row in pending], ["UNDER_REVIEW", "SUBMITTED"])  # oldest first
             self.assertEqual(pending[0]["orderNumber"], "#BFP-1")
             self.assertEqual(pending[0]["amount"], 1040)
-            self.assertEqual(pending[0]["utr"], "412399887761")
+            self.assertNotIn("utr", pending[0])
 
 
 if __name__ == "__main__":

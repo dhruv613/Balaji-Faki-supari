@@ -147,3 +147,10 @@ Source of truth for this phase: `docs/CLAUDE_PROJECT_AUDIT.md`, `docs/CLAUDE_FIN
 - Browser pass: guest draft, create account (no email confirmation), return to review, order creation, QR page with LOCAL TEST notice, admin sign-in, dashboard with real figures and all admin pages rendering.
 - NOT done: browser walkthrough of admin actions (approve/confirm/review moderation clicks), WP11b (blocked on owner), re-running npm run verify after the ORM changes (backend suite 63 PASS, frontend suites passed before them).
 - Local stack is still running in Docker; stop with `npx supabase stop`. Local admin credentials are in .local-dev-credentials.json (gitignored).
+
+### Screenshot-only payments (2026-10-19, owner request)
+- The customer uploads a payment screenshot only (no UTR). The admin sees the screenshot and approves or rejects; no bank-credit details are recorded. Approval still stops at AWAITING_CONFIRMATION. Details and the safeguards given up are in `docs/CLAUDE_CHANGE_PLAN.md` (last section).
+- New migration `20261020000003_screenshot_only_payments.sql` (UTR columns nullable; `bank_credits` kept but unused). Apply locally with `npx supabase migration up --local`.
+- Refunds still record a bank transfer (not changed; confirm with the owner).
+- Verification: `npm run verify` PASS (62 backend tests); `check-db-security.py` 51/51; `smoke-local.py` 58/58 (re-runnable now); browser pass covered customer upload, admin approval, review hide-with-reason.
+- Gotcha: Vite on Windows can serve a stale transform after two quick writes; `touch` the file or restart Vite if the page shows an old error.

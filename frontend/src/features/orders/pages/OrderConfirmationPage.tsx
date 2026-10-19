@@ -8,7 +8,7 @@ import { useOrder, useOrderDispatch } from '../../../context/OrderContext';
 import { useSession } from '../../../lib/supabase';
 import { formatINR, formatPackSize, getErrorMessage } from '../../../lib/api';
 import { getOrder } from '../api/ordersApi';
-import { getPaymentStatus, maskUtr, isPaymentConfirmed, isConfirmedOrder } from '../../payments/api/paymentsApi';
+import { getPaymentStatus, isPaymentConfirmed, isConfirmedOrder } from '../../payments/api/paymentsApi';
 import type { Order } from '../../../types/orders';
 
 export default function OrderConfirmationPage() {
@@ -38,7 +38,6 @@ export default function OrderConfirmationPage() {
   if (!session) return <div className="wrapper"><EmailSignIn /></div>;
   if (!confirmedOrder) return <div className="wrapper"><OrderStepper currentStep={5} />{error ? <Notice tone="warning" title="Confirmation is unavailable" actions={<button className="btn" onClick={() => setAttempt(attempt + 1)}>Check again</button>}>{error} Please don't pay again.</Notice> : <p role="status">Checking payment and order confirmation with the store…</p>}</div>;
   const orderNumber = confirmedOrder.orderNumber;
-  const utrDisplay = confirmedOrder.utrNumber ? maskUtr(confirmedOrder.utrNumber) : '—';
   const deliverTo = `${confirmedOrder.address} – ${confirmedOrder.pinCode}`;
   return (
     <div className="wrapper">
@@ -66,10 +65,6 @@ export default function OrderConfirmationPage() {
           <div className="summary-row">
             <span>Paid</span>
             <strong>{formatINR(confirmedOrder.total)} via UPI</strong>
-          </div>
-          <div className="summary-row">
-            <span>UPI transaction ID</span>
-            <strong>{utrDisplay}</strong>
           </div>
           <div className="summary-row">
             <span>Deliver to</span>

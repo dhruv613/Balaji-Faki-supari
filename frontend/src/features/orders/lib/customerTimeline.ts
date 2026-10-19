@@ -106,10 +106,10 @@ export function buildCustomerProgress(
     showSteps = furthest >= 0;
   } else if (status === 'PENDING_PAYMENT') {
     banner = payment === 'REJECTED'
-      ? { tone: 'warning', title: 'Payment proof was not accepted', text: 'Submit a new payment screenshot and UTR to continue.' }
-      : { tone: 'info', title: 'Awaiting payment', text: 'Pay by UPI QR, then upload your screenshot and 12-digit UTR. Your order is not confirmed yet.' };
+      ? { tone: 'warning', title: 'Payment proof was not accepted', text: 'Upload a new payment screenshot to continue.' }
+      : { tone: 'info', title: 'Awaiting payment', text: 'Pay by UPI QR, then upload your payment screenshot. Your order is not confirmed yet.' };
   } else if (status === 'PAYMENT_REVIEW') {
-    banner = { tone: 'info', title: 'Payment verification pending', text: 'The shop is checking the bank credit for your payment. A screenshot alone does not confirm an order.' };
+    banner = { tone: 'info', title: 'Payment verification pending', text: 'The shop is checking your payment screenshot. Your order is not confirmed until the shop approves it.' };
   } else if (status === 'AWAITING_CONFIRMATION') {
     banner = { tone: 'success', title: 'Payment verified', text: 'Your payment was verified. The shop will confirm your order next.' };
   }

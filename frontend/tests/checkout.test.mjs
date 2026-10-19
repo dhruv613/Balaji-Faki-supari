@@ -84,14 +84,13 @@ assert.equal(api.PRODUCTS, undefined, 'hard-coded price list must not exist');
 const keyStore = new Map();
 const keyStorage = { getItem: key => keyStore.get(key) ?? null, setItem: (key, value) => keyStore.set(key, value) };
 const shot = { name: 'proof.png', size: 1234, type: 'image/png', lastModified: 1760000000000 };
-const firstKey = paymentsApi.paymentAttemptKey('order-1', '412399887766', shot, 0, keyStorage);
-assert.equal(paymentsApi.paymentAttemptKey('order-1', ' 412399887766 ', shot, 0, keyStorage), firstKey, 'a retry or double click reuses the key');
-assert.notEqual(paymentsApi.paymentAttemptKey('order-1', '412399887700', shot, 0, keyStorage), firstKey, 'a different UTR is a different attempt');
-assert.notEqual(paymentsApi.paymentAttemptKey('order-1', '412399887766', { ...shot, size: 99 }, 0, keyStorage), firstKey, 'a different screenshot is a different attempt');
-assert.notEqual(paymentsApi.paymentAttemptKey('order-1', '412399887766', shot, 1, keyStorage), firstKey, 'after a rejection the same proof is a NEW attempt');
-assert.notEqual(paymentsApi.paymentAttemptKey('order-2', '412399887766', shot, 0, keyStorage), firstKey);
+const firstKey = paymentsApi.paymentAttemptKey('order-1', shot, 0, keyStorage);
+assert.equal(paymentsApi.paymentAttemptKey('order-1', shot, 0, keyStorage), firstKey, 'a retry or double click reuses the key');
+assert.notEqual(paymentsApi.paymentAttemptKey('order-1', { ...shot, size: 99 }, 0, keyStorage), firstKey, 'a different screenshot is a different attempt');
+assert.notEqual(paymentsApi.paymentAttemptKey('order-1', shot, 1, keyStorage), firstKey, 'after a rejection the same proof is a NEW attempt');
+assert.notEqual(paymentsApi.paymentAttemptKey('order-2', shot, 0, keyStorage), firstKey);
 assert.match(firstKey, /^payment-order-1-/);
-assert.ok(paymentsApi.paymentAttemptKey('order-1', '412399887766', shot, 0, null).startsWith('payment-order-1-'), 'works without storage');
+assert.ok(paymentsApi.paymentAttemptKey('order-1', shot, 0, null).startsWith('payment-order-1-'), 'works without storage');
 
 // Signed QR paths are accepted; other schemes are not. Rejection history is validated.
 const baseOrder = { id: 'o1', orderNumber: '#BFP-1', product: 'faki', productName: 'Faki', packSize: '500g', quantity: 1, subtotal: 500, deliveryFee: 0, total: 500, customerName: 'A', phone: '+919876543210', address: 'Somewhere in Rajkot', pinCode: '360005', status: 'PENDING_PAYMENT', paymentStatus: 'PENDING', createdAt: '2026-10-19T10:00:00Z', updatedAt: '2026-10-19T10:00:00Z' };
@@ -100,7 +99,7 @@ assert.equal(contracts.readOrder(withQr('/api/orders/o1/payment-qr?sig=abc123&ex
 assert.throws(() => contracts.readOrder(withQr('javascript:alert(1)')));
 assert.throws(() => contracts.readOrder(withQr('/api/orders/o1/payment-qr?sig=<script>')));
 assert.throws(() => contracts.readOrder({ ...withQr('https://example.test/qr.png'), payment: { ...withQr('https://example.test/qr.png').payment, settingsConfirmed: 'yes' } }));
-const rejected = { orderId: 'o1', orderNumber: '#BFP-1', status: 'PENDING', orderStatus: 'PENDING_PAYMENT', rejectionReason: 'Screenshot is blurry', canSubmitProof: true, latestAttemptStatus: 'REJECTED', attempts: [{ id: 'a1', status: 'REJECTED', utrMasked: '4XXXXXXXX766' }] };
+const rejected = { orderId: 'o1', orderNumber: '#BFP-1', status: 'PENDING', orderStatus: 'PENDING_PAYMENT', rejectionReason: 'Screenshot is blurry', canSubmitProof: true, latestAttemptStatus: 'REJECTED', attempts: [{ id: 'a1', status: 'REJECTED' }] };
 assert.equal(contracts.readPaymentStatus(rejected, 'o1').rejectionReason, 'Screenshot is blurry');
 assert.throws(() => contracts.readPaymentStatus({ ...rejected, attempts: [{ status: 'REJECTED' }] }, 'o1'));
 assert.throws(() => contracts.readPaymentStatus({ ...rejected, canSubmitProof: 'yes' }, 'o1'));
@@ -112,29 +111,27 @@ assert.equal(enteredMobile,'9876543210');
 const pasteMobile=value=>mobileElement.props.onPaste({preventDefault(){},clipboardData:{getData:()=>value},currentTarget:{setCustomValidity:message=>{inputValidity=message;},reportValidity(){}}});
 pasteMobile('+91 69876 54321'); assert.equal(enteredMobile,'6987654321');
 pasteMobile('9876543210123'); assert.ok(inputValidity); assert.equal(enteredMobile,'6987654321','Do not silently truncate an overlong pasted number');
-const proof = {...valid, orderId:'old', serverOrder:{id:'old'}, paymentStatus:'verified', utrNumber:'412345678912', screenshotFile:{}, screenshotPreview:'blob:old', checkoutKey:'old-key'};
+const proof = {...valid, orderId:'old', serverOrder:{id:'old'}, paymentStatus:'verified', screenshotFile:{}, screenshotPreview:'blob:old', checkoutKey:'old-key'};
 for (const action of [{type:'SET_PRODUCT',payload:'supari'}, {type:'SET_PACK_SIZE',payload:'1kg'}, {type:'SET_QUANTITY',payload:3}, {type:'SET_FIELD',payload:{field:'address',value:'Another address'}}]) {
   const next = reducer(proof, action);
   assert.equal(next.orderId, ''); assert.equal(next.serverOrder, null); assert.equal(next.paymentStatus, null);
-  assert.equal(next.utrNumber, ''); assert.equal(next.screenshotFile, null); assert.equal(next.screenshotPreview, ''); assert.equal(next.checkoutKey, '');
+  assert.equal(next.screenshotFile, null); assert.equal(next.screenshotPreview, ''); assert.equal(next.checkoutKey, '');
 }
 assert.equal(reducer(valid,{type:'SET_QUANTITY',payload:99}).quantity,20);
 assert.equal(reducer(valid,{type:'SET_QUANTITY',payload:NaN}).quantity,2);
 const saved = restoreDraft(JSON.stringify(proof));
-assert.equal(saved.serverOrder,null); assert.equal(saved.paymentStatus,null); assert.equal(saved.utrNumber,'');
+assert.equal(saved.serverOrder,null); assert.equal(saved.paymentStatus,null);
 assert.equal(saved.checkoutKey,'old-key'); assert.equal(saved.orderId,'old');
 assert.equal(restoreDraft('{').product,'faki');
 assert.equal(restoreDraft(JSON.stringify({product:'invalid',quantity:'bad',fullName:5})).product,'faki');
 assert.equal(buildSummary(initialState).total,null);
 assert.equal(api.formatINR(0),'₹0'); assert.equal(api.formatINR(null),'Awaiting price');
-assert.equal(paymentsApi.validateUtr('412345678912'),null);
-assert.ok(paymentsApi.validateUtr('123'));
 assert.ok(paymentsApi.validateScreenshot(null));
 assert.ok(paymentsApi.validateScreenshot({type:'image/svg+xml',size:5}));
 assert.ok(paymentsApi.validateScreenshot({type:'image/png',size:0}));
 assert.ok(paymentsApi.validateScreenshot({type:'image/png',size:6*1024*1024}));
 assert.equal(paymentsApi.validateScreenshot({type:'image/png',size:128}),null);
-assert.equal(paymentsApi.maskUtr('412345678912'),'4XXXXXXXX912');
+assert.equal(paymentsApi.validateUtr, undefined, 'the customer no longer enters a UTR');
 for (const status of ['pending_payment','verifying_payment']) assert.equal(paymentsApi.isPaymentConfirmed({status:'verified',orderStatus:status}),false);
 assert.equal(paymentsApi.isPaymentConfirmed({status:'verified',orderStatus:'active'}),true);
 assert.equal(paymentsApi.isPaymentConfirmed({status:'verifying',orderStatus:'active'}),false);
@@ -148,8 +145,6 @@ assert.throws(() => contracts.readProducts([{...catalogProduct,information:{ingr
 assert.throws(() => contracts.readPaymentStatus({orderId:'other',orderNumber:'BFP',status:'verified',orderStatus:'active'},'mine'));
 const order = {id:'UI-PREVIEW-NO-ORDER',orderNumber:'#UI-PREVIEW', product:'faki',productName:'Faki',packSize:'500g',quantity:2,subtotal:100,deliveryFee:0,total:100,customerName:'UI preview',phone:'9999999999',address:'Design preview only',pinCode:'360005',status:'pending_payment',paymentStatus:'pending',createdAt:'2026-10-17T00:00:00Z',updatedAt:'2026-10-17T00:00:00Z',payment:{amount:100,payeeName:'Design preview — do not pay',upiId:'Not issued'}};
 assert.equal(contracts.readOrder(order).id,order.id);
-assert.throws(() => contracts.readOrder({...order,utrNumber:{bad:true}}));
-assert.throws(() => contracts.readPaymentStatus({orderId:'mine',orderNumber:'BFP',status:'verified',orderStatus:'active',utrMasked:{}},'mine'));
 assert.throws(() => contracts.readTracking({events:[{label:'Packed'}]}));
 assert.throws(() => contracts.readQuote({subtotal:100.001,deliveryFee:0,total:100.001,currency:'INR'}));
 assert.throws(() => contracts.readOrder({...order,payment:{...order.payment,amount:999}}));
@@ -165,9 +160,10 @@ assert.equal(request.options.headers.get('Idempotency-Key'),'persisted-key');
 assert.equal(request.url,'https://example.test/api/orders');
 assert.ok(!('total' in JSON.parse(request.options.body)), 'Client must not submit trusted payable totals');
 fakeFetch=async (url,options) => {request={url,options};return new Response(JSON.stringify({paymentStatus:'verifying',message:'Received'}),{status:200});};
-await paymentsApi.submitPayment(order.id,{utrNumber:'412345678912',screenshot:new File(['image'],'proof.png',{type:'image/png'})});
+await paymentsApi.submitPayment(order.id,{screenshot:new File(['image'],'proof.png',{type:'image/png'})});
 assert.equal(request.options.headers.get('Content-Type'),null,'Browser sets multipart boundary');
-assert.equal(request.options.body.get('utr'),'412345678912');
+assert.equal(request.options.body.get('utr'),null,'no UTR is sent: the screenshot is the only evidence');
+assert.ok(request.options.body.get('screenshot'));
 fakeFetch=async () => new Response(JSON.stringify({detail:[{msg:'PIN not served'}]}),{status:422});
 await assert.rejects(api.apiFetch('/test'),/PIN not served/);
 fakeFetch=async () => {throw new TypeError('network')};
@@ -185,7 +181,7 @@ if (process.argv.includes('--fixtures')) {
     ['order','orders/pages/OrderFormPage.tsx',{...initialState,packSize:'500g',quantity:2}],
     ['review','orders/pages/ReviewOrderPage.tsx',valid],
     ['payment','payments/pages/QRPaymentPage.tsx',{...valid,serverOrder:order,orderId:order.id,orderNumber:order.orderNumber,paymentStatus:'pending'}],
-    ['verification','payments/pages/PaymentVerificationPage.tsx',{...valid,serverOrder:order,orderId:order.id,orderNumber:order.orderNumber,paymentStatus:'verifying',utrNumber:'412345678912'}],
+    ['verification','payments/pages/PaymentVerificationPage.tsx',{...valid,serverOrder:order,orderId:order.id,orderNumber:order.orderNumber,paymentStatus:'verifying'}],
   ]) {
     const mockContext={...context,useOrder:()=>state,useOrderDispatch:()=>()=>{}};
     const component=load(`src/features/${path}`,{

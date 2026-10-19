@@ -59,7 +59,6 @@ class OrderResponseSchema(CamelModel):
     pin_code: str = Field(alias="pinCode")
     status: str
     payment_status: str = Field(alias="paymentStatus")
-    utr_number: Optional[str] = Field(default=None, alias="utrNumber")
     created_at: str = Field(alias="createdAt")
     updated_at: str = Field(alias="updatedAt")
     payment: Optional[PaymentInstructionsSchema] = None
@@ -71,7 +70,6 @@ class PaymentSubmissionResponseSchema(CamelModel):
     order_number: str = Field(alias="orderNumber")
     payment_status: str = Field(alias="paymentStatus")
     order_status: str = Field(alias="orderStatus")
-    utr_masked: str = Field(alias="utrMasked")
     submitted_at: str = Field(alias="submittedAt")
     message: str
 
@@ -82,18 +80,11 @@ class PaymentStatusResponseSchema(CamelModel):
     status: str
     order_status: str = Field(alias="orderStatus")
     message: Optional[str] = None
-    utr_masked: Optional[str] = Field(default=None, alias="utrMasked")
 
 
 class ApprovePaymentRequestSchema(CamelModel):
-    receiving_bank_account: str = Field(alias="receivingBankAccount", min_length=4, max_length=128)
-    verified_amount: float = Field(alias="verifiedAmount", gt=0)
-    verified_utr: str = Field(alias="verifiedUtr", min_length=12, max_length=12)
-    transaction_status: str = Field(alias="transactionStatus")
-    bank_credit_reference: str = Field(alias="bankCreditReference", min_length=4, max_length=128)
-    evidence_kind: Literal["BANK_STATEMENT", "LOCAL_TEST"] = Field(default="BANK_STATEMENT", alias="evidenceKind")
-    bank_statement_checked: bool = Field(default=False, alias="bankStatementChecked")
-    notes: Optional[str] = None
+    # The customer's screenshot is the only evidence; the owner just approves it (optionally with a note).
+    notes: Optional[str] = Field(default=None, max_length=500)
 
 
 class ReviewPaymentRequestSchema(CamelModel):

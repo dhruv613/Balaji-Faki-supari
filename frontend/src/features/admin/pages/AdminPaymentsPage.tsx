@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import Notice from '../../../components/common/Notice';
 import { env } from '../../../lib/env';
-import { formatINR, getErrorMessage } from '../../../lib/api';
+import { formatINR, getErrorMessage, resolveApiUrl } from '../../../lib/api';
 import {
   getAdminPayments,
   getAdminPaymentProof,
@@ -10,15 +10,8 @@ import {
   approveAdminPayment,
   rejectAdminPayment,
 } from '../api';
-import type {
-  AdminPaymentSubmission,
-  AdminPaymentStatus,
-  ApprovePaymentRequest,
-} from '../types';
-import {
-  PAYMENT_STATUS_LABELS,
-  validatePaymentApproval,
-} from '../lib/orderStateMachine';
+import type { AdminPaymentSubmission, AdminPaymentStatus } from '../types';
+import { PAYMENT_STATUS_LABELS } from '../lib/orderStateMachine';
 import {
   StatCard,
   StatusBadge,
@@ -52,14 +45,6 @@ export default function AdminPaymentsPage() {
   );
   const [selectedPayment, setSelectedPayment] = useState<AdminPaymentSubmission | null>(null);
 
-  // Bank credit verification form state
-  const [receivingBankAccount, setReceivingBankAccount] = useState('');
-  const [evidenceKind, setEvidenceKind] = useState<'BANK_STATEMENT' | 'LOCAL_TEST'>('BANK_STATEMENT');
-  const [statementChecked, setStatementChecked] = useState(false);
-  const [verifiedAmountInput, setVerifiedAmountInput] = useState('');
-  const [verifiedUtrInput, setVerifiedUtrInput] = useState('');
-  const [bankCreditRefInput, setBankCreditRefInput] = useState('');
-  const [transactionStatus, setTransactionStatus] = useState<'CREDITED' | 'MISMATCH'>('CREDITED');
   const [verificationNotes, setVerificationNotes] = useState('');
   const [rejectionReason, setRejectionReason] = useState('');
   const [validationError, setValidationError] = useState('');
@@ -103,13 +88,6 @@ export default function AdminPaymentsPage() {
 
   function openPaymentInspector(payment: AdminPaymentSubmission) {
     setSelectedPayment(payment);
-    setVerifiedUtrInput(payment.submittedUtr);
-    setVerifiedAmountInput(
-      payment.expectedAmount !== null ? String(payment.expectedAmount) : '',
-    );
-    setBankCreditRefInput(payment.bankCredit?.bankCreditReference ?? '');
-    setEvidenceKind('BANK_STATEMENT');
-    setStatementChecked(false);
     setVerificationNotes('');
     setRejectionReason(payment.rejectionReason ?? '');
     setValidationError('');
@@ -130,7 +108,7 @@ export default function AdminPaymentsPage() {
     if (statusFilter !== 'ALL' && p.paymentStatus !== statusFilter) return false;
     const q = query.trim().toLowerCase();
     if (!q) return true;
-    return `${p.orderNumber} ${p.customerName} ${p.submittedUtr} ${p.bankCredit?.bankCreditReference ?? ''}`
+    return `${p.orderNumber} ${p.customerName}`
       .toLowerCase()
       .includes(q);
   });
@@ -147,90 +125,26 @@ export default function AdminPaymentsPage() {
       setValidationError(
         'Integration Pending: Payment backend (POST /api/admin/payments/{id}/approve) is not connected. Simulated payment approvals are strictly disabled for financial security.',
       );
-      showToast(
-        'Payment approval blocked: FastAPI backend is not connected.',
-        'warning',
-      );
+      showToast('Payment approval blocked: FastAPI backend is not connected.', 'warning');
       return;
     }
-
-    const parsedAmount = Number(verifiedAmountInput);
-    const existingVerifiedUtrs = payments
-      .filter((p) => p.id !== selectedPayment.id && p.paymentStatus === 'VERIFIED')
-      .map((p) => p.submittedUtr);
-    const existingBankRefs = payments
-      .filter((p) => p.id !== selectedPayment.id && p.bankCredit?.bankCreditReference)
-      .map((p) => p.bankCredit!.bankCreditReference);
-
-    const approvalPayload: ApprovePaymentRequest = {
-      receivingBankAccount: receivingBankAccount.trim(),
-      verifiedAmount: parsedAmount,
-      verifiedUtr: verifiedUtrInput.trim(),
-      transactionStatus: transactionStatus === 'CREDITED' ? 'CREDITED' : ('MISMATCH' as 'CREDITED'),
-      bankCreditReference: bankCreditRefInput.trim(),
-      evidenceKind,
-      bankStatementChecked: evidenceKind === 'BANK_STATEMENT' ? statementChecked : undefined,
-      notes: verificationNotes.trim() || undefined,
-    };
-
-    if (evidenceKind === 'BANK_STATEMENT' && !statementChecked) {
-      setValidationError('Confirm that you found this credit on the actual bank statement. A screenshot or a typed reference is not proof of settlement.');
-      return;
-    }
-    if (evidenceKind === 'LOCAL_TEST' && !approvalPayload.bankCreditReference.toUpperCase().startsWith('TEST-')) {
-      setValidationError('LOCAL TEST evidence must use a reference that starts with TEST-.');
-      return;
-    }
-
-    const validation = validatePaymentApproval({
-      currentPaymentStatus: selectedPayment.paymentStatus,
-      expectedAmount: selectedPayment.expectedAmount,
-      submittedUtr: selectedPayment.submittedUtr,
-      approvalInput: approvalPayload,
-      existingVerifiedUtrs,
-      existingBankCreditRefs: existingBankRefs,
-    });
-
-    if (!validation.allowed) {
-      setValidationError(validation.reason ?? 'Payment verification validation failed.');
+    if (!selectedPayment.signedScreenshotUrl) {
+      setValidationError('The customer screenshot has not loaded. Check it before approving.');
       return;
     }
 
     setBusy(true);
     try {
-      const updated = await approveAdminPayment(selectedPayment.id, approvalPayload);
+      const notes = verificationNotes.trim() || undefined;
+      // The server tracks SUBMITTED -> UNDER_REVIEW -> VERIFIED; the owner only sees "approve".
+      const reviewed =
+        selectedPayment.paymentStatus === 'SUBMITTED'
+          ? await startAdminPaymentReview(selectedPayment.id, { notes })
+          : selectedPayment;
+      const updated = await approveAdminPayment(reviewed.id, { notes });
       setPayments((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
       setSelectedPayment(updated);
-      showToast(
-        `Payment for ${updated.orderNumber} verified. Order moved to AWAITING_CONFIRMATION.`,
-        'success',
-      );
-    } catch (err) {
-      setValidationError(getErrorMessage(err));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handleStartPaymentReview() {
-    if (!selectedPayment) return;
-    setValidationError('');
-    if (!env.apiBaseUrl) {
-      setValidationError('Integration Pending: FastAPI must start the independent payment review.');
-      return;
-    }
-    if (selectedPayment.paymentStatus !== 'SUBMITTED') {
-      setValidationError('Only a submitted proof can enter bank-credit review.');
-      return;
-    }
-    setBusy(true);
-    try {
-      const updated = await startAdminPaymentReview(selectedPayment.id, {
-        notes: verificationNotes.trim() || undefined,
-      });
-      setPayments((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
-      setSelectedPayment(updated);
-      showToast(`Bank-credit review started for ${updated.orderNumber}.`, 'info');
+      showToast(`Payment for ${updated.orderNumber} approved. Order moved to AWAITING_CONFIRMATION.`, 'success');
     } catch (err) {
       setValidationError(getErrorMessage(err));
     } finally {
@@ -282,16 +196,16 @@ export default function AdminPaymentsPage() {
     <div className="wrapper">
       <div className="admin-heading">
         <div>
-          <h1 className="page__header">Manual Payment Verification</h1>
+          <h1 className="page__header">Payment Screenshots</h1>
           <p className="page__subtitle">
-            Independently verify UPI bank credits before approving customer payment proofs.
+            Look at the screenshot the customer uploaded, then approve or reject the payment.
           </p>
         </div>
       </div>
 
       {/* Mandatory Security Policy Banner */}
-      <Notice tone="warning" title="Strict Financial Verification Policy">
-        <strong>A screenshot or UTR alone is NOT evidence of successful payment.</strong> An Owner Admin must independently verify the actual bank credit in the official merchant bank statement and match Receiving Bank Account, Exact Amount, 12-digit UTR, and Bank Credit Reference. Approving payment sets <code>Payment = VERIFIED</code> and <code>Order = AWAITING_CONFIRMATION</code> (never directly to packing or shipping).
+      <Notice tone="warning" title="Check the screenshot carefully">
+        The customer's uploaded screenshot is the only evidence of payment: check the amount, the receiver and that it shows a successful payment. Approving sets <code>Payment = VERIFIED</code> and <code>Order = AWAITING_CONFIRMATION</code> (never directly to packing or shipping).
       </Notice>
 
       {!isLive && (
@@ -307,15 +221,15 @@ export default function AdminPaymentsPage() {
           value={isLive ? (
             payments.filter((p) => ['SUBMITTED', 'UNDER_REVIEW'].includes(p.paymentStatus)).length
           ) : 'Unavailable'}
-          subtitle="Requires bank check"
+          subtitle="Screenshot awaiting a decision"
         />
         <StatCard
-          label="Verified Bank Credits"
+          label="Approved Payments"
           value={isLive ? payments.filter((p) => p.paymentStatus === 'VERIFIED').length : 'Unavailable'}
-          subtitle="Matched with bank statement"
+          subtitle="Screenshot approved by the owner"
         />
         <StatCard
-          label="Rejected / Mismatched"
+          label="Rejected"
           value={isLive ? payments.filter((p) => p.paymentStatus === 'REJECTED').length : 'Unavailable'}
         />
         <StatCard
@@ -328,12 +242,12 @@ export default function AdminPaymentsPage() {
       {/* Filters */}
       <div className="card card--tinted customer-filters">
         <div style={{ flex: '2 1 280px' }}>
-          <label htmlFor="payment-search">Search Order Number, UTR, Customer, or Bank Ref</label>
+          <label htmlFor="payment-search">Search Order Number or Customer</label>
           <input
             id="payment-search"
             type="search"
             className="input"
-            placeholder="Order number, 12-digit UTR, or bank reference"
+            placeholder="Order number or customer name"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
@@ -364,10 +278,8 @@ export default function AdminPaymentsPage() {
                   <th scope="col">Order Number</th>
                   <th scope="col">Customer</th>
                   <th scope="col">Expected Amount</th>
-                  <th scope="col">Submitted UTR</th>
                   <th scope="col">Screenshot Proof</th>
                   <th scope="col">Submission Date</th>
-                  <th scope="col">Bank Credit Ref</th>
                   <th scope="col">Payment Status</th>
                   <th scope="col">Action</th>
                 </tr>
@@ -384,18 +296,10 @@ export default function AdminPaymentsPage() {
                       <p className="text-small text-secondary">{payment.customerPhone}</p>
                     </td>
                     <td><strong>{formatINR(payment.expectedAmount)}</strong></td>
-                    <td><code>{payment.submittedUtr}</code></td>
                     <td>
                       <span className="badge badge--outline">Private Bucket</span>
                     </td>
                     <td className="text-small">{payment.submissionDate}</td>
-                    <td className="text-small">
-                      {payment.bankCredit?.bankCreditReference ? (
-                        <code>{payment.bankCredit.bankCreditReference}</code>
-                      ) : (
-                        <span className="text-secondary">Unverified</span>
-                      )}
-                    </td>
                     <td><StatusBadge status={payment.paymentStatus} kind="payment" /></td>
                     <td>
                       <button
@@ -403,14 +307,14 @@ export default function AdminPaymentsPage() {
                         className="btn btn--primary btn--sm"
                         onClick={() => openPaymentInspector(payment)}
                       >
-                        {payment.paymentStatus === 'VERIFIED' ? 'View Audit' : 'Verify Credit'}
+                        {['SUBMITTED', 'UNDER_REVIEW'].includes(payment.paymentStatus) ? 'Check Screenshot' : 'View'}
                       </button>
                     </td>
                   </tr>
                 ))}
                 {filteredPayments.length === 0 && (
                   <tr>
-                    <td colSpan={9} className="text-secondary">
+                    <td colSpan={7} className="text-secondary">
                       No payment submissions match these filters.
                     </td>
                   </tr>
@@ -426,8 +330,8 @@ export default function AdminPaymentsPage() {
         open={selectedPayment !== null}
         title={
           selectedPayment
-            ? `Verify Payment — ${selectedPayment.orderNumber}`
-            : 'Payment Verification'
+            ? `Payment — ${selectedPayment.orderNumber}`
+            : 'Payment'
         }
         subtitle={
           selectedPayment
@@ -439,7 +343,7 @@ export default function AdminPaymentsPage() {
         {selectedPayment && (
           <div>
             {validationError && (
-              <Notice tone="error" title="Verification Check Blocked">
+              <Notice tone="error" title="Action blocked">
                 {validationError}
               </Notice>
             )}
@@ -452,10 +356,6 @@ export default function AdminPaymentsPage() {
               <div className="admin-kv-item">
                 <dt>Expected Order Amount</dt>
                 <dd>{formatINR(selectedPayment.expectedAmount)}</dd>
-              </div>
-              <div className="admin-kv-item">
-                <dt>Customer-Submitted UTR</dt>
-                <dd><code>{selectedPayment.submittedUtr}</code></dd>
               </div>
               <div className="admin-kv-item">
                 <dt>Current Payment Status</dt>
@@ -473,161 +373,51 @@ export default function AdminPaymentsPage() {
 
             {/* Private Screenshot Section */}
             <h3 style={{ fontSize: 18, marginBottom: 8 }}>
-              Customer Payment Screenshot (Private Storage)
+              Customer Payment Screenshot
             </h3>
             <div style={{ marginBottom: 20 }}>
               <ImagePreview
-                src={selectedPayment.signedScreenshotUrl}
+                src={selectedPayment.signedScreenshotUrl ? resolveApiUrl(selectedPayment.signedScreenshotUrl) : undefined}
                 alt={`Payment screenshot for ${selectedPayment.orderNumber}`}
                 privateStoragePath={selectedPayment.privateScreenshotPath}
-                caption="Reminder: A screenshot alone is NOT proof of payment. Always check your bank statement."
+                caption="Check the amount, the receiver and that the payment succeeded."
               />
             </div>
 
-            {/* Independent Bank Credit Matching Form */}
-            <section
-              className="card card--tinted"
-              style={{ marginBottom: 20 }}
-              aria-labelledby="bank-credit-form-heading"
-            >
-              <h3 id="bank-credit-form-heading" style={{ fontSize: 18, marginBottom: 6 }}>
-                Check Matching Bank Credit
+            {/* Approve the screenshot */}
+            <section className="card card--tinted" style={{ marginBottom: 20 }} aria-labelledby="approve-heading">
+              <h3 id="approve-heading" style={{ fontSize: 18, marginBottom: 6 }}>
+                Approve Payment
               </h3>
-              <p className="text-small text-secondary" style={{ marginBottom: 14 }}>
-                Record the actual bank statement details to verify settlement. Duplicate UTRs and duplicate bank credit references are rejected by FastAPI.
-              </p>
-
-              <div className="form-row">
-                <div>
-                  <label htmlFor="verify-bank-account">Receiving Bank Account</label>
-                  <input
-                    id="verify-bank-account"
-                    className="input"
-                    value={receivingBankAccount}
-                    onChange={(e) => setReceivingBankAccount(e.target.value)}
-                    disabled={selectedPayment.paymentStatus !== 'UNDER_REVIEW' || busy}
-                  />
-                </div>
-                <div>
-                  <label htmlFor="verify-tx-status">Bank Transaction Status</label>
-                  <select
-                    id="verify-tx-status"
-                    className="input"
-                    value={transactionStatus}
-                    onChange={(e) =>
-                      setTransactionStatus(e.target.value as 'CREDITED' | 'MISMATCH')
-                    }
-                    disabled={selectedPayment.paymentStatus !== 'UNDER_REVIEW' || busy}
+              {['SUBMITTED', 'UNDER_REVIEW'].includes(selectedPayment.paymentStatus) ? (
+                <>
+                  <div style={{ marginBottom: 14 }}>
+                    <label htmlFor="verify-notes">Note (Optional)</label>
+                    <input
+                      id="verify-notes"
+                      className="input"
+                      placeholder="Optional audit note…"
+                      value={verificationNotes}
+                      onChange={(e) => setVerificationNotes(e.target.value)}
+                      disabled={busy}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn--primary btn--full"
+                    disabled={busy}
+                    onClick={handleApprovePayment}
                   >
-                    <option value="CREDITED">CREDITED (Settled in bank)</option>
-                    <option value="MISMATCH">MISMATCH / NOT FOUND</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="form-row">
-                <div>
-                  <label htmlFor="verify-utr">Verified 12-Digit Bank UTR</label>
-                  <input
-                    id="verify-utr"
-                    className="input"
-                    maxLength={12}
-                    placeholder="12-digit UTR from bank statement"
-                    value={verifiedUtrInput}
-                    onChange={(e) => setVerifiedUtrInput(e.target.value.replace(/\D/g, ''))}
-                    disabled={selectedPayment.paymentStatus !== 'UNDER_REVIEW' || busy}
-                  />
-                </div>
-                <div>
-                  <label htmlFor="verify-amount">Verified Bank Credit Amount (₹)</label>
-                  <input
-                    id="verify-amount"
-                    type="number"
-                    step="0.01"
-                    className="input"
-                    placeholder="Exact amount credited"
-                    value={verifiedAmountInput}
-                    onChange={(e) => setVerifiedAmountInput(e.target.value)}
-                    disabled={selectedPayment.paymentStatus !== 'UNDER_REVIEW' || busy}
-                  />
-                </div>
-              </div>
-
-              <fieldset style={{ marginBottom: 14 }} disabled={selectedPayment.paymentStatus !== 'UNDER_REVIEW' || busy}>
-                <legend>Evidence of settlement</legend>
-                <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontWeight: 400 }}>
-                  <input type="radio" name="evidence-kind" checked={evidenceKind === 'BANK_STATEMENT'} onChange={() => setEvidenceKind('BANK_STATEMENT')} />
-                  <span>Real bank statement. The credit appears in the receiving account.</span>
-                </label>
-                {!env.isProd && (
-                  <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontWeight: 400 }}>
-                    <input type="radio" name="evidence-kind" checked={evidenceKind === 'LOCAL_TEST'} onChange={() => setEvidenceKind('LOCAL_TEST')} />
-                    <span>LOCAL TEST evidence (development only, reference must start with TEST-). No real payment exists.</span>
-                  </label>
-                )}
-                {evidenceKind === 'BANK_STATEMENT' ? (
-                  <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontWeight: 600, marginTop: 8 }}>
-                    <input type="checkbox" checked={statementChecked} onChange={(e) => setStatementChecked(e.target.checked)} />
-                    <span>I found this credit on the actual bank statement. I am not relying on the customer screenshot or a typed reference alone.</span>
-                  </label>
-                ) : (
-                  <Notice tone="warning" title="TEST evidence">This approval is recorded as LOCAL TEST evidence and is rejected by the server outside local development.</Notice>
-                )}
-              </fieldset>
-
-              <div style={{ marginBottom: 14 }}>
-                <label htmlFor="verify-bank-ref">Bank Credit Reference / Statement Entry ID</label>
-                <input
-                  id="verify-bank-ref"
-                  className="input"
-                  placeholder={evidenceKind === 'LOCAL_TEST' ? 'TEST-CR-0001' : 'Reference shown on the bank statement'}
-                  value={bankCreditRefInput}
-                  onChange={(e) => setBankCreditRefInput(e.target.value)}
-                  disabled={selectedPayment.paymentStatus !== 'UNDER_REVIEW' || busy}
-                />
-              </div>
-
-              <div style={{ marginBottom: 14 }}>
-                <label htmlFor="verify-notes">Admin Verification Notes (Optional)</label>
-                <input
-                  id="verify-notes"
-                  className="input"
-                  placeholder="Optional audit note…"
-                  value={verificationNotes}
-                  onChange={(e) => setVerificationNotes(e.target.value)}
-                  disabled={selectedPayment.paymentStatus !== 'UNDER_REVIEW' || busy}
-                />
-              </div>
-
-              {selectedPayment.paymentStatus === 'SUBMITTED' ? (
-                <button
-                  type="button"
-                  className="btn btn--primary btn--full"
-                  disabled={busy}
-                  onClick={handleStartPaymentReview}
-                >
-                  {busy ? 'Starting review via FastAPI…' : 'Start Independent Bank Review'}
-                </button>
-              ) : selectedPayment.paymentStatus === 'UNDER_REVIEW' ? (
-                <button
-                  type="button"
-                  className="btn btn--primary btn--full"
-                  disabled={busy}
-                  onClick={handleApprovePayment}
-                >
-                  {busy
-                    ? 'Verifying with FastAPI…'
-                    : 'Approve Payment (Sets Order → Awaiting Confirmation)'}
-                </button>
+                    {busy ? 'Approving…' : 'Approve Payment (Order → Awaiting Confirmation)'}
+                  </button>
+                </>
               ) : selectedPayment.paymentStatus === 'VERIFIED' ? (
-                <Notice tone="success" title="Payment Verified">
-                  Verified by {selectedPayment.bankCredit?.verifiedByAdmin ?? 'Owner Admin'} on{' '}
-                  {selectedPayment.bankCredit?.verifiedAt}. Bank Credit Ref:{' '}
-                  <code>{selectedPayment.bankCredit?.bankCreditReference}</code>.
+                <Notice tone="success" title="Payment approved">
+                  The screenshot was approved on {selectedPayment.verificationHistory.find((item) => item.action === 'APPROVED')?.timestamp ?? 'record'}.
                 </Notice>
               ) : (
                 <Notice tone="warning" title="Payment action unavailable">
-                  This payment is no longer eligible for bank-credit approval.
+                  This payment is no longer waiting for a decision.
                 </Notice>
               )}
             </section>
@@ -642,7 +432,7 @@ export default function AdminPaymentsPage() {
                 <textarea
                   id="reject-reason"
                   className="input"
-                  placeholder="e.g. UTR 428910349912 not found in Axis Bank statement, or screenshot is unreadable…"
+                  placeholder="e.g. screenshot is unreadable, or the amount does not match the order…"
                   value={rejectionReason}
                   onChange={(e) => setRejectionReason(e.target.value)}
                   disabled={busy}

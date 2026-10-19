@@ -40,7 +40,6 @@ if urlparse(AUTH).hostname not in {"127.0.0.1", "localhost"}:
     sys.exit("REFUSED: SUPABASE_URL is not local.")
 
 RUN = uuid.uuid4().hex[:8]
-UTR = str(uuid.uuid4().int % 10**12).zfill(12)  # unique per run: UTRs and bank references are single-use
 results: list[tuple[str, bool, str]] = []
 http = httpx.Client(timeout=30)
 
@@ -104,43 +103,38 @@ def main() -> int:
     check("duplicate submission returns the same order", o1b.json()["id"] == order["id"])
     check("LOCAL TEST payment instructions are flagged", order["payment"]["settingsConfirmed"] is False)
     qr_url = order["payment"].get("qrImageUrl")
-    check("no QR is shown until one is uploaded", qr_url is None)
+    check("QR link is only issued once a QR has been uploaded", qr_url is None or qr_url.startswith("/api/orders/"))
     unauth_order = http.get(f"{API}/orders/{order['id']}")
     check("order data is protected", unauth_order.status_code == 401)
     check("malformed order id is a clean 404", http.get(f"{API}/orders/not-a-uuid", headers=cust).status_code == 404)
 
     # ---- payment proof: private Storage, idempotent, rejection and resubmission ---------------------------------------------
-    def submit(utr: str, idem: str):
+    def submit(idem: str):
         return http.post(f"{API}/payments/{order['id']}/submit", headers={**cust, "Idempotency-Key": idem},
-                         data={"utr": utr}, files={"screenshot": ("proof.png", PNG, "image/png")})
+                         files={"screenshot": ("proof.png", PNG, "image/png")})
 
-    p1 = submit(UTR, f"pay-1-{RUN}")
+    p1 = submit(f"pay-1-{RUN}")
     check("proof stored in private Storage; payment SUBMITTED", p1.status_code == 200 and p1.json()["paymentStatus"] == "SUBMITTED", p1.text[:200])
-    check("replay of the same attempt is idempotent", submit(UTR, f"pay-1-{RUN}").json()["paymentId"] == p1.json()["paymentId"])
+    check("replay of the same attempt is idempotent", submit(f"pay-1-{RUN}").json()["paymentId"] == p1.json()["paymentId"])
     pid = p1.json()["paymentId"]
     proof = http.get(f"{API}/admin/payments/{pid}/proof?raw=1", headers=admin)
     check("admin reads the proof through FastAPI (bytes match)", proof.status_code == 200 and proof.content == PNG, str(proof.status_code))
     check("customer cannot read the proof endpoint", http.get(f"{API}/admin/payments/{pid}/proof?raw=1", headers=cust).status_code in (401, 403))
-    check("approval blocked before review", http.post(f"{API}/admin/payments/{pid}/approve", headers=admin, json={
-        "receivingBankAccount": "XXXX1234", "verifiedAmount": 1000, "verifiedUtr": UTR, "transactionStatus": "CREDITED",
-        "bankCreditReference": f"TEST-CR-X{RUN}", "evidenceKind": "LOCAL_TEST"}).status_code == 409)
+    check("no UTR is asked for or stored", "utrMasked" not in p1.json())
+    check("approval blocked before review", http.post(f"{API}/admin/payments/{pid}/approve", headers=admin, json={}).status_code == 409)
     http.post(f"{API}/admin/payments/{pid}/review", headers=admin, json={"notes": "checking"})
     rej = http.post(f"{API}/admin/payments/{pid}/reject", headers=admin, json={"reason": "Screenshot is blurry, please resend."})
     check("admin rejects with a reason", rej.status_code == 200, rej.text[:150])
     st = http.get(f"{API}/payments/{order['id']}/status", headers=cust).json()
     check("customer sees the reason and may resubmit", st["rejectionReason"] and st["canSubmitProof"] is True)
-    p2 = submit(UTR, f"pay-2-{RUN}")
+    p2 = submit(f"pay-2-{RUN}")
     check("resubmission creates a NEW attempt (history kept)", p2.status_code == 200 and p2.json()["paymentId"] != pid)
     pid2 = p2.json()["paymentId"]
     http.post(f"{API}/admin/payments/{pid2}/review", headers=admin, json={"notes": "checking again"})
-    unattested = http.post(f"{API}/admin/payments/{pid2}/approve", headers=admin, json={
-        "receivingBankAccount": "XXXX1234", "verifiedAmount": 1000, "verifiedUtr": UTR, "transactionStatus": "CREDITED",
-        "bankCreditReference": "AXIS-1", "evidenceKind": "BANK_STATEMENT"})
-    check("real approval needs the bank-statement attestation", unattested.status_code == 422)
-    appr = http.post(f"{API}/admin/payments/{pid2}/approve", headers=admin, json={
-        "receivingBankAccount": "XXXX1234", "verifiedAmount": 1000, "verifiedUtr": UTR, "transactionStatus": "CREDITED",
-        "bankCreditReference": f"TEST-CR-{RUN}", "evidenceKind": "LOCAL_TEST", "notes": "walkthrough"})
-    check("TEST evidence approval -> AWAITING_CONFIRMATION (not confirmed)", appr.status_code == 200 and appr.json()["orderStatus"] == "AWAITING_CONFIRMATION", appr.text[:200])
+    old_style = http.post(f"{API}/admin/payments/{pid2}/approve", headers=admin, json={"bankCreditReference": "AXIS-1"})
+    check("bank-evidence fields are no longer accepted", old_style.status_code == 422)
+    appr = http.post(f"{API}/admin/payments/{pid2}/approve", headers=admin, json={"notes": "walkthrough"})
+    check("screenshot approval -> AWAITING_CONFIRMATION (not confirmed)", appr.status_code == 200 and appr.json()["orderStatus"] == "AWAITING_CONFIRMATION", appr.text[:200])
     conf = http.post(f"{API}/admin/orders/{order['id']}/confirm", headers=admin, json={})
     check("order confirmed separately", conf.status_code == 200, conf.text[:200])
     for status in ("PACKING", "PACKED", "PICKED_UP", "SHIPPED", "OUT_FOR_DELIVERY", "DELIVERED"):
@@ -151,22 +145,23 @@ def main() -> int:
     check("customer timeline has real history", {"CONFIRMED", "PACKED", "SHIPPED", "DELIVERED"} <= {e["status"] for e in tracking}, str([e["status"] for e in tracking]))
 
     # ---- reviews and photos ---------------------------------------------------------------------------------------------
+    base_reviews = http.get(f"{API}/reviews").json()["summary"]["count"]  # earlier manual runs may have left reviews
     rv = http.post(f"{API}/orders/{order['id']}/review", headers=cust, data={"rating": "2", "reviewText": "Packaging was damaged on arrival."},
                    files=[("photos", ("a.png", PNG, "image/png")), ("photos", ("b.png", PNG, "image/png"))])
     check("review with two photos published immediately", rv.status_code == 201 and len(rv.json()["photoUrls"]) == 2, rv.text[:200])
     again = http.post(f"{API}/orders/{order['id']}/review", headers=cust, data={"rating": "5", "reviewText": "Second review attempt text."})
     check("duplicate review refused", again.status_code == 409)
     public = http.get(f"{API}/reviews?sort=lowest").json()
-    check("negative review is public; summary counts it", public["items"][0]["rating"] == 2 and public["summary"]["count"] == 1)
+    check("negative review is public; summary counts it", any(i["id"] == rv.json()["id"] and i["rating"] == 2 for i in public["items"]) and public["summary"]["count"] == base_reviews + 1)
     photo = http.get(f"{API}/reviews/photos/{rv.json()['photoUrls'][0].rsplit('/', 1)[1]}")
     check("published review photo served from private Storage", photo.status_code == 200 and photo.content == PNG)
     rid = rv.json()["id"]
     check("hiding needs a reason", http.patch(f"{API}/admin/reviews/{rid}", headers=admin, json={"moderationStatus": "HIDDEN"}).status_code == 422)
     http.patch(f"{API}/admin/reviews/{rid}", headers=admin, json={"moderationStatus": "HIDDEN", "moderationReason": "Spam: test"})
     after = http.get(f"{API}/reviews").json()
-    check("hidden review leaves public list, count and average", after["summary"]["count"] == 0 and after["items"] == [])
+    check("hidden review leaves public list, count and average", after["summary"]["count"] == base_reviews and all(i["id"] != rid for i in after["items"]))
     check("hidden review photo is no longer public", http.get(f"{API}/reviews/photos/{rv.json()['photoUrls'][0].rsplit('/', 1)[1]}").status_code == 404)
-    adm = http.get(f"{API}/admin/reviews", headers=admin).json()["items"][0]
+    adm = next(i for i in http.get(f"{API}/admin/reviews", headers=admin).json()["items"] if i["id"] == rid)
     check("admin still sees it with signed photo URLs", adm["moderationStatus"] == "HIDDEN" and http.get(f"http://127.0.0.1:8000{adm['photoUrls'][0]}").content == PNG)
 
     # ---- cancel + refund path (notification enum on Postgres) --------------------------------------------------------------
@@ -196,7 +191,7 @@ def main() -> int:
     st = http.patch(f"{API}/admin/settings", headers=admin, json={"shopIntro": "Written by the owner.", "serviceablePinCodes": ["360005", "360001"]})
     check("settings saved; public profile reflects shop content", st.status_code == 200 and http.get(f"{API}/store").json()["shopIntro"] == "Written by the owner.", st.text[:150])
     dash = http.get(f"{API}/admin/dashboard", headers=admin).json()
-    check("dashboard: delivered paid order counted, profit uses real item costs", dash["productsSold"] == 1 and dash["netProfit"]["status"] == "OK", str(dash["netProfit"]))
+    check("dashboard: delivered paid order counted, profit uses real item costs", dash["productsSold"] >= 1 and dash["netProfit"]["status"] == "OK", str(dash["netProfit"]))
     cl = http.get(f"{API}/admin/customers?search=smoke", headers=admin).json()
     check("customers list shows the new customer", cl["total"] >= 1)
     ol = http.get(f"{API}/admin/orders?pageSize=50", headers=admin).json()

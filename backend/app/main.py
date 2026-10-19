@@ -21,9 +21,7 @@ from .core.domain import (
     CANONICAL_ORDER_STATUSES,
     ORDER_STATUS_LABELS,
     PIN_CODE_REGEX,
-    UTR_REGEX,
     inr_to_paise,
-    mask_utr,
     normalize_indian_phone,
     paise_to_inr,
     validate_payment_transition,
@@ -61,7 +59,6 @@ from .core.storage import (
 )
 from .db.models import (
     AdminAuditLog,
-    BankCredit,
     Customer,
     DeliveryEvent,
     InventoryMovement,
@@ -381,7 +378,6 @@ def _serialize_customer_order(db: Session, order: Order, store: StoreSettings) -
         "pinCode": order.shipping_pin_code,
         "status": order.status,
         "paymentStatus": order.payment_status,
-        "utrNumber": latest_attempt.submitted_utr if latest_attempt else None,
         "createdAt": _iso(order.created_at),
         "updatedAt": _iso(order.updated_at),
         "payment": payment_instructions,
@@ -474,40 +470,24 @@ def _serialize_admin_payment(db: Session, payment: PaymentAttempt) -> dict[str, 
             f"{it.product_name} ({it.pack_size}) × {it.quantity}" for it in order.items
         )
 
-    bank_credit_data: dict[str, Any] | None = None
-    if payment.bank_credit is not None:
-        bc = payment.bank_credit
-        verifier = db.get(UserProfile, bc.verified_by)
-        bank_credit_data = {
-            "receivingBankAccount": bc.receiving_bank_account,
-            "verifiedAmount": paise_to_inr(bc.credited_amount_paise) or 0,
-            "verifiedUtr": bc.verified_utr,
-            "transactionStatus": bc.transaction_status,
-            "bankCreditReference": bc.bank_credit_ref,
-            "bankTimestamp": _iso(bc.verified_at),
-            "verifiedByAdmin": verifier.email if verifier else bc.verified_by,
-            "verifiedAt": _iso(bc.verified_at),
-            "evidenceKind": bc.evidence_kind,
-        }
-
     history: list[dict[str, Any]] = [
         {
             "id": f"{payment.id}-submitted",
             "action": "SUBMITTED",
             "actorName": order.shipping_name if order else "Customer",
             "timestamp": _iso(payment.submitted_at),
-            "notes": f"Customer submitted UTR {payment.submitted_utr} with private screenshot proof.",
+            "notes": "Customer uploaded a payment screenshot.",
         }
     ]
-    if payment.status == "VERIFIED" and payment.bank_credit is not None:
+    if payment.status == "VERIFIED":
+        verifier = db.get(UserProfile, payment.verified_by) if payment.verified_by else None
         history.append(
             {
                 "id": f"{payment.id}-approved",
                 "action": "APPROVED",
-                "actorName": bank_credit_data["verifiedByAdmin"] if bank_credit_data else "Owner Admin",
+                "actorName": (verifier.email if verifier else None) or "Owner Admin",
                 "timestamp": _iso(payment.verified_at),
-                "notes": payment.admin_notes
-                or f"Verified bank credit {payment.bank_credit.bank_credit_ref}.",
+                "notes": payment.admin_notes or "Screenshot reviewed and payment approved.",
             }
         )
     elif payment.status == "UNDER_REVIEW":
@@ -517,7 +497,7 @@ def _serialize_admin_payment(db: Session, payment: PaymentAttempt) -> dict[str, 
                 "action": "UNDER_REVIEW",
                 "actorName": "Owner Admin",
                 "timestamp": _iso(payment.updated_at),
-                "notes": payment.admin_notes or "Owner Admin started independent bank-credit review.",
+                "notes": payment.admin_notes or "Owner Admin started reviewing the screenshot.",
             }
         )
     elif payment.status == "REJECTED":
@@ -539,13 +519,11 @@ def _serialize_admin_payment(db: Session, payment: PaymentAttempt) -> dict[str, 
         "customerPhone": order.shipping_phone if order else "",
         "productSummary": items_summary,
         "expectedAmount": paise_to_inr(payment.expected_amount_paise),
-        "submittedUtr": payment.submitted_utr,
         "privateScreenshotPath": payment.screenshot_storage_path,
         "signedScreenshotUrl": _build_signed_proof_url(payment),
         "submissionDate": _iso(payment.submitted_at),
         "paymentStatus": payment.status,
         "orderStatus": order.status if order else "PAYMENT_REVIEW",
-        "bankCredit": bank_credit_data,
         "rejectionReason": payment.rejection_reason,
         "verificationHistory": history,
     }
@@ -596,16 +574,12 @@ def _serialize_admin_order_detail(db: Session, order: Order) -> dict[str, Any]:
         )
 
     latest_attempt = order.payment_attempts[0] if order.payment_attempts else None
-    bc = latest_attempt.bank_credit if latest_attempt else None
     payment_details: dict[str, Any] = {
         "paymentId": latest_attempt.id if latest_attempt else None,
         "status": order.payment_status,
-        "utrNumber": latest_attempt.submitted_utr if latest_attempt else None,
         "submittedAt": _iso(latest_attempt.submitted_at) if latest_attempt else None,
         "verifiedAt": _iso(latest_attempt.verified_at) if latest_attempt and latest_attempt.verified_at else None,
         "verifiedBy": latest_attempt.verified_by if latest_attempt else None,
-        "bankCreditReference": bc.bank_credit_ref if bc else None,
-        "receivingBankAccount": bc.receiving_bank_account if bc else None,
         "rejectionReason": latest_attempt.rejection_reason if latest_attempt else None,
     }
 
@@ -647,7 +621,6 @@ def _serialize_admin_refund(db: Session, refund: Refund) -> dict[str, Any]:
         "cancellationRequestedBy": "ADMIN" if canceller and canceller.role == "OWNER_ADMIN" else "CUSTOMER",
         "refundAmount": paise_to_inr(refund.refund_amount_paise),
         "refundReason": refund.refund_reason,
-        "originalPaymentUtr": refund.original_payment_utr,
         "originalPaymentId": refund.original_payment_id,
         "refundTransactionReference": refund.refund_transaction_reference,
         "refundBankAccount": refund.refund_bank_account,
@@ -726,7 +699,6 @@ def _cancel_order(
                 Refund(
                     order_id=order.id,
                     original_payment_id=verified_attempt.id,
-                    original_payment_utr=verified_attempt.submitted_utr,
                     refund_amount_paise=order.total_paise,
                     refund_reason=reason,
                     status="PENDING",
@@ -1325,7 +1297,6 @@ def cancel_customer_order(
 @router.post("/payments/{order_id}/submit")
 async def submit_payment_proof(
     order_id: str,
-    utr: str = Form(...),
     screenshot: UploadFile = File(...),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     principal: AuthenticatedPrincipal = Depends(get_current_principal),
@@ -1336,10 +1307,6 @@ async def submit_payment_proof(
         raise HTTPException(status_code=404, detail="Order not found.")
     if order.user_id != principal.id:
         raise HTTPException(status_code=403, detail="You can only submit payment proof for your own order.")
-
-    cleaned_utr = (utr or "").strip()
-    if not UTR_REGEX.match(cleaned_utr):
-        raise HTTPException(status_code=422, detail="UTR must be exactly 12 digits.")
 
     cleaned_idem = (idempotency_key or "").strip() or None
     if cleaned_idem:
@@ -1355,7 +1322,6 @@ async def submit_payment_proof(
                 "orderNumber": order.order_number,
                 "paymentStatus": existing_by_idem.status,
                 "orderStatus": order.status,
-                "utrMasked": mask_utr(existing_by_idem.submitted_utr) or "",
                 "submittedAt": _iso(existing_by_idem.submitted_at),
                 "message": "Payment proof submitted successfully. Waiting for admin verification.",
             }
@@ -1369,17 +1335,6 @@ async def submit_payment_proof(
         if attempt.status == "VERIFIED":
             raise HTTPException(status_code=409, detail="Payment for this order is already verified.")
         if attempt.status in ("SUBMITTED", "UNDER_REVIEW"):
-            if attempt.submitted_utr == cleaned_utr:
-                return {
-                    "paymentId": attempt.id,
-                    "orderId": order.id,
-                    "orderNumber": order.order_number,
-                    "paymentStatus": attempt.status,
-                    "orderStatus": order.status,
-                    "utrMasked": mask_utr(attempt.submitted_utr) or "",
-                    "submittedAt": _iso(attempt.submitted_at),
-                    "message": "Payment proof submitted successfully. Waiting for admin verification.",
-                }
             raise HTTPException(
                 status_code=409,
                 detail="Payment proof has already been submitted for this order and is awaiting admin verification.",
@@ -1389,16 +1344,6 @@ async def submit_payment_proof(
         raise HTTPException(
             status_code=409,
             detail="Payment proof can only be submitted while the order is awaiting payment.",
-        )
-
-    # Check if UTR was already verified on any order
-    duplicate_verified_utr = db.scalar(
-        select(BankCredit).where(BankCredit.verified_utr == cleaned_utr)
-    )
-    if duplicate_verified_utr is not None:
-        raise HTTPException(
-            status_code=409,
-            detail="This 12-digit UTR has already been used and verified on another order.",
         )
 
     raw_bytes = await screenshot.read()
@@ -1416,7 +1361,6 @@ async def submit_payment_proof(
         order_id=order.id,
         user_id=principal.id,
         expected_amount_paise=order.total_paise,
-        submitted_utr=cleaned_utr,
         screenshot_storage_path="pending",
         status="SUBMITTED",
         idempotency_key=cleaned_idem,
@@ -1454,7 +1398,7 @@ async def submit_payment_proof(
             actor_id=principal.id,
             actor_name=order.shipping_name,
             actor_role="CUSTOMER",
-            note=f"Payment proof submitted (UTR {mask_utr(cleaned_utr)}). Waiting for admin verification.",
+            note="Payment screenshot uploaded. Waiting for admin verification.",
         )
     )
     db.add(
@@ -1496,7 +1440,6 @@ async def submit_payment_proof(
         "orderNumber": order.order_number,
         "paymentStatus": "SUBMITTED",
         "orderStatus": "PAYMENT_REVIEW",
-        "utrMasked": mask_utr(cleaned_utr) or "",
         "submittedAt": _iso(payment_attempt.submitted_at),
         "message": "Payment proof submitted successfully. Waiting for admin verification.",
     }
@@ -1536,7 +1479,6 @@ def get_payment_status(
         "orderNumber": order.order_number,
         "status": order.payment_status,
         "orderStatus": order.status,
-        "utrMasked": mask_utr(latest_attempt.submitted_utr) if latest_attempt else None,
         "message": msg,
         # Rejected proofs keep their history; the customer may submit a new attempt while the order awaits payment.
         "latestAttemptStatus": latest_attempt.status if latest_attempt else None,
@@ -1546,7 +1488,6 @@ def get_payment_status(
             {
                 "id": attempt.id,
                 "status": attempt.status,
-                "utrMasked": mask_utr(attempt.submitted_utr),
                 "submittedAt": _iso(attempt.submitted_at),
                 "rejectionReason": attempt.rejection_reason if attempt.status == "REJECTED" else None,
             }
@@ -1625,7 +1566,6 @@ def get_admin_dashboard(
                 "orderNumber": order.order_number if order else attempt.order_id,
                 "customerName": order.shipping_name if order else "",
                 "amount": paise_to_inr(attempt.expected_amount_paise),
-                "utr": attempt.submitted_utr,
                 "status": attempt.status,
                 "submittedAt": _iso(attempt.submitted_at),
             }
@@ -1656,7 +1596,7 @@ def list_admin_payments(
         items = [
             it
             for it in items
-            if q in f"{it['orderNumber']} {it['customerName']} {it['submittedUtr']}".lower()
+            if q in f"{it['orderNumber']} {it['customerName']}".lower()
         ]
     total = len(items)
     return {
@@ -1804,7 +1744,7 @@ def approve_admin_payment(
         raise HTTPException(status_code=404, detail="Associated order not found.")
 
     if payment.status == "VERIFIED":
-        if idempotency_key and payment.bank_credit is not None:
+        if idempotency_key:
             return _serialize_admin_payment(db, payment)
         raise HTTPException(status_code=409, detail="This payment has already been verified.")
     try:
@@ -1816,88 +1756,14 @@ def approve_admin_payment(
             status_code=409,
             detail="Payment approval requires an order that is in PAYMENT_REVIEW with payment UNDER_REVIEW.",
         )
-
-    if payload.transaction_status != "CREDITED":
-        raise HTTPException(
-            status_code=400,
-            detail="Payment cannot be approved unless bank transaction status is CREDITED.",
-        )
-
-    # A screenshot or a typed reference is not proof of settlement. Real approvals require the owner to attest
-    # that the credit was found on the actual bank statement; local development uses clearly labelled TEST evidence.
-    bank_ref_input = payload.bank_credit_reference.strip()
-    if payload.evidence_kind == "LOCAL_TEST":
-        if not settings.is_local_env:
-            raise HTTPException(status_code=422, detail="TEST bank-credit evidence is only accepted in local development.")
-        if not bank_ref_input.upper().startswith("TEST-"):
-            raise HTTPException(status_code=422, detail="TEST bank-credit references must start with TEST-.")
-    else:
-        if not payload.bank_statement_checked:
-            raise HTTPException(
-                status_code=422,
-                detail="Confirm that you found this credit on the actual bank statement before approving.",
-            )
-        if bank_ref_input.upper().startswith("TEST-"):
-            raise HTTPException(status_code=422, detail="TEST references cannot be used as real bank-credit evidence.")
-
-    cleaned_utr = payload.verified_utr.strip()
-    if not UTR_REGEX.match(cleaned_utr):
-        raise HTTPException(status_code=422, detail="Verified UTR must be a valid 12-digit number.")
-    if cleaned_utr != payment.submitted_utr:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Bank UTR ({cleaned_utr}) does not match customer-submitted UTR ({payment.submitted_utr}).",
-        )
-
-    verified_paise = inr_to_paise(payload.verified_amount)
-    if verified_paise != payment.expected_amount_paise or verified_paise != order.total_paise:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"Credited bank amount (₹{paise_to_inr(verified_paise)}) does not match "
-                f"expected order amount (₹{paise_to_inr(payment.expected_amount_paise)})."
-            ),
-        )
-
-    bank_ref = payload.bank_credit_reference.strip()
-    existing_utr_credit = db.scalar(
-        select(BankCredit).where(BankCredit.verified_utr == cleaned_utr)
-    )
-    if existing_utr_credit is not None:
-        raise HTTPException(
-            status_code=409,
-            detail=f"UTR {cleaned_utr} is already verified against another order.",
-        )
-
-    existing_ref_credit = db.scalar(
-        select(BankCredit).where(BankCredit.bank_credit_ref == bank_ref)
-    )
-    if existing_ref_credit is not None:
-        raise HTTPException(
-            status_code=409,
-            detail=f"Bank credit reference {bank_ref} has already been assigned to another payment.",
-        )
+    # The customer's screenshot is the only evidence: it must actually be stored before the owner can approve.
+    if not payment.screenshot_storage_path or payment.screenshot_storage_path == "pending":
+        raise HTTPException(status_code=409, detail="There is no stored payment screenshot to approve.")
 
     now = utcnow()
-    bank_credit = BankCredit(
-        payment_attempt_id=payment.id,
-        order_id=order.id,
-        bank_credit_ref=bank_ref,
-        receiving_bank_account=payload.receiving_bank_account.strip(),
-        verified_utr=cleaned_utr,
-        credited_amount_paise=verified_paise,
-        transaction_status="CREDITED",
-        verified_by=admin.id,
-        verified_at=now,
-        verification_note=(f"LOCAL TEST EVIDENCE. {payload.notes}" if payload.evidence_kind == "LOCAL_TEST" else payload.notes),
-        evidence_kind=payload.evidence_kind,
-    )
-    db.add(bank_credit)
-
     prev_order_status = order.status
     prev_payment_status = payment.status
     payment.status = "VERIFIED"
-    payment.verified_utr = cleaned_utr
     payment.verified_by = admin.id
     payment.verified_at = now
     payment.admin_notes = payload.notes
@@ -1914,10 +1780,7 @@ def approve_admin_payment(
             actor_id=admin.id,
             actor_name=admin.full_name or admin.email,
             actor_role="OWNER_ADMIN",
-            note=(
-                f"Payment verified against bank credit {bank_ref} (UTR {cleaned_utr}). "
-                "Order moved to AWAITING_CONFIRMATION."
-            ),
+            note="Payment screenshot approved. Order moved to AWAITING_CONFIRMATION.",
         )
     )
     db.add(
@@ -1934,9 +1797,7 @@ def approve_admin_payment(
                 {
                     "paymentStatus": "VERIFIED",
                     "orderStatus": "AWAITING_CONFIRMATION",
-                    "bankCreditReference": bank_ref,
-                    "verifiedUtr": cleaned_utr,
-                    "reason": payload.notes or "Bank credit independently matched.",
+                    "reason": payload.notes or "Owner reviewed the customer screenshot.",
                 }
             ),
             idempotency_key=idempotency_key,
@@ -1958,15 +1819,7 @@ def approve_admin_payment(
         )
     )
 
-    try:
-        db.commit()
-    except IntegrityError as exc:
-        db.rollback()
-        raise HTTPException(
-            status_code=409,
-            detail="Duplicate UTR or bank credit reference detected during concurrent verification.",
-        ) from exc
-
+    db.commit()
     db.refresh(payment)
     return _serialize_admin_payment(db, payment)
 
@@ -2143,12 +1996,8 @@ def confirm_admin_order(
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
-    bank_credit = db.scalar(select(BankCredit).where(BankCredit.order_id == order.id))
-    if bank_credit is None or order.payment_status != "VERIFIED":
-        raise HTTPException(
-            status_code=409,
-            detail="Order cannot be confirmed without a verified bank credit record.",
-        )
+    if order.payment_status != "VERIFIED":
+        raise HTTPException(status_code=409, detail="Order cannot be confirmed before its payment is approved.")
 
     # Recheck stock and deduct inventory atomically
     for item in order.items:
@@ -2707,11 +2556,8 @@ def approve_admin_refund(
     payment = db.scalar(
         select(PaymentAttempt).where(PaymentAttempt.id == refund.original_payment_id).with_for_update()
     )
-    if payment is None or payment.status != "VERIFIED" or payment.bank_credit is None:
-        raise HTTPException(
-            status_code=409,
-            detail="Refund cannot be approved without independently verified original payment evidence.",
-        )
+    if payment is None or payment.status != "VERIFIED":
+        raise HTTPException(status_code=409, detail="Refund cannot be approved without an approved original payment.")
 
     notes = (payload.notes or "").strip() or "Refund eligibility approved; awaiting actual bank transfer."
     refund.status = "APPROVED"

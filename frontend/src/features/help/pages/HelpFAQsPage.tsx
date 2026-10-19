@@ -10,11 +10,11 @@ const FAQS: FAQItem[] = [
   },
   {
     question: 'What happens after I pay?',
-    answer: 'Submit your UTR and payment screenshot. Our team checks the bank credit before payment is verified and the order is confirmed.',
+    answer: 'Upload your payment screenshot. Our team checks it before payment is verified and the order is confirmed.',
   },
   {
     question: 'My payment is still pending.',
-    answer: 'Our team manually checks the bank credit before confirming payment. Please do not pay again. Use Refresh status or contact the store if you need help.',
+    answer: 'Our team manually checks your payment screenshot before confirming payment. Please do not pay again. Use Refresh status or contact the store if you need help.',
   },
   {
     question: 'How do I track my order?',

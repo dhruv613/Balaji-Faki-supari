@@ -147,7 +147,7 @@ def run_checks(conn: psycopg.Connection) -> None:
         pid = cur.fetchone()[0]
         cur.execute("insert into public.product_variants (product_id, pack_size, sku, cost_price_paise, price_paise, total_stock) "
                     "values (%s,'1kg','CHK-FAKI-1KG',60000,100000,5) on conflict (product_id, pack_size) do update set "
-                    "cost_price_paise=60000, price_paise=100000, total_stock=5", (pid,))
+                    "cost_price_paise=60000, price_paise=100000, total_stock=5, reserved_stock=0", (pid,))
         cur.execute("insert into public.customers (user_id, full_name, phone) values (%s,'Test User','+919999999999') "
                     "on conflict (user_id) do nothing", (cust,))
         cur.execute("insert into public.customers (user_id, full_name, phone) values (%s,'Other','+919999999998') "

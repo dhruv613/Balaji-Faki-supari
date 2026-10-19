@@ -6,7 +6,7 @@ import NoActiveOrder from '../../../components/common/NoActiveOrder';
 import { useOrder, useOrderDispatch, buildSummary } from '../../../context/OrderContext';
 import { formatINR, getErrorMessage, isNetworkError } from '../../../lib/api';
 import { env } from '../../../lib/env';
-import { getPaymentStatus, maskUtr, isPaymentConfirmed } from '../api/paymentsApi';
+import { getPaymentStatus, isPaymentConfirmed } from '../api/paymentsApi';
 import type { PaymentStatusResponse } from '../../../types/orders';
 
 /** How often to re-check while the payment is being verified. */
@@ -79,7 +79,7 @@ export default function PaymentVerificationPage() {
     return (
       <div className="wrapper">
         <OrderStepper currentStep={4} />
-        <NoActiveOrder message="There's no payment to verify yet. Place an order and submit your UTR to see its verification status here." />
+        <NoActiveOrder message="There's no payment to verify yet. Place an order and upload your payment screenshot to see its verification status here." />
       </div>
     );
   }
@@ -97,9 +97,8 @@ export default function PaymentVerificationPage() {
     serverInfo?.status === 'failed' ||
     serverInfo?.status === 'REJECTED';
   const orderNumber = serverInfo?.orderNumber ?? state.orderNumber;
-  const utrDisplay = serverInfo?.utrMasked ?? (state.utrNumber ? maskUtr(state.utrNumber) : '—');
   const supportHref = `https://wa.me/${env.supportWhatsApp}?text=${encodeURIComponent(
-    `Hello, I need help with payment verification for order ${orderNumber}. UTR: ${utrDisplay}`,
+    `Hello, I need help with payment verification for order ${orderNumber}.`,
   )}`;
 
   return (
@@ -140,7 +139,7 @@ export default function PaymentVerificationPage() {
               <h1 style={{ marginBottom: 8 }}>We couldn't verify your payment</h1>
               <p className="text-secondary" style={{ maxWidth: 460, margin: '0 auto 24px' }}>
                 {serverInfo?.message ??
-                  "We couldn't match this UTR with a credit in our account. Please contact support — don't pay again until we've checked."}
+                  "We couldn't accept this payment screenshot. Please contact support — don't pay again until we've checked."}
               </p>
             </>
           ) : (
@@ -149,7 +148,7 @@ export default function PaymentVerificationPage() {
               <p className="text-secondary" style={{ maxWidth: 460, margin: '0 auto 24px' }} id="verification-waiting-copy">
                 {serverInfo?.message ??
                   'Payment proof submitted successfully. Waiting for admin verification.'}{' '}
-                We're matching your UPI transaction with our account. This page updates
+                We're checking your payment screenshot. This page updates
                 automatically — please don't pay again.
               </p>
             </>
@@ -164,10 +163,6 @@ export default function PaymentVerificationPage() {
             <div className="summary-row">
               <dt>Amount</dt>
               <dd style={{ margin: 0 }}><strong>{formatINR(summary.total)}</strong></dd>
-            </div>
-            <div className="summary-row">
-              <dt>UPI transaction ID</dt>
-              <dd style={{ margin: 0 }}><strong>{utrDisplay}</strong></dd>
             </div>
             <div className="summary-row">
               <dt>Status</dt>

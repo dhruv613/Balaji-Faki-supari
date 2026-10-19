@@ -142,9 +142,6 @@ export function readOrder(value: unknown): Order {
   ) {
     return invalid();
   }
-  if (value.utrNumber !== undefined && value.utrNumber !== null && typeof value.utrNumber !== 'string') {
-    return invalid();
-  }
   if (value.productImageUrl !== undefined && value.productImageUrl !== null && typeof value.productImageUrl !== 'string') {
     return invalid();
   }
@@ -184,9 +181,6 @@ export function readPaymentStatus(value: unknown, orderId: string): PaymentStatu
     !paymentStatuses.includes(String(value.status)) ||
     !orderStatuses.includes(String(value.orderStatus))
   ) {
-    return invalid();
-  }
-  if (value.utrMasked !== undefined && value.utrMasked !== null && typeof value.utrMasked !== 'string') {
     return invalid();
   }
   if (value.message !== undefined && value.message !== null && typeof value.message !== 'string') {

@@ -64,7 +64,7 @@ export function DashboardView({ data }: { data: AdminDashboardResponse }) {
           <section className="card" aria-labelledby="pending-confirmations-heading">
             <h2 id="pending-confirmations-heading" style={{ marginBottom: 12 }}>Pending Payment Confirmations</h2>
             {data.pendingPaymentConfirmations.length === 0 ? (
-              <EmptyState title="Nothing waiting" description="No payment screenshots are waiting for bank-credit verification." />
+              <EmptyState title="Nothing waiting" description="No payment screenshots are waiting for a decision." />
             ) : (
               <div className="admin-table-wrap" role="region" aria-label="Pending payment confirmations" tabIndex={0}>
                 <table className="data-table">
@@ -73,7 +73,6 @@ export function DashboardView({ data }: { data: AdminDashboardResponse }) {
                       <th scope="col">Order</th>
                       <th scope="col">Customer</th>
                       <th scope="col">Amount</th>
-                      <th scope="col">UTR</th>
                       <th scope="col">Submitted</th>
                       <th scope="col">Status</th>
                       <th scope="col"><span className="sr-only">Action</span></th>
@@ -85,7 +84,6 @@ export function DashboardView({ data }: { data: AdminDashboardResponse }) {
                         <td><strong>{row.orderNumber}</strong></td>
                         <td>{row.customerName}</td>
                         <td>{formatINR(row.amount)}</td>
-                        <td>{row.utr}</td>
                         <td>{new Date(row.submittedAt).toLocaleString('en-IN')}</td>
                         <td><StatusBadge status={row.status} /></td>
                         <td><Link className="btn btn--sm btn--primary" to={`/admin/payments?payment=${encodeURIComponent(row.paymentId)}`}>Review</Link></td>

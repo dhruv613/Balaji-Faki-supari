@@ -502,7 +502,7 @@ export default function AdminOrdersPage() {
           <div>
             {selectedOrder.paymentStatus !== 'VERIFIED' && (
               <Notice tone="warning" title="Payment not verified yet">
-                This order cannot be confirmed or packed until an Owner Admin verifies the bank credit in the <Link to="/admin/dashboard">Pending Payment Confirmations</Link> queue.
+                This order cannot be confirmed or packed until an Owner Admin approves the payment screenshot in the <Link to="/admin/dashboard">Pending Payment Confirmations</Link> queue.
               </Notice>
             )}
 
@@ -589,23 +589,15 @@ export default function AdminOrdersPage() {
               </div>
             </div>
 
-            <h3 style={{ fontSize: 18, marginBottom: 10 }}>Payment Verification Details</h3>
+            <h3 style={{ fontSize: 18, marginBottom: 10 }}>Payment Details</h3>
             <dl className="admin-kv-grid">
               <div className="admin-kv-item">
                 <dt>Payment Status</dt>
                 <dd><StatusBadge status={selectedOrder.paymentDetails.status} kind="payment" /></dd>
               </div>
               <div className="admin-kv-item">
-                <dt>Submitted UTR</dt>
-                <dd><code className="admin-utr-code">{selectedOrder.paymentDetails.utrNumber ?? 'Not submitted'}</code></dd>
-              </div>
-              <div className="admin-kv-item">
-                <dt>Bank Credit Reference</dt>
-                <dd>{selectedOrder.paymentDetails.bankCreditReference ?? 'Pending verification'}</dd>
-              </div>
-              <div className="admin-kv-item">
-                <dt>Receiving Account</dt>
-                <dd>{selectedOrder.paymentDetails.receivingBankAccount ?? 'Official UPI'}</dd>
+                <dt>Screenshot</dt>
+                <dd>{selectedOrder.paymentDetails.paymentId ? <Link to={`/admin/payments?payment=${encodeURIComponent(selectedOrder.paymentDetails.paymentId)}`}>View payment screenshot</Link> : 'Not uploaded'}</dd>
               </div>
             </dl>
 

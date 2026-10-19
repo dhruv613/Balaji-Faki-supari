@@ -257,21 +257,14 @@ class FastApiWorkflowIntegrationTests(unittest.TestCase):
         other_customer_read = self.client.get(f"/api/orders/{order_id}", headers=c2_headers)
         self.assertEqual(other_customer_read.status_code, 403)
 
-        # 6. Payment Proof Submission (Multipart UTR + Private Screenshot)
-        # Reject invalid UTR
-        bad_utr_res = self.client.post(
-            f"/api/payments/{order_id}/submit",
-            headers=c1_headers,
-            data={"utr": "12345"},
-            files={"screenshot": ("proof.png", VALID_PNG_BYTES, "image/png")},
-        )
-        self.assertEqual(bad_utr_res.status_code, 422)
+        # 6. Payment Proof Submission (private screenshot only: no UTR, no bank details)
+        no_screenshot_res = self.client.post(f"/api/payments/{order_id}/submit", headers=c1_headers)
+        self.assertEqual(no_screenshot_res.status_code, 422)
 
         # Reject fake image content
         bad_img_res = self.client.post(
             f"/api/payments/{order_id}/submit",
             headers=c1_headers,
-            data={"utr": "412345678901"},
             files={"screenshot": ("proof.png", b"not-a-valid-image-header-at-all", "image/png")},
         )
         self.assertEqual(bad_img_res.status_code, 422)
@@ -280,7 +273,6 @@ class FastApiWorkflowIntegrationTests(unittest.TestCase):
         submit_res = self.client.post(
             f"/api/payments/{order_id}/submit",
             headers={**c1_headers, "Idempotency-Key": "pay-idem-001"},
-            data={"utr": "412345678901"},
             files={"screenshot": ("proof.png", VALID_PNG_BYTES, "image/png")},
         )
         self.assertEqual(submit_res.status_code, 200)
@@ -297,7 +289,6 @@ class FastApiWorkflowIntegrationTests(unittest.TestCase):
         submit_retry = self.client.post(
             f"/api/payments/{order_id}/submit",
             headers={**c1_headers, "Idempotency-Key": "pay-idem-001"},
-            data={"utr": "412345678901"},
             files={"screenshot": ("proof.png", VALID_PNG_BYTES, "image/png")},
         )
         self.assertEqual(submit_retry.status_code, 200)
@@ -349,18 +340,11 @@ class FastApiWorkflowIntegrationTests(unittest.TestCase):
         )
         self.assertEqual(premature_confirm.status_code, 409)
 
-        # Direct approval must be blocked until an Owner Admin starts independent bank review.
+        # Direct approval must be blocked until an Owner Admin starts reviewing the screenshot.
         direct_approve = self.client.post(
             f"/api/admin/payments/{payment_id}/approve",
             headers=admin_headers,
-            json={
-                "receivingBankAccount": "Axis Bank · 8000961030@okbizaxis",
-                "verifiedAmount": 500,
-                "verifiedUtr": "412345678901",
-                "transactionStatus": "CREDITED",
-                "bankCreditReference": "TEST-CR-20261018-0001",
-                "evidenceKind": "LOCAL_TEST",
-            },
+            json={"notes": "Approval before review must be blocked"},
         )
         self.assertEqual(direct_approve.status_code, 409)
 
@@ -374,58 +358,29 @@ class FastApiWorkflowIntegrationTests(unittest.TestCase):
         review_res = self.client.post(
             f"/api/admin/payments/{payment_id}/review",
             headers=admin_headers,
-            json={"notes": "Checking the independent bank credit entry."},
+            json={"notes": "Checking the uploaded screenshot."},
         )
         self.assertEqual(review_res.status_code, 200)
         self.assertEqual(review_res.json()["paymentStatus"], "UNDER_REVIEW")
         self.assertEqual(review_res.json()["orderStatus"], "PAYMENT_REVIEW")
-
-        # Under review still blocks a mismatched bank amount.
-        mismatch_approve = self.client.post(
-            f"/api/admin/payments/{payment_id}/approve",
-            headers=admin_headers,
-            json={
-                "receivingBankAccount": "Axis Bank · 8000961030@okbizaxis",
-                "verifiedAmount": 500,
-                "verifiedUtr": "412345678901",
-                "transactionStatus": "CREDITED",
-                "bankCreditReference": "TEST-CR-20261018-0001",
-                "evidenceKind": "LOCAL_TEST",
-            },
-        )
-        self.assertEqual(mismatch_approve.status_code, 400)
 
         # Valid Admin Payment Approval -> Payment = VERIFIED, Order = AWAITING_CONFIRMATION
         approval_headers = {**admin_headers, "Idempotency-Key": "approve-payment-001"}
         approve_res = self.client.post(
             f"/api/admin/payments/{payment_id}/approve",
             headers=approval_headers,
-            json={
-                "receivingBankAccount": "Axis Bank · 8000961030@okbizaxis",
-                "verifiedAmount": 520,
-                "verifiedUtr": "412345678901",
-                "transactionStatus": "CREDITED",
-                "bankCreditReference": "TEST-CR-20261018-0001",
-                "evidenceKind": "LOCAL_TEST",
-                "notes": "Matched Axis Bank credit statement entry",
-            },
+            json={"notes": "Screenshot matches the order total"},
         )
         self.assertEqual(approve_res.status_code, 200)
         approved_payment = approve_res.json()
         self.assertEqual(approved_payment["paymentStatus"], "VERIFIED")
         self.assertEqual(approved_payment["orderStatus"], "AWAITING_CONFIRMATION")
+        self.assertNotIn("bankCredit", approved_payment)
 
         approval_retry = self.client.post(
             f"/api/admin/payments/{payment_id}/approve",
             headers=approval_headers,
-            json={
-                "receivingBankAccount": "Axis Bank · 8000961030@okbizaxis",
-                "verifiedAmount": 520,
-                "verifiedUtr": "412345678901",
-                "transactionStatus": "CREDITED",
-                "bankCreditReference": "TEST-CR-20261018-0001",
-                "evidenceKind": "LOCAL_TEST",
-            },
+            json={},
         )
         self.assertEqual(approval_retry.status_code, 200)
         self.assertEqual(approval_retry.json()["orderStatus"], "AWAITING_CONFIRMATION")
@@ -435,7 +390,7 @@ class FastApiWorkflowIntegrationTests(unittest.TestCase):
         confirm_res = self.client.post(
             f"/api/admin/orders/{order_id}/confirm",
             headers=confirmation_headers,
-            json={"notes": "Confirmed after bank verification"},
+            json={"notes": "Confirmed after payment approval"},
         )
         self.assertEqual(confirm_res.status_code, 200)
         confirmed_order = confirm_res.json()
@@ -445,7 +400,7 @@ class FastApiWorkflowIntegrationTests(unittest.TestCase):
         confirm_retry = self.client.post(
             f"/api/admin/orders/{order_id}/confirm",
             headers=confirmation_headers,
-            json={"notes": "Confirmed after bank verification"},
+            json={"notes": "Confirmed after payment approval"},
         )
         self.assertEqual(confirm_retry.status_code, 200)
         self.assertEqual(confirm_retry.json()["orderStatus"], "CONFIRMED")
@@ -529,20 +484,10 @@ class FastApiWorkflowIntegrationTests(unittest.TestCase):
         self.assertEqual(order2_res.status_code, 200)
         order2_id = order2_res.json()["id"]
 
-        # Reusing a UTR that is already VERIFIED on Order 1 must be rejected (409)
-        dup_utr_res = self.client.post(
-            f"/api/payments/{order2_id}/submit",
-            headers=c2_headers,
-            data={"utr": "412345678901"},
-            files={"screenshot": ("proof2.png", VALID_PNG_BYTES, "image/png")},
-        )
-        self.assertEqual(dup_utr_res.status_code, 409)
-
-        # Submit with a distinct UTR
+        # Customer 2 uploads a screenshot
         sub2_res = self.client.post(
             f"/api/payments/{order2_id}/submit",
             headers=c2_headers,
-            data={"utr": "499988887777"},
             files={"screenshot": ("proof2.png", VALID_PNG_BYTES, "image/png")},
         )
         self.assertEqual(sub2_res.status_code, 200)
@@ -553,7 +498,7 @@ class FastApiWorkflowIntegrationTests(unittest.TestCase):
             f"/api/admin/payments/{payment2_id}/reject",
             headers=admin_headers,
             json={
-                "reason": "Screenshot is blurry and UTR 499988887777 is not settled in Axis statement.",
+                "reason": "Screenshot is blurry and does not show the payment clearly.",
                 "requestCorrectedProof": True,
             },
         )
@@ -570,7 +515,6 @@ class FastApiWorkflowIntegrationTests(unittest.TestCase):
         retry_res = self.client.post(
             f"/api/payments/{order2_id}/submit",
             headers={**c2_headers, "Idempotency-Key": "pay-idem-002-retry"},
-            data={"utr": "488877776666"},
             files={"screenshot": ("proof3.png", VALID_PNG_BYTES, "image/png")},
         )
         self.assertEqual(retry_res.status_code, 200)
@@ -582,7 +526,6 @@ class FastApiWorkflowIntegrationTests(unittest.TestCase):
         replay = self.client.post(
             f"/api/payments/{order2_id}/submit",
             headers={**c2_headers, "Idempotency-Key": "pay-idem-002-retry"},
-            data={"utr": "488877776666"},
             files={"screenshot": ("proof3.png", VALID_PNG_BYTES, "image/png")},
         )
         self.assertEqual(replay.status_code, 200)
@@ -592,27 +535,13 @@ class FastApiWorkflowIntegrationTests(unittest.TestCase):
         self.assertIsNone(status_pending["rejectionReason"])
         self.assertEqual([a["status"] for a in status_pending["attempts"]].count("SUBMITTED"), 1)
 
-        # A unique UTR is still insufficient: a reused bank-credit reference is blocked.
-        payment2_retry_id = retry_res.json()["paymentId"]
-        review_retry_res = self.client.post(
-            f"/api/admin/payments/{payment2_retry_id}/review",
-            headers=admin_headers,
-            json={"notes": "Checking the new UTR against the bank statement."},
+        # A second screenshot cannot be uploaded while one is awaiting review.
+        second_while_pending = self.client.post(
+            f"/api/payments/{order2_id}/submit",
+            headers={**c2_headers, "Idempotency-Key": "pay-idem-002-extra"},
+            files={"screenshot": ("proof4.png", VALID_PNG_BYTES, "image/png")},
         )
-        self.assertEqual(review_retry_res.status_code, 200)
-        duplicate_credit_ref = self.client.post(
-            f"/api/admin/payments/{payment2_retry_id}/approve",
-            headers=admin_headers,
-            json={
-                "receivingBankAccount": "Axis Bank · 8000961030@okbizaxis",
-                "verifiedAmount": 180,
-                "verifiedUtr": "488877776666",
-                "transactionStatus": "CREDITED",
-                "bankCreditReference": "TEST-CR-20261018-0001",
-                "evidenceKind": "LOCAL_TEST",
-            },
-        )
-        self.assertEqual(duplicate_credit_ref.status_code, 409)
+        self.assertEqual(second_while_pending.status_code, 409)
 
         # Admin cancels the unpaid order via PATCH /api/admin/orders/{id}/status
         cancel_res = self.client.patch(

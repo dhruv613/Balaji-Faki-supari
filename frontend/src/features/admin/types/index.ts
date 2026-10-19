@@ -141,7 +141,6 @@ export interface AdminPendingConfirmation {
   orderNumber: string;
   customerName: string;
   amount: number | null;
-  utr: string;
   status: 'SUBMITTED' | 'UNDER_REVIEW';
   submittedAt: string;
 }
@@ -213,12 +212,9 @@ export interface AdminOrderDetail extends AdminOrderSummary {
   paymentDetails: {
     paymentId?: string;
     status: AdminPaymentStatus;
-    utrNumber?: string;
     submittedAt?: string;
     verifiedAt?: string;
     verifiedBy?: string;
-    bankCreditReference?: string;
-    receivingBankAccount?: string;
     rejectionReason?: string;
   };
   timeline: AdminOrderTimelineEvent[];
@@ -246,23 +242,12 @@ export interface UpdateOrderStatusRequest {
 }
 
 /* ================================================================== */
-/*  6. MODULE 03 — MANUAL PAYMENT VERIFICATION                        */
+/*  6. MODULE 03 — PAYMENT SCREENSHOT REVIEW                          */
 /* ================================================================== */
-
-export interface BankCreditVerificationDetails {
-  receivingBankAccount: string;
-  verifiedAmount: number;
-  verifiedUtr: string;
-  transactionStatus: 'CREDITED' | 'PENDING_SETTLEMENT' | 'NOT_FOUND' | 'MISMATCH';
-  bankCreditReference: string;
-  bankTimestamp?: string;
-  verifiedByAdmin?: string;
-  verifiedAt?: string;
-}
 
 export interface PaymentVerificationHistoryItem {
   id: string;
-  action: 'SUBMITTED' | 'UNDER_REVIEW' | 'BANK_CHECKED' | 'APPROVED' | 'REJECTED' | 'PROOF_REQUESTED';
+  action: 'SUBMITTED' | 'UNDER_REVIEW' | 'APPROVED' | 'REJECTED' | 'PROOF_REQUESTED';
   actorName: string;
   timestamp: string;
   notes: string;
@@ -276,14 +261,12 @@ export interface AdminPaymentSubmission {
   customerPhone: string;
   productSummary?: string;
   expectedAmount: number | null;
-  submittedUtr: string;
   /** Private Supabase Storage object path; viewed only via short-lived signed URL from FastAPI */
   privateScreenshotPath: string;
   signedScreenshotUrl?: string;
   submissionDate: string;
   paymentStatus: AdminPaymentStatus;
   orderStatus: AdminOrderStatus;
-  bankCredit?: BankCreditVerificationDetails;
   rejectionReason?: string;
   verificationHistory: PaymentVerificationHistoryItem[];
 }
@@ -295,15 +278,6 @@ export interface AdminPaymentsQueryParams extends PaginationParams {
 }
 
 export interface ApprovePaymentRequest {
-  receivingBankAccount: string;
-  verifiedAmount: number;
-  verifiedUtr: string;
-  transactionStatus: 'CREDITED';
-  bankCreditReference: string;
-  /** BANK_STATEMENT = found on the real bank statement; LOCAL_TEST = labelled development evidence only. */
-  evidenceKind: 'BANK_STATEMENT' | 'LOCAL_TEST';
-  /** The owner attests the credit was found on the actual bank statement (required for BANK_STATEMENT). */
-  bankStatementChecked?: boolean;
   notes?: string;
 }
 
@@ -597,7 +571,6 @@ export interface AdminRefundRecord {
   cancellationRequestedBy: 'CUSTOMER' | 'ADMIN';
   refundAmount: number | null;
   refundReason: string;
-  originalPaymentUtr: string;
   originalPaymentId: string;
   refundTransactionReference?: string;
   refundBankAccount?: string;

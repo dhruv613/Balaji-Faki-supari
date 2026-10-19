@@ -141,9 +141,7 @@ export const SAMPLE_ADMIN_ORDERS: AdminOrderDetail[] = [
     paymentDetails: {
       paymentId: 'pay-1043',
       status: 'SUBMITTED',
-      utrNumber: '428910349912',
       submittedAt: '15 Oct 2026 · 11:24 am',
-      receivingBankAccount: 'Axis Bank Merchant A/C (8000961030@okbizaxis)',
     },
     timeline: [
       {
@@ -202,12 +200,9 @@ export const SAMPLE_ADMIN_ORDERS: AdminOrderDetail[] = [
     paymentDetails: {
       paymentId: 'pay-1044',
       status: 'VERIFIED',
-      utrNumber: '419823746501',
       submittedAt: '15 Oct 2026 · 09:45 am',
       verifiedAt: '15 Oct 2026 · 10:05 am',
       verifiedBy: 'Owner Admin',
-      bankCreditReference: 'AXIS-CR-20261015-8841',
-      receivingBankAccount: 'Axis Bank · 8000961030@okbizaxis',
     },
     timeline: [
       {
@@ -265,12 +260,9 @@ export const SAMPLE_ADMIN_ORDERS: AdminOrderDetail[] = [
     paymentDetails: {
       paymentId: 'pay-1042',
       status: 'VERIFIED',
-      utrNumber: '412345678912',
       submittedAt: '14 Oct 2026 · 06:20 pm',
       verifiedAt: '14 Oct 2026 · 06:32 pm',
       verifiedBy: 'Owner Admin',
-      bankCreditReference: 'AXIS-CR-20261014-7712',
-      receivingBankAccount: 'Axis Bank · 8000961030@okbizaxis',
     },
     timeline: [
       {
@@ -355,12 +347,9 @@ export const SAMPLE_ADMIN_ORDERS: AdminOrderDetail[] = [
     paymentDetails: {
       paymentId: 'pay-1041',
       status: 'VERIFIED',
-      utrNumber: '455129830194',
       submittedAt: '14 Oct 2026 · 03:15 pm',
       verifiedAt: '14 Oct 2026 · 03:35 pm',
       verifiedBy: 'Owner Admin',
-      bankCreditReference: 'AXIS-CR-20261014-6120',
-      receivingBankAccount: 'Axis Bank · 8000961030@okbizaxis',
     },
     timeline: [
       {
@@ -409,12 +398,9 @@ export const SAMPLE_ADMIN_ORDERS: AdminOrderDetail[] = [
     paymentDetails: {
       paymentId: 'pay-1031',
       status: 'VERIFIED',
-      utrNumber: '400918273645',
       submittedAt: '28 Sep 2026 · 12:05 pm',
       verifiedAt: '28 Sep 2026 · 12:25 pm',
       verifiedBy: 'Owner Admin',
-      bankCreditReference: 'AXIS-CR-20260928-1190',
-      receivingBankAccount: 'Axis Bank · 8000961030@okbizaxis',
     },
     timeline: [
       {
@@ -443,7 +429,6 @@ export const SAMPLE_ADMIN_PAYMENTS: AdminPaymentSubmission[] = [
     customerPhone: '+91 98XXX XX934',
     productSummary: 'Supari · 250 g × 1',
     expectedAmount: null,
-    submittedUtr: '428910349912',
     privateScreenshotPath: 'payment-proofs/2026/10/ord-1043-utr-428910349912.png',
     submissionDate: '15 Oct 2026 · 11:24 am',
     paymentStatus: 'SUBMITTED',
@@ -466,21 +451,10 @@ export const SAMPLE_ADMIN_PAYMENTS: AdminPaymentSubmission[] = [
     customerPhone: '+91 99XXX XX586',
     productSummary: 'Faki · 500 g × 1',
     expectedAmount: null,
-    submittedUtr: '419823746501',
     privateScreenshotPath: 'payment-proofs/2026/10/ord-1044-utr-419823746501.png',
     submissionDate: '15 Oct 2026 · 09:45 am',
     paymentStatus: 'VERIFIED',
     orderStatus: 'AWAITING_CONFIRMATION',
-    bankCredit: {
-      receivingBankAccount: 'Axis Bank · 8000961030@okbizaxis',
-      verifiedAmount: 0,
-      verifiedUtr: '419823746501',
-      transactionStatus: 'CREDITED',
-      bankCreditReference: 'AXIS-CR-20261015-8841',
-      bankTimestamp: '15 Oct 2026 · 09:44 am',
-      verifiedByAdmin: 'Owner Admin',
-      verifiedAt: '15 Oct 2026 · 10:05 am',
-    },
     verificationHistory: [
       {
         id: 'ph-2',
@@ -506,21 +480,10 @@ export const SAMPLE_ADMIN_PAYMENTS: AdminPaymentSubmission[] = [
     customerPhone: '+91 98XXX XX021',
     productSummary: 'Faki · 500 g × 2',
     expectedAmount: null,
-    submittedUtr: '412345678912',
     privateScreenshotPath: 'payment-proofs/2026/10/ord-1042-utr-412345678912.png',
     submissionDate: '14 Oct 2026 · 06:20 pm',
     paymentStatus: 'VERIFIED',
     orderStatus: 'OUT_FOR_DELIVERY',
-    bankCredit: {
-      receivingBankAccount: 'Axis Bank · 8000961030@okbizaxis',
-      verifiedAmount: 0,
-      verifiedUtr: '412345678912',
-      transactionStatus: 'CREDITED',
-      bankCreditReference: 'AXIS-CR-20261014-7712',
-      bankTimestamp: '14 Oct 2026 · 06:19 pm',
-      verifiedByAdmin: 'Owner Admin',
-      verifiedAt: '14 Oct 2026 · 06:32 pm',
-    },
     verificationHistory: [
       {
         id: 'ph-4',
@@ -892,7 +855,6 @@ export const SAMPLE_ADMIN_REFUNDS: AdminRefundRecord[] = [
     cancellationRequestedBy: 'CUSTOMER',
     refundAmount: null,
     refundReason: 'Customer requested cancellation before packing to change pack size to 1 kg.',
-    originalPaymentUtr: '409182736112',
     originalPaymentId: 'pay-1038',
     refundStatus: 'PENDING',
     notes: 'Original payment was verified against Axis Bank credit. Awaiting admin refund approval and bank transfer.',
@@ -907,7 +869,6 @@ export const SAMPLE_ADMIN_REFUNDS: AdminRefundRecord[] = [
     cancellationRequestedBy: 'CUSTOMER',
     refundAmount: null,
     refundReason: 'Out of station on scheduled delivery date.',
-    originalPaymentUtr: '488172635409',
     originalPaymentId: 'pay-1025',
     refundTransactionReference: 'AXIS-REF-20260925-9012',
     refundBankAccount: 'Axis Bank Merchant A/C · 8000961030@okbizaxis',
