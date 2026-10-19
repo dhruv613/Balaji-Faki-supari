@@ -40,6 +40,7 @@ from .core.storage import (
     PaymentProofStorageError,
     PrivateImageStorageError,
     ReviewPhotoStorageError,
+    MAX_REVIEW_PHOTO_BYTES,
     create_signed_proof_query,
     delete_private_review_photos,
     read_private_payment_proof,
@@ -66,6 +67,8 @@ from .db.models import (
     Refund,
     Review,
     ReviewPhoto,
+    StorePhoto,
+    new_uuid_str,
     Shipment,
     StoreSettings,
     UserProfile,
@@ -203,6 +206,7 @@ def _assert_ordering_open(variant: ProductVariant, store: StoreSettings) -> None
 
 
 def _serialize_product_information(product: Product) -> dict[str, str]:
+    """Owner-entered product facts. Empty string = not supplied (the UI hides empty facts)."""
     return {
         "ingredients": product.ingredients or "",
         "popularity": product.popularity or "",
@@ -210,19 +214,112 @@ def _serialize_product_information(product: Product) -> dict[str, str]:
         "productionPackaging": product.production_packaging or "",
         "providerManufacturer": product.provider_manufacturer or "",
         "safetyStorage": product.safety_storage or "",
+        "shelfLife": product.shelf_life or "",
+        "packaging": product.packaging or "",
+        "safetyDisclosures": product.safety_disclosures or "",
     }
 
 
-def _serialize_store_profile(store: StoreSettings) -> dict[str, str]:
-    """Returns only customer-facing store information; payment settings stay server-side."""
+def _public_storage_url(bucket: str, path: str) -> str:
+    return f"{settings.supabase_url.rstrip('/')}/storage/v1/object/public/{bucket}/{path}"
+
+
+def _serialize_product_images(product: Product) -> list[dict[str, Any]]:
+    return [
+        {
+            "id": image.id,
+            "url": _public_storage_url(settings.product_images_bucket, image.storage_path),
+            "alt": image.alt_text or product.name,
+            "position": image.position,
+        }
+        for image in product.images
+    ]
+
+
+def _serialize_public_product(db: Session, product: Product) -> dict[str, Any]:
+    prices: dict[str, float | int | None] = {"250g": None, "500g": None, "1kg": None}
+    price_confirmed: dict[str, bool] = {"250g": False, "500g": False, "1kg": False}
+    in_stock: dict[str, bool] = {"250g": False, "500g": False, "1kg": False}
+    for variant in product.variants:
+        if variant.pack_size not in prices:
+            continue
+        sellable = variant.is_available and variant.available_stock > 0
+        prices[variant.pack_size] = paise_to_inr(variant.price_paise) if sellable else None
+        price_confirmed[variant.pack_size] = bool(variant.price_confirmed)
+        in_stock[variant.pack_size] = sellable
+    summary = _review_summary(db, product.id)
+    return {
+        "type": product.slug,
+        "name": product.name,
+        "nameGu": product.name_gu,
+        "category": product.category,
+        "description": product.description,
+        "imageUrl": product.image_url,
+        "images": _serialize_product_images(product),
+        "information": _serialize_product_information(product),
+        "packSizes": ["250g", "500g", "1kg"],
+        "prices": prices,
+        "priceConfirmed": price_confirmed,
+        "inStock": in_stock,
+        "averageRating": summary["average"],
+        "reviewCount": summary["count"],
+    }
+
+
+def _serialize_admin_product(p: Product) -> dict[str, Any]:
+    return {
+        "id": p.id,
+        "type": p.slug,
+        "name": p.name,
+        "nameGu": p.name_gu,
+        "category": p.category,
+        "description": p.description,
+        "imageUrl": p.image_url,
+        "images": _serialize_product_images(p),
+        "information": _serialize_product_information(p),
+        "active": p.is_active,
+        "updatedAt": _iso(p.updated_at),
+        "variants": [
+            {
+                "id": v.id,
+                "packSize": v.pack_size,
+                "sku": v.sku,
+                "costPrice": paise_to_inr(v.cost_price_paise),
+                "price": paise_to_inr(v.price_paise),
+                "priceConfirmed": bool(v.price_confirmed),
+                "availableQuantity": v.available_stock,
+                "reservedQuantity": v.reserved_stock,
+                "isAvailable": v.is_available,
+            }
+            for v in p.variants
+        ],
+    }
+
+
+def _serialize_store_profile(db: Session, store: StoreSettings) -> dict[str, Any]:
+    """Customer-facing shop content only; UPI/QR/delivery/PIN settings stay server-side."""
+    photos = db.scalars(select(StorePhoto).order_by(StorePhoto.position.asc())).all()
     return {
         "storeName": store.store_name,
+        "storeNameGu": store.store_name_gu,
         "tagline": store.tagline,
         "storeAddress": store.store_address,
         "openingHours": store.opening_hours,
         "supportPhone": store.support_phone,
         "supportWhatsapp": store.support_whatsapp,
         "supportEmail": store.support_email or "",
+        "shopIntro": store.shop_intro or "",
+        "productionInfo": store.production_info or "",
+        "providerManufacturer": store.provider_manufacturer or "",
+        "packagingInfo": store.packaging_info or "",
+        "photos": [
+            {
+                "id": photo.id,
+                "url": _public_storage_url(settings.store_photos_bucket, photo.storage_path),
+                "caption": photo.caption,
+            }
+            for photo in photos
+        ],
     }
 
 
@@ -279,6 +376,19 @@ def _serialize_customer_order(db: Session, order: Order, store: StoreSettings) -
     }
 
 
+def _review_summary(db: Session, product_id: str | None = None) -> dict[str, Any]:
+    """Average, count and 1-5 distribution over PUBLISHED reviews only (hidden reviews never count)."""
+    statement = select(Review.rating, func.count()).where(Review.moderation_status == "PUBLISHED")
+    if product_id is not None:
+        statement = statement.where(Review.product_id == product_id)
+    distribution = {str(star): 0 for star in range(1, 6)}
+    for rating, count in db.execute(statement.group_by(Review.rating)).all():
+        distribution[str(int(rating))] = int(count)
+    total = sum(distribution.values())
+    average = round(sum(int(star) * count for star, count in distribution.items()) / total, 2) if total else None
+    return {"average": average, "count": total, "distribution": distribution}
+
+
 def _serialize_customer_review(db: Session, review: Review) -> dict[str, Any]:
     order = db.get(Order, review.order_id)
     product = db.get(Product, review.product_id)
@@ -300,6 +410,7 @@ def _serialize_customer_review(db: Session, review: Review) -> dict[str, Any]:
         "reviewText": review.review_text,
         "verifiedPurchase": review.is_verified_purchase,
         "createdAt": _iso(review.created_at),
+        "photoUrls": [f"/api/reviews/photos/{photo.id}" for photo in review.photos],
         "adminReply": review.admin_reply,
         "adminRepliedAt": _iso(review.admin_replied_at) if review.admin_replied_at else None,
     }
@@ -321,10 +432,21 @@ def _serialize_admin_review(db: Session, review: Review) -> dict[str, Any]:
         "createdAt": _iso(review.created_at),
         "isEligibleDeliveredOrder": bool(order and order.status == "DELIVERED"),
         "moderationStatus": review.moderation_status,
+        "moderationReason": review.moderation_reason,
         "adminReply": review.admin_reply,
         "adminRepliedAt": _iso(review.admin_replied_at) if review.admin_replied_at else None,
         "moderatedBy": review.moderated_by,
+        # Short-lived signed proxy paths: the browser cannot send a Bearer header from <img>.
+        "photoUrls": [_signed_review_photo_path(photo) for photo in review.photos],
     }
+
+
+def _signed_review_photo_path(photo: ReviewPhoto) -> str:
+    try:
+        sig, exp = create_signed_proof_query(photo.id, photo.storage_path, ttl_seconds=1800)
+    except PrivateImageStorageError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return f"/api/admin/reviews/photos/{photo.id}?sig={sig}&exp={exp}"
 
 
 def _build_signed_proof_url(payment: PaymentAttempt) -> str:
@@ -718,35 +840,20 @@ def list_public_products(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
     products = db.scalars(
         select(Product).where(Product.is_active.is_(True)).order_by(Product.slug.asc())
     ).all()
-    result: list[dict[str, Any]] = []
-    for product in products:
-        prices: dict[str, float | int | None] = {"250g": None, "500g": None, "1kg": None}
-        for variant in product.variants:
-            if variant.pack_size in prices:
-                prices[variant.pack_size] = (
-                    paise_to_inr(variant.price_paise)
-                    if variant.is_available and variant.available_stock > 0
-                    else None
-                )
-        result.append(
-            {
-                "type": product.slug,
-                "name": product.name,
-                "nameGu": product.name_gu,
-                "category": product.category,
-                "description": product.description,
-                "imageUrl": product.image_url,
-                "information": _serialize_product_information(product),
-                "packSizes": ["250g", "500g", "1kg"],
-                "prices": prices,
-            }
-        )
-    return result
+    return [_serialize_public_product(db, product) for product in products]
+
+
+@router.get("/products/{slug}")
+def get_public_product(slug: str, db: Session = Depends(get_db)) -> dict[str, Any]:
+    product = db.scalar(select(Product).where(Product.slug == slug.strip().lower(), Product.is_active.is_(True)))
+    if product is None:
+        raise HTTPException(status_code=404, detail="Product not found.")
+    return _serialize_public_product(db, product)
 
 
 @router.get("/store")
-def get_public_store_profile(db: Session = Depends(get_db)) -> dict[str, str]:
-    return _serialize_store_profile(_get_store_settings(db))
+def get_public_store_profile(db: Session = Depends(get_db)) -> dict[str, Any]:
+    return _serialize_store_profile(db, _get_store_settings(db))
 
 
 @router.post("/checkout/quote")
@@ -1074,13 +1181,35 @@ def get_order_tracking(
     return {"events": events}
 
 
+MAX_REVIEW_PHOTOS = 5
+
+
 @router.post("/orders/{order_id}/review", status_code=201)
 def submit_customer_review(
     order_id: str,
-    payload: SubmitReviewRequestSchema,
+    rating: int = Form(...),
+    review_text: str = Form(..., alias="reviewText"),
+    photos: list[UploadFile] = File(default=[]),
     principal: AuthenticatedPrincipal = Depends(get_current_principal),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
+    """Multipart review: rating, text and up to five private photos. Eligible reviews publish immediately."""
+    if not 1 <= rating <= 5:
+        raise HTTPException(status_code=422, detail="Rating must be between 1 and 5 stars.")
+    cleaned_text = (review_text or "").strip()
+    if len(cleaned_text) < 10 or len(cleaned_text) > 2000:
+        raise HTTPException(status_code=422, detail="Write between 10 and 2000 characters about your purchase.")
+    uploads = [photo for photo in photos if photo.filename]  # browsers send an empty part when nothing is chosen
+    if len(uploads) > MAX_REVIEW_PHOTOS:
+        raise HTTPException(status_code=422, detail=f"Attach no more than {MAX_REVIEW_PHOTOS} photos.")
+    validated: list[tuple[bytes, str]] = []
+    for upload in uploads:
+        data = upload.file.read(MAX_REVIEW_PHOTO_BYTES + 1)
+        try:
+            validated.append((data, validate_review_photo(data, upload.content_type)))
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
     order = db.scalar(select(Order).where(Order.id == order_id).with_for_update())
     if order is None:
         raise HTTPException(status_code=404, detail="Order not found.")
@@ -1088,8 +1217,7 @@ def submit_customer_review(
         raise HTTPException(status_code=403, detail="You can only review your own delivered order.")
     if order.status != "DELIVERED":
         raise HTTPException(status_code=409, detail="Reviews can only be submitted for delivered orders.")
-    existing = db.scalar(select(Review).where(Review.order_id == order.id))
-    if existing is not None:
+    if db.scalar(select(Review.id).where(Review.order_id == order.id)) is not None:
         raise HTTPException(status_code=409, detail="A review has already been submitted for this order.")
     if not order.items:
         raise HTTPException(status_code=409, detail="This order has no product item to review.")
@@ -1099,31 +1227,50 @@ def submit_customer_review(
         customer_id=order.customer_id,
         user_id=principal.id,
         product_id=order.items[0].product_id,
-        rating=payload.rating,
-        review_text=payload.review_text.strip(),
+        rating=rating,
+        review_text=cleaned_text,
         is_verified_purchase=True,
-        moderation_status="PENDING_MODERATION",
+        moderation_status="PUBLISHED",
     )
     db.add(review)
     db.flush()
-    db.add(
-        AdminAuditLog(
-            actor_id=principal.id,
-            actor_email=principal.email,
-            actor_role="CUSTOMER",
-            action="REVIEW_SUBMITTED",
-            module="REVIEWS",
-            entity_type="REVIEW",
-            entity_id=review.id,
-            previous_state=None,
-            new_state=json.dumps({"rating": review.rating, "moderationStatus": review.moderation_status}),
-        )
-    )
+    stored_paths: list[str] = []
     try:
+        for position, (data, mime_type) in enumerate(validated):
+            photo_id = new_uuid_str()
+            path = store_private_review_photo(
+                user_id=principal.id, review_id=review.id, photo_id=photo_id, content=data, mime_type=mime_type
+            )
+            stored_paths.append(path)
+            db.add(ReviewPhoto(id=photo_id, review_id=review.id, storage_path=path, mime_type=mime_type, position=position))
+        db.add(
+            AdminAuditLog(
+                actor_id=principal.id,
+                actor_email=principal.email,
+                actor_role="CUSTOMER",
+                action="REVIEW_SUBMITTED",
+                module="REVIEWS",
+                entity_type="REVIEW",
+                entity_id=review.id,
+                previous_state=None,
+                new_state=json.dumps(
+                    {"rating": review.rating, "moderationStatus": review.moderation_status, "photos": len(validated)}
+                ),
+            )
+        )
         db.commit()
+    except ReviewPhotoStorageError as exc:
+        db.rollback()
+        delete_private_review_photos(stored_paths)
+        raise HTTPException(status_code=503, detail="Photo storage is unavailable. Please try again.") from exc
     except IntegrityError as exc:
         db.rollback()
+        delete_private_review_photos(stored_paths)
         raise HTTPException(status_code=409, detail="A review has already been submitted for this order.") from exc
+    except Exception:
+        db.rollback()
+        delete_private_review_photos(stored_paths)
+        raise
     db.refresh(review)
     return _serialize_customer_review(db, review)
 
@@ -2383,34 +2530,20 @@ def list_admin_products(
     db: Session = Depends(get_db),
 ) -> list[dict[str, Any]]:
     products = db.scalars(select(Product).order_by(Product.slug.asc())).all()
-    return [
-        {
-            "id": p.id,
-            "type": p.slug,
-            "name": p.name,
-            "nameGu": p.name_gu,
-            "category": p.category,
-            "description": p.description,
-            "imageUrl": p.image_url,
-            "information": _serialize_product_information(p),
-            "active": p.is_active,
-            "updatedAt": _iso(p.updated_at),
-            "variants": [
-                {
-                    "id": v.id,
-                    "packSize": v.pack_size,
-                    "sku": v.sku,
-                    "costPrice": paise_to_inr(v.cost_price_paise),
-                    "price": paise_to_inr(v.price_paise),
-                    "availableQuantity": v.available_stock,
-                    "reservedQuantity": v.reserved_stock,
-                    "isAvailable": v.is_available,
-                }
-                for v in p.variants
-            ],
-        }
-        for p in products
-    ]
+    return [_serialize_admin_product(p) for p in products]
+
+
+_PRODUCT_INFORMATION_FIELDS = (
+    "ingredients",
+    "popularity",
+    "characteristics",
+    "production_packaging",
+    "provider_manufacturer",
+    "safety_storage",
+    "shelf_life",
+    "packaging",
+    "safety_disclosures",
+)
 
 
 @router.patch("/admin/products/{product_id}")
@@ -2420,11 +2553,17 @@ def update_admin_product(
     admin: AuthenticatedPrincipal = Depends(get_owner_admin_principal),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
+    """Partial update: only fields present in the request change. Omitted prices/availability are left alone.
+
+    Changing a selling price affects future orders only (existing order items keep their immutable unit price)
+    and resets the owner-approval flag unless the same request sets `priceConfirmed`.
+    """
     product = db.get(Product, product_id)
     if product is None:
         product = db.scalar(select(Product).where(Product.slug == product_id))
     if product is None:
         raise HTTPException(status_code=404, detail="Product not found.")
+    previous_state = _serialize_admin_product(product)
 
     if payload.name is not None:
         product.name = payload.name.strip()
@@ -2439,37 +2578,40 @@ def update_admin_product(
     if payload.active is not None:
         product.is_active = bool(payload.active)
     if payload.information is not None:
-        for attribute in (
-            "ingredients",
-            "popularity",
-            "characteristics",
-            "production_packaging",
-            "provider_manufacturer",
-            "safety_storage",
-        ):
-            value = getattr(payload.information, attribute)
-            if value is not None:
-                setattr(product, attribute, value.strip() or None)
+        for attribute in _PRODUCT_INFORMATION_FIELDS:
+            if attribute in payload.information.model_fields_set:
+                value = getattr(payload.information, attribute)
+                setattr(product, attribute, (value or "").strip() or None)
 
-    if payload.variants:
-        for v_in in payload.variants:
-            variant = next(
-                (v for v in product.variants if v.pack_size == v_in.pack_size or (v_in.id and v.id == v_in.id)),
-                None,
-            )
-            if variant is not None:
-                if v_in.cost_price is not None:
-                    variant.cost_price_paise = inr_to_paise(v_in.cost_price)
-                if v_in.price is not None:
-                    variant.price_paise = inr_to_paise(v_in.price)
-                else:
-                    variant.price_paise = None
-                if v_in.available_quantity is not None:
-                    variant.total_stock = max(
-                        int(variant.reserved_stock),
-                        int(v_in.available_quantity) + int(variant.reserved_stock),
-                    )
-                variant.is_available = bool(v_in.is_available)
+    for v_in in payload.variants or []:
+        variant = next(
+            (v for v in product.variants if (v_in.id and v.id == v_in.id) or v.pack_size == v_in.pack_size),
+            None,
+        )
+        if variant is None:
+            raise HTTPException(status_code=404, detail=f"Variant {v_in.pack_size} not found for this product.")
+        fields = v_in.model_fields_set
+        if "cost_price" in fields:
+            if v_in.cost_price is not None and v_in.cost_price < 0:
+                raise HTTPException(status_code=422, detail="Cost price cannot be negative.")
+            variant.cost_price_paise = inr_to_paise(v_in.cost_price) if v_in.cost_price is not None else None
+        if "price" in fields:
+            if v_in.price is not None and v_in.price < 0:
+                raise HTTPException(status_code=422, detail="Selling price cannot be negative.")
+            new_price = inr_to_paise(v_in.price) if v_in.price is not None else None
+            if new_price != variant.price_paise:
+                variant.price_paise = new_price
+                variant.price_confirmed = False  # a changed price needs fresh owner approval
+        if "price_confirmed" in fields and v_in.price_confirmed is not None:
+            if v_in.price_confirmed and variant.price_paise is None:
+                raise HTTPException(status_code=422, detail="Set a selling price before confirming it.")
+            variant.price_confirmed = bool(v_in.price_confirmed)
+        if v_in.available_quantity is not None:
+            if v_in.available_quantity < 0:
+                raise HTTPException(status_code=422, detail="Available quantity cannot be negative.")
+            variant.total_stock = int(v_in.available_quantity) + int(variant.reserved_stock)
+        if v_in.is_available is not None:
+            variant.is_available = bool(v_in.is_available)
 
     db.add(
         AdminAuditLog(
@@ -2480,36 +2622,13 @@ def update_admin_product(
             module="PRODUCTS",
             entity_type="PRODUCT",
             entity_id=product.id,
-            new_state=payload.model_dump_json(by_alias=True),
+            previous_state=json.dumps(previous_state),
+            new_state=payload.model_dump_json(by_alias=True, exclude_unset=True),
         )
     )
     db.commit()
     db.refresh(product)
-    return {
-        "id": product.id,
-        "type": product.slug,
-        "name": product.name,
-        "nameGu": product.name_gu,
-        "category": product.category,
-        "description": product.description,
-        "imageUrl": product.image_url,
-        "information": _serialize_product_information(product),
-        "active": product.is_active,
-        "updatedAt": _iso(product.updated_at),
-        "variants": [
-            {
-                "id": v.id,
-                "packSize": v.pack_size,
-                "sku": v.sku,
-                "costPrice": paise_to_inr(v.cost_price_paise),
-                "price": paise_to_inr(v.price_paise),
-                "availableQuantity": v.available_stock,
-                "reservedQuantity": v.reserved_stock,
-                "isAvailable": v.is_available,
-            }
-            for v in product.variants
-        ],
-    }
+    return _serialize_admin_product(product)
 
 
 @router.get("/admin/refunds")
@@ -2665,22 +2784,87 @@ def record_admin_refund_transfer(
     return _serialize_admin_refund(db, refund)
 
 
+_REVIEW_SORT = {
+    "newest": lambda: (Review.created_at.desc(),),
+    "oldest": lambda: (Review.created_at.asc(),),
+    "highest": lambda: (Review.rating.desc(), Review.created_at.desc()),
+    "lowest": lambda: (Review.rating.asc(), Review.created_at.desc()),
+}
+
+
 @router.get("/reviews")
 def list_published_reviews(
     product: str | None = None,
+    sort: str = Query(default="newest", pattern="^(newest|oldest|highest|lowest)$"),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
+    """Public, PUBLISHED reviews only. Hidden reviews never appear in items, count or average."""
     statement = select(Review).where(Review.moderation_status == "PUBLISHED")
+    product_id: str | None = None
     if product:
         slug = product.strip().lower()
         if slug not in {"faki", "supari"}:
             raise HTTPException(status_code=422, detail="Product must be faki or supari.")
         catalog_product = db.scalar(select(Product).where(Product.slug == slug))
         if catalog_product is None:
-            return {"items": [], "total": 0}
-        statement = statement.where(Review.product_id == catalog_product.id)
-    reviews = db.scalars(statement.order_by(Review.created_at.desc())).all()
-    return {"items": [_serialize_customer_review(db, review) for review in reviews], "total": len(reviews)}
+            return {"items": [], "total": 0, "summary": _review_summary(db, "unknown-product")}
+        product_id = catalog_product.id
+        statement = statement.where(Review.product_id == product_id)
+    reviews = db.scalars(statement.order_by(*_REVIEW_SORT[sort]())).all()
+    return {
+        "items": [_serialize_customer_review(db, review) for review in reviews],
+        "total": len(reviews),
+        "summary": _review_summary(db, product_id),
+    }
+
+
+def _review_photo_response(photo: ReviewPhoto, cache_control: str) -> Response:
+    try:
+        content, mime_type = read_private_review_photo(photo.storage_path)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Photo not found.") from exc
+    except PrivateImageStorageError as exc:
+        raise HTTPException(status_code=503, detail="Photo storage is unavailable.") from exc
+    return Response(
+        content=content,
+        media_type=mime_type,
+        headers={"Cache-Control": cache_control, "X-Content-Type-Options": "nosniff"},
+    )
+
+
+@router.get("/reviews/photos/{photo_id}")
+def get_public_review_photo(photo_id: str, db: Session = Depends(get_db)) -> Response:
+    """Photos are private in Storage; FastAPI serves them only while their review is PUBLISHED."""
+    photo = db.get(ReviewPhoto, photo_id)
+    if photo is None or photo.review.moderation_status != "PUBLISHED":
+        raise HTTPException(status_code=404, detail="Photo not found.")
+    return _review_photo_response(photo, "public, max-age=300")
+
+
+@router.get("/admin/reviews/photos/{photo_id}")
+def get_admin_review_photo(
+    photo_id: str,
+    sig: str | None = Query(default=None),
+    exp: int | None = Query(default=None),
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    db: Session = Depends(get_db),
+) -> Response:
+    """Any review photo (including hidden reviews) for the Owner Admin: signed short-lived URL or admin Bearer."""
+    photo = db.get(ReviewPhoto, photo_id)
+    if photo is None:
+        raise HTTPException(status_code=404, detail="Photo not found.")
+    try:
+        authorized = verify_signed_proof_query(photo.id, photo.storage_path, sig=sig, exp=exp)
+    except PrivateImageStorageError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    if not authorized:
+        try:
+            claims = verify_supabase_access_token(extract_bearer_token(authorization))
+            principal = resolve_authenticated_principal(claims, _ensure_user_profile(db, claims))
+            enforce_owner_admin(principal)
+        except AuthError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    return _review_photo_response(photo, "private, no-store, max-age=0")
 
 
 @router.get("/admin/reviews")
@@ -2708,16 +2892,24 @@ def update_admin_review(
 ) -> dict[str, Any]:
     if payload.moderation_status is None and payload.admin_reply is None:
         raise HTTPException(status_code=400, detail="Provide a moderation status or an admin reply.")
+    reason = (payload.moderation_reason or "").strip()
+    if payload.moderation_status == "HIDDEN" and len(reason) < 3:
+        raise HTTPException(
+            status_code=422,
+            detail="A reason (spam, abuse, private information or prohibited content) is required to hide a review.",
+        )
     review = db.scalar(select(Review).where(Review.id == review_id).with_for_update())
     if review is None:
         raise HTTPException(status_code=404, detail="Review not found.")
 
     previous_state = {
         "moderationStatus": review.moderation_status,
+        "moderationReason": review.moderation_reason,
         "adminReply": review.admin_reply,
     }
     if payload.moderation_status is not None:
         review.moderation_status = payload.moderation_status
+        review.moderation_reason = reason if payload.moderation_status == "HIDDEN" else None
         review.moderated_by = admin.id
     if payload.admin_reply is not None:
         reply = payload.admin_reply.strip()
@@ -2735,7 +2927,11 @@ def update_admin_review(
             entity_id=review.id,
             previous_state=json.dumps(previous_state),
             new_state=json.dumps(
-                {"moderationStatus": review.moderation_status, "adminReply": review.admin_reply}
+                {
+                    "moderationStatus": review.moderation_status,
+                    "moderationReason": review.moderation_reason,
+                    "adminReply": review.admin_reply,
+                }
             ),
         )
     )

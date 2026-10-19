@@ -103,7 +103,7 @@ class CatalogDetailsTests(unittest.TestCase):
             store.upi_id = "private-payment-destination"
             db.commit()
 
-            profile = _serialize_store_profile(store)
+            profile = _serialize_store_profile(db, store)
 
         self.assertEqual(profile["storeName"], "Confirmed Test Store")
         self.assertEqual(profile["storeAddress"], "Confirmed Test Address")

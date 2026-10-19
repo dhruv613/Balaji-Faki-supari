@@ -94,6 +94,9 @@ class Settings:
     )
     payment_proofs_bucket: str = "payment-proofs"
     review_photos_bucket: str = "review-photos"
+    product_images_bucket: str = "product-images"
+    store_photos_bucket: str = "store-photos"
+    payment_qr_bucket: str = "payment-qr"
     signed_url_ttl_seconds: int = 300
 
     @property

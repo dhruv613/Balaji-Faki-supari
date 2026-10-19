@@ -113,6 +113,7 @@ class UpdateAdminReviewRequestSchema(CamelModel):
         default=None, alias="moderationStatus"
     )
     admin_reply: Optional[str] = Field(default=None, alias="adminReply", max_length=2000)
+    moderation_reason: Optional[str] = Field(default=None, alias="moderationReason", max_length=500)
 
 
 class ConfirmOrderRequestSchema(CamelModel):
@@ -161,7 +162,8 @@ class UpdateProductVariantInputSchema(CamelModel):
     cost_price: Optional[float] = Field(default=None, alias="costPrice")
     price: Optional[float] = None
     available_quantity: Optional[int] = Field(default=None, alias="availableQuantity")
-    is_available: bool = Field(default=True, alias="isAvailable")
+    is_available: Optional[bool] = Field(default=None, alias="isAvailable")
+    price_confirmed: Optional[bool] = Field(default=None, alias="priceConfirmed")
 
 
 class ProductInformationSchema(CamelModel):
@@ -171,6 +173,9 @@ class ProductInformationSchema(CamelModel):
     production_packaging: Optional[str] = Field(default=None, alias="productionPackaging", max_length=2000)
     provider_manufacturer: Optional[str] = Field(default=None, alias="providerManufacturer", max_length=2000)
     safety_storage: Optional[str] = Field(default=None, alias="safetyStorage", max_length=2000)
+    shelf_life: Optional[str] = Field(default=None, alias="shelfLife", max_length=2000)
+    packaging: Optional[str] = Field(default=None, max_length=2000)
+    safety_disclosures: Optional[str] = Field(default=None, alias="safetyDisclosures", max_length=2000)
 
 
 class UpdateAdminProductRequestSchema(CamelModel):
