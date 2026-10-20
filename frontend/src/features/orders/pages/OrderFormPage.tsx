@@ -13,6 +13,7 @@ import {
 import { formatINR, formatPackSize } from '../../../lib/api';
 import { primaryImage } from '../../catalog/components/ProductParts';
 import type { ProductType, PackSize, OrderFormData } from '../../../types/orders';
+import ProductName from '../../../components/common/ProductName';
 
 const FIELD_IDS: Partial<Record<keyof OrderFormData, string>> = {
   product: 'product-faki',
@@ -122,7 +123,7 @@ export default function OrderFormPage() {
                     onChange={() => dispatch({ type: 'SET_PRODUCT', payload: prod.type })}
                   />
                   {image && <img className="product-thumb" src={image.url} alt="" loading="lazy" decoding="async" />}
-                  {prod.name}
+                  <ProductName name={prod.name} nameGu={prod.nameGu} />
                 </label>
                 );
               })}
@@ -262,7 +263,7 @@ export default function OrderFormPage() {
 
             <div className="summary-row">
               <span>
-                {summary.productName} · {formatPackSize(summary.packSize)} × {summary.quantity}
+                <ProductName name={summary.productName} nameGu={summary.productNameGu} /> · {formatPackSize(summary.packSize)} × {summary.quantity}
               </span>
               <strong>{formatINR(summary.subtotal)}</strong>
             </div>

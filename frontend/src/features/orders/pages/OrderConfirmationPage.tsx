@@ -10,6 +10,7 @@ import { formatINR, formatPackSize, getErrorMessage } from '../../../lib/api';
 import { getOrder } from '../api/ordersApi';
 import { getPaymentStatus, isPaymentConfirmed, isConfirmedOrder } from '../../payments/api/paymentsApi';
 import type { Order } from '../../../types/orders';
+import ProductName, { findNameGu } from '../../../components/common/ProductName';
 
 export default function OrderConfirmationPage() {
   const state = useOrder();
@@ -60,7 +61,7 @@ export default function OrderConfirmationPage() {
         <div className="card" style={{ marginTop: 32, textAlign: 'left', maxWidth: 648, marginLeft: 'auto', marginRight: 'auto' }}>
           <div className="summary-row">
             <span>Items</span>
-            <strong>{confirmedOrder.productName} · {formatPackSize(confirmedOrder.packSize)} × {confirmedOrder.quantity}</strong>
+            <strong><ProductName name={confirmedOrder.productName} nameGu={findNameGu(state.products, confirmedOrder.product)} /> · {formatPackSize(confirmedOrder.packSize)} × {confirmedOrder.quantity}</strong>
           </div>
           <div className="summary-row">
             <span>Paid</span>

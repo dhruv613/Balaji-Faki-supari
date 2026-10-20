@@ -10,6 +10,7 @@ import type { Order, TrackingEvent } from '../../../types/orders';
 import { useOrder } from '../../../context/OrderContext';
 import { contactDetails, useStoreProfile } from '../../store/storeApi';
 import { buildCustomerProgress } from '../lib/customerTimeline';
+import ProductName, { findNameGu } from '../../../components/common/ProductName';
 
 export default function OrderDetailsPage() {
   const { orderId = '' } = useParams();
@@ -106,9 +107,9 @@ export default function OrderDetailsPage() {
             <h3>Delivery details</h3>
             <div className="order-detail__product">
               {order.productImageUrl && <img className="order-detail__product-image" src={order.productImageUrl} alt={order.productName} width="72" height="90" decoding="async" />}
-              <strong>{order.productName}</strong>
+              <strong><ProductName name={order.productName} nameGu={findNameGu(draft.products, order.product)} /></strong>
             </div>
-            <div className="summary-row"><span>Items</span><strong>{order.productName} · {formatPackSize(order.packSize)} × {order.quantity}</strong></div>
+            <div className="summary-row"><span>Items</span><strong><ProductName name={order.productName} nameGu={findNameGu(draft.products, order.product)} /> · {formatPackSize(order.packSize)} × {order.quantity}</strong></div>
             <div className="summary-row"><span>Payment</span><strong>{order.paymentStatus}</strong></div>
             <div className="summary-row"><span>Order total</span><strong>{formatINR(order.total)}</strong></div>
             <div className="summary-row"><span>Deliver to</span><strong>{order.address} – {order.pinCode}</strong></div>

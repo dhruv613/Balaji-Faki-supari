@@ -7,6 +7,8 @@ import Notice from '../../../components/common/Notice';
 import { getMyOrders } from '../api/ordersApi';
 import { ORDER_STATUS_DISPLAY_LABELS } from '../../../types/orders';
 import type { Order, OrderStatus } from '../../../types/orders';
+import ProductName, { findNameGu } from '../../../components/common/ProductName';
+import { useOrder } from '../../../context/OrderContext';
 
 type Filter = 'all' | 'active' | 'delivered' | 'pending';
 const PENDING_STATUSES: OrderStatus[] = [
@@ -31,6 +33,7 @@ const ACTIVE_STATUSES: OrderStatus[] = [
 
 export default function MyOrdersPage() {
   const { session, loading: authLoading } = useSession();
+  const { products } = useOrder();
   const [filter, setFilter] = useState<Filter>('all');
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(false);
@@ -74,7 +77,7 @@ export default function MyOrdersPage() {
             return (
               <article className="order-card" key={order.id}>
                 <div><div className="order-card__id">{order.orderNumber}</div><div className="order-card__date">{new Date(order.createdAt).toLocaleDateString('en-IN', {day:'numeric', month:'short', year:'numeric'})}</div></div>
-                <div className="order-card__details"><span className="order-card__product" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>{order.productImageUrl && <img className="product-thumb" src={order.productImageUrl} alt={order.productName} loading="lazy" decoding="async" />}<span>{order.productName} · {formatPackSize(order.packSize)} × {order.quantity}</span></span><span className="order-card__amount">{formatINR(order.total)}</span></div>
+                <div className="order-card__details"><span className="order-card__product" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>{order.productImageUrl && <img className="product-thumb" src={order.productImageUrl} alt={order.productName} loading="lazy" decoding="async" />}<span><ProductName name={order.productName} nameGu={findNameGu(products, order.product)} /> · {formatPackSize(order.packSize)} × {order.quantity}</span></span><span className="order-card__amount">{formatINR(order.total)}</span></div>
                 <span className={`badge ${PENDING_STATUSES.includes(order.status) ? '' : 'badge--dark'}`}>{ORDER_STATUS_DISPLAY_LABELS[order.status]}</span>
                 <Link className="btn" to={`/my-orders/${encodeURIComponent(order.id)}`}>View order</Link>
               </article>

@@ -7,6 +7,7 @@ import { contactDetails, useStoreProfile } from '../../store/storeApi';
 import HeroSlider, { type HeroSlide } from '../components/HeroSlider';
 import ProductDetailsView from '../components/ProductDetailsView';
 import { PackPrices, primaryImage } from '../components/ProductParts';
+import ProductName from '../../../components/common/ProductName';
 
 /** Hero photos, shown in this order. To add or change one, drop the file in public/images/hero and edit this list. */
 const HERO_SLIDES: HeroSlide[] = [
@@ -62,7 +63,7 @@ export default function HomePage() {
                 <div className="product-card product-card--clickable" key={product.type}
                   onClick={(event) => { if (!(event.target as HTMLElement).closest('a, button')) setOpenType(product.type); }}>
                   {image && <img className="product-card__image" src={image.url} alt={image.alt} loading="lazy" decoding="async" />}
-                  <div className="product-card__name">{product.name}</div>
+                  <div className="product-card__name"><ProductName name={product.name} nameGu={product.nameGu} /></div>
                   <RatingLine average={product.averageRating} count={product.reviewCount} />
                   {product.description?.trim() && <p className="product-card__details">{product.description.trim()}</p>}
                   <PackPrices product={product} />

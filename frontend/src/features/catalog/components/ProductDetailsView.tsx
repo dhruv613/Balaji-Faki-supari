@@ -6,6 +6,7 @@ import { formatPackSize, resolveApiUrl } from '../../../lib/api';
 import type { PackSize, Product } from '../../../types/orders';
 import { getPublishedReviews, type ReviewList } from '../../reviews/reviewsApi';
 import { PackPrices, ProductFacts } from './ProductParts';
+import ProductName from '../../../components/common/ProductName';
 
 /**
  * Full product details (photos with front/back switcher, description, pack sizes and prices, owner-supplied facts, real
@@ -66,8 +67,7 @@ export default function ProductDetailsView({ product, headingTag: Heading = 'h1'
         </section>
 
         <aside className="two-col__side card card--tinted">
-          <Heading id={titleId} style={{ marginBottom: 4 }}>{product.name}</Heading>
-          {product.nameGu && <p className="text-secondary">{product.nameGu}</p>}
+          <Heading id={titleId} style={{ marginBottom: 4 }}><ProductName name={product.name} nameGu={product.nameGu} /></Heading>
           {product.category && <p className="text-small text-secondary">{product.category}</p>}
           <RatingLine average={product.averageRating} count={product.reviewCount} />
           {product.description?.trim() && <p style={{ marginTop: 12, whiteSpace: 'pre-line' }}>{product.description.trim()}</p>}

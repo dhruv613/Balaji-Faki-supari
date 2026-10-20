@@ -16,6 +16,7 @@ import { createOrder } from '../api/ordersApi';
 import { primaryImage } from '../../catalog/components/ProductParts';
 import { useSession } from '../../../lib/supabase';
 import EmailSignIn from '../../../components/common/EmailSignIn';
+import ProductName from '../../../components/common/ProductName';
 
 type SubmitError = { kind: 'offline' | 'server'; message: string } | null;
 
@@ -146,7 +147,7 @@ export default function ReviewOrderPage() {
             <div className="summary-row">
               <span style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 {reviewImage && <img className="product-thumb" src={reviewImage.url} alt={reviewImage.alt} loading="lazy" decoding="async" />}
-                <span>{summary.productName} · {formatPackSize(summary.packSize)} × {summary.quantity}</span>
+                <span><ProductName name={summary.productName} nameGu={summary.productNameGu} /> · {formatPackSize(summary.packSize)} × {summary.quantity}</span>
               </span>
               <strong>{formatINR(summary.subtotal)}</strong>
             </div>

@@ -114,6 +114,7 @@ export interface OrderFormData {
 export interface OrderSummary {
   product: ProductType;
   productName: string;
+  productNameGu: string;
   packSize: PackSize;
   quantity: number;
   subtotal: number | null;

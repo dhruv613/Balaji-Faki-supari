@@ -110,6 +110,7 @@ export function buildSummary(state: OrderState): OrderSummary {
   return {
     product: server?.product ?? state.product,
     productName: server?.productName ?? product.name,
+    productNameGu: state.products.find(p => p.type === (server?.product ?? state.product))?.nameGu ?? '',
     packSize: server?.packSize ?? state.packSize,
     quantity: server?.quantity ?? state.quantity,
     subtotal: quote?.subtotal ?? (price != null ? price * state.quantity : null),
