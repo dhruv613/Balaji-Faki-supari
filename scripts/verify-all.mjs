@@ -9,7 +9,7 @@ function step(label, command, cwd = rootDir) {
   execSync(command, { cwd, stdio: 'inherit' });
 }
 
-step('0. Local-only isolation check', 'node scripts/check-local-only.mjs');
+step('0. Neon runtime and credential check', 'node scripts/check-neon-config.mjs');
 step('1. Frontend TypeScript Validation', 'npm run typecheck');
 step('2. Automated Test Suites (Checkout, Secondary Pages, Auth, Admin & DB Schema)', 'npm test');
 step('3. Backend FastAPI Security & JWT Verification Tests', 'python -m unittest discover -s backend/tests -v');
@@ -24,31 +24,16 @@ const requiredPaths = [
   'admin-panel/frontend/dist/index.html',
   'admin-panel/vercel.json',
   'admin-panel/backend/README.md',
-  'supabase/migrations/20261017000000_balaji_faki_point_schema.sql',
-  'supabase/migrations/20261017000001_optimize_rls_and_security_advisors.sql',
-  'supabase/migrations/20261017000002_simple_db_auth.sql',
-  'supabase/migrations/20261018000000_remediate_auth_and_rls_security.sql',
-  'supabase/migrations/20261019000000_product_information.sql',
-  'supabase/migrations/20261019000001_review_photos.sql',
-  'supabase/migrations/20261020000000_final_security_state.sql',
-  'supabase/migrations/20261020000001_catalog_store_content.sql',
-  'supabase/migrations/20261020000002_least_privilege_grants.sql',
-  'supabase/migrations/20261020000003_screenshot_only_payments.sql',
-  'supabase/migrations/20261020000004_faki_packet_images.sql',
-  'supabase/migrations/20261020000005_mitho_mavo_and_water.sql',
-  'supabase/migrations/20261020000006_faki_real_images_supari_packet.sql',
-  'supabase/migrations/20261020000007_faki_gallery_order.sql',
-  'supabase/migrations/20261020000008_chuno.sql',
-  'supabase/migrations/20261020000009_tamaku.sql',
   'vercel.json',
   'api/index.py',
   'requirements.txt',
   'docs/VERCEL_DEPLOYMENT.md',
-  'scripts/check-local-only.mjs',
-  'scripts/check-db-security.py',
+  'scripts/check-neon-config.mjs',
+  'backend/migrations/neon/001_schema.sql',
+  'backend/migrations/neon/002_catalog.sql',
+  'backend/migrations/neon/003_neon_identity.sql',
   'docs/design-reference/Balaji Faki Point – Website UI (1).html',
   'docs/design-reference/Balaji Faki Point – Website UI (1).pdf',
-  'backend/package.json',
   'backend/requirements.txt',
   'backend/app/core/config.py',
   'backend/app/core/security.py',

@@ -10,6 +10,7 @@ import sys
 import unittest
 from dataclasses import replace
 from pathlib import Path
+from unittest.mock import patch
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = BACKEND_ROOT.parent
@@ -82,23 +83,15 @@ class VercelLayoutTests(unittest.TestCase):
 
     def test_health_names_the_missing_settings_outside_local_development(self) -> None:
         import app.main as main_module
-
-        bare = replace(main_module.settings, app_env="production", supabase_url=main_module.LOCAL_SUPABASE_URL,
-                       supabase_secret_key="", supabase_jwt_secret="", proof_signing_secret="")
-        original = main_module.settings
-        try:
-            main_module.settings = bare
+        bare = replace(main_module.settings, app_env="production", neon_auth_base_url="", neon_auth_jwks_url="", proof_signing_secret="")
+        with patch.object(main_module, "settings", bare), patch.dict(os.environ, {key: "" for key in ("AWS_ENDPOINT_URL_S3", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_REGION")}):
             response = main_module.get_health()
             self.assertEqual(response.status_code, 503)
             missing = json.loads(response.body)["missingConfig"]
-            self.assertEqual(len(missing), 3)
+            self.assertEqual(len(missing), 7)
             self.assertTrue(all("=" not in name for name in missing), "names only, never values")
-            main_module.settings = replace(bare, supabase_url="https://abcd.supabase.co", supabase_secret_key="x" * 20)
-            self.assertEqual(main_module.get_health()["status"], "ok")
-            main_module.settings = replace(bare, app_env="local")
-            self.assertEqual(main_module.get_health()["status"], "ok")
-        finally:
-            main_module.settings = original
+            with patch.object(main_module, "settings", replace(bare, app_env="local")):
+                self.assertEqual(main_module.get_health()["status"], "ok")
 
 
 if __name__ == "__main__":

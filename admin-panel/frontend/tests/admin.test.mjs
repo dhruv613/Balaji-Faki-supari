@@ -59,12 +59,14 @@ let fakeFetch;
 const env = { apiBaseUrl: 'https://api.balajifaki.test/api', supportWhatsApp: '918000961030' };
 let session = { access_token: 'owner-admin-jwt-token', user: { id: 'admin-1', email: 'owner@balajifaki.com' } };
 const authStub = {
-  supabase: { auth: { getSession: async () => ({ data: { session } }) } },
+  getAccessToken: async () => session?.access_token ?? null,
+  authClient: {},
+  signOut: async () => {},
   useSession: () => ({ session, loading: false }),
 };
 const apiModule = load(
   'src/lib/api.ts',
-  { './env': { env }, './supabase': authStub },
+  { './env': { env }, './auth': authStub },
   { fetch: (...args) => fakeFetch(...args) },
 );
 const adminApi = load('src/features/admin/api/index.ts', {
@@ -72,7 +74,7 @@ const adminApi = load('src/features/admin/api/index.ts', {
   '../../../lib/env': { env },
 });
 const routeGuard = load('src/features/admin/components/AdminRouteGuard.tsx', {
-  '../../../lib/supabase': authStub,
+  '../../../lib/auth': authStub,
   '../../../lib/env': { env },
   '../../../components/common/EmailSignIn': { default: () => null },
   './StoreLink': { default: () => null },
@@ -299,77 +301,27 @@ assert.equal(
 );
 
 /* ================================================================== */
-/*  7. SUPABASE POSTGRESQL SCHEMA & RLS MIGRATION VERIFICATION        */
+/*  7. NEON POSTGRESQL SCHEMA VERIFICATION                            */
 /* ================================================================== */
 
-const migrationSql = readFileSync(
-  new URL('../../../supabase/migrations/20261017000000_balaji_faki_point_schema.sql', import.meta.url),
-  'utf8',
-);
-
+const migrationSql = readFileSync(new URL('../../../backend/migrations/neon/001_schema.sql', import.meta.url), 'utf8');
 const requiredTables = [
-  'user_profiles',
-  'customers',
-  'products',
-  'product_variants',
-  'orders',
-  'order_items',
-  'payment_attempts',
-  'bank_credits',
-  'order_status_history',
-  'inventory_movements',
-  'shipments',
-  'delivery_events',
-  'reviews',
-  'cancellation_requests',
-  'refunds',
-  'notifications',
-  'store_settings',
-  'admin_audit_logs',
+  'user_profiles', 'customers', 'products', 'product_variants', 'orders', 'order_items', 'payment_attempts',
+  'bank_credits', 'order_status_history', 'inventory_movements', 'shipments', 'delivery_events', 'reviews',
+  'cancellation_requests', 'refunds', 'notifications', 'store_settings', 'admin_audit_logs',
+  'review_photos', 'product_images', 'store_photos',
 ];
-
 for (const table of requiredTables) {
-  assert.match(
-    migrationSql,
-    new RegExp(`create table if not exists public\\.${table}\\b`),
-    `Missing table definition for public.${table}`,
-  );
-  assert.match(
-    migrationSql,
-    new RegExp(`alter table public\\.${table} enable row level security;`),
-    `Missing RLS enablement for public.${table}`,
-  );
+  assert.match(migrationSql, new RegExp(`create table if not exists public\\.${table}\\b`), `Missing table definition for public.${table}`);
+  assert.match(migrationSql, new RegExp(`alter table public\\.${table} enable row level security;`), `Missing RLS enablement for public.${table}`);
 }
-
 const sqlWithoutComments = migrationSql.replace(/--.*$/gm, '');
-assert.doesNotMatch(sqlWithoutComments, /auth\.role\(\)/, 'Must not use deprecated auth.role() in RLS policies');
-assert.match(migrationSql, /create or replace function private\.is_owner_admin\(\)/);
-assert.match(migrationSql, /'payment-proofs'/);
+// Only the server-side API connects; nothing is granted to browser-facing or public roles.
+assert.doesNotMatch(sqlWithoutComments, /\bgrant\b[^;]*\bto\s+(public|anon|authenticated)\b/i, 'no table is granted to public roles');
 assert.match(migrationSql, /cost_price_paise/);
 assert.match(migrationSql, /unit_cost_paise/);
-
-const remediationSql = readFileSync(
-  new URL('../../../supabase/migrations/20261018000000_remediate_auth_and_rls_security.sql', import.meta.url),
-  'utf8',
-);
-assert.match(remediationSql, /drop function public\.simple_auth_login\(text, text\)/);
-assert.match(remediationSql, /drop function public\.simple_auth_update_profile\(uuid, text, text\)/);
-assert.match(remediationSql, /drop policy if exists "user_profiles_simple_auth_select" on public\.user_profiles/);
-assert.match(remediationSql, /drop policy if exists "user_profiles_simple_auth_insert" on public\.user_profiles/);
-assert.match(remediationSql, /drop policy if exists "user_profiles_simple_auth_update" on public\.user_profiles/);
-assert.match(remediationSql, /drop policy if exists "customers_simple_auth_select" on public\.customers/);
-assert.match(remediationSql, /drop policy if exists "customers_simple_auth_insert" on public\.customers/);
-assert.match(remediationSql, /drop policy if exists "customers_simple_auth_update" on public\.customers/);
-assert.match(remediationSql, /create table if not exists private\.legacy_db_auth_accounts/);
-assert.match(remediationSql, /drop column password_hash/);
-assert.match(remediationSql, /create policy "user_profiles_select_own_or_admin"/);
-assert.match(remediationSql, /create policy "user_profiles_insert_own_customer"/);
-assert.match(remediationSql, /create policy "user_profiles_update_own"/);
-assert.match(remediationSql, /create policy "customers_select_own_or_admin"/);
-assert.match(remediationSql, /create policy "customers_insert_own_or_admin"/);
-assert.match(remediationSql, /create policy "customers_update_own_or_admin"/);
-assert.match(remediationSql, /create or replace function private\.enforce_user_profile_role_security\(\)/);
-assert.match(remediationSql, /create or replace function public\.sync_my_profile\(/);
+assert.match(readFileSync(new URL('../../../backend/migrations/neon/003_neon_identity.sql', import.meta.url), 'utf8'), /auth_subject text/,
+  'historical accounts keep their IDs and link to a Neon Auth identity through auth_subject');
 
 /* ================================================================== */
 /*  8. DASHBOARD METRICS (PRODUCTS SOLD & NET PROFIT) & ACTION FLOW   */
@@ -478,7 +430,7 @@ const AdminStatesMod = load('src/features/admin/components/AdminStates.tsx', {
 });
 const AdminToastMod = load('src/features/admin/components/Toast.tsx');
 const AdminSidebarMod = load('src/features/admin/components/AdminSidebar.tsx', {
-  '../../../lib/supabase': authStub,
+  '../../../lib/auth': authStub,
   './StoreLink': { default: () => null },
 });
 
@@ -691,7 +643,7 @@ assert.match(refundsHtml, /No sample refund records are shown/);
 assert.match(refundsHtml, /No cancellation or refund records match these filters/);
 
 console.log(
-  'Admin panel & Supabase DB: 18 tables, RLS policies, RBAC route guard, 4-page navigation, minimal Dashboard (Products Sold + Net Profit + Pending Payment Confirmations), Price Management, Order Management, Feedback Management, and typed API client passed.',
+  'Admin panel & Neon DB: 18 tables, RLS policies, RBAC route guard, 4-page navigation, minimal Dashboard (Products Sold + Net Profit + Pending Payment Confirmations), Price Management, Order Management, Feedback Management, and typed API client passed.',
 );
 
 

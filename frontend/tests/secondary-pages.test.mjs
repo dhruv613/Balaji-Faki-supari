@@ -9,7 +9,7 @@ function loadPage(path) {
   const source = readFileSync(new URL(`../src/features/${path}`, import.meta.url), 'utf8');
   const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
   const context = { exports: {}, require: name => (
-    name.endsWith('/Notice') || name.endsWith('/Stars') || name.endsWith('/reviewsApi') || name.endsWith('/ordersApi') || name.endsWith('/supabase') || name.endsWith('/OrderContext') || name.endsWith('/store') || name.endsWith('/api')
+    name.endsWith('/Notice') || name.endsWith('/Stars') || name.endsWith('/reviewsApi') || name.endsWith('/ordersApi') || name.endsWith('/auth') || name.endsWith('/OrderContext') || name.endsWith('/store') || name.endsWith('/api')
       ? {}
       : require(name)
   ) };

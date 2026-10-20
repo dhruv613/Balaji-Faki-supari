@@ -2,7 +2,6 @@
 
 Usage (local stack only):
     python -m app.db.seed --dev                # store settings row + Faki/Supari products and variants
-    python -m app.db.seed --dev --dev-admin    # additionally create a local Owner Admin in local Supabase Auth
 
 Rules:
 * Only Faki 1 kg = Rs 1,000 is an owner-confirmed price. Every other price below is DEVELOPMENT DATA
@@ -14,10 +13,7 @@ Rules:
 from __future__ import annotations
 
 import argparse
-import json
-import secrets
 import sys
-from pathlib import Path
 from urllib.parse import urlparse
 
 from sqlalchemy import select
@@ -235,41 +231,9 @@ def _require_local(url: str, label: str) -> None:
         raise SystemExit(f"REFUSED: {label} is not a local address; nothing was changed.")
 
 
-def create_dev_admin(supabase_url: str, secret_key: str, db: Session) -> Path:
-    """Creates (or reuses) a LOCAL Owner Admin through the local Supabase Auth admin API.
-
-    Credentials are written to a gitignored file and never printed.
-    """
-    import httpx
-
-    _require_local(supabase_url, "SUPABASE_URL")
-    if not secret_key:
-        raise SystemExit("BLOCKED: SUPABASE_SECRET_KEY (local) is not configured.")
-    creds_path = Path(__file__).resolve().parents[3] / ".local-dev-credentials.json"
-    email = "owner@local.test"
-    password = secrets.token_urlsafe(18)
-    response = httpx.post(
-        f"{supabase_url.rstrip('/')}/auth/v1/admin/users",
-        headers={"apikey": secret_key, "Authorization": f"Bearer {secret_key}"},
-        json={
-            "email": email,
-            "password": password,
-            "email_confirm": True,
-            "app_metadata": {"role": "OWNER_ADMIN"},
-            "user_metadata": {"fullName": "Local Owner", "phone": "+919999900000"},
-        },
-        timeout=15,
-    )
-    if response.status_code not in (200, 201):
-        raise SystemExit(f"Local Auth refused admin creation (HTTP {response.status_code}); it may already exist.")
-    creds_path.write_text(json.dumps({"email": email, "password": password}), encoding="utf-8")
-    return creds_path
-
-
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--dev", action="store_true", required=True, help="acknowledge this writes development data")
-    parser.add_argument("--dev-admin", action="store_true", help="also create a local Owner Admin in local Supabase Auth")
     args = parser.parse_args(argv)
 
     from ..core.config import settings
@@ -280,9 +244,6 @@ def main(argv: list[str] | None = None) -> int:
     with SessionLocal() as db:
         seed_development_data(db)
         print("Development catalogue and store settings are present (existing rows untouched).")
-        if args.dev_admin:
-            path = create_dev_admin(settings.supabase_url, settings.supabase_secret_key, db)
-            print(f"Local Owner Admin created; credentials saved to {path.name} (gitignored, not printed).")
     return 0
 
 

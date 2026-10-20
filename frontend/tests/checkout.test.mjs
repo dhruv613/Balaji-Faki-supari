@@ -18,8 +18,8 @@ function load(path, stubs = {}, globals = {}) {
 let fakeFetch;
 let session = null;
 const env = { apiBaseUrl: '', supportWhatsApp: '918000961030' };
-const auth = { supabase: { auth: { getSession: async () => ({ data: { session } }) } }, useSession: () => ({ session: { user: { id: 'ui-test-user' } }, loading: false }) };
-const api = load('src/lib/api.ts', { './env': { env }, './supabase': auth }, { fetch: (...args) => fakeFetch(...args) });
+const auth = { getAccessToken: async () => session?.access_token ?? null, useSession: () => ({ session: { user: { id: 'ui-test-user' } }, loading: false }) };
+const api = load('src/lib/api.ts', { './env': { env }, './auth': auth }, { fetch: (...args) => fakeFetch(...args) });
 const store = load('src/constants/store.ts');
 const contracts = load('src/lib/contracts.ts', { '../constants/store': store });
 const ordersApi = load('src/features/orders/api/ordersApi.ts', { '../../../lib/api': api, '../../../lib/contracts': contracts });
@@ -51,8 +51,8 @@ assert.ok(customer.validateCustomerDetails({fullName:'A'.repeat(101),phone:'9876
 storage.set('bfp-order-session', JSON.stringify(valid));
 context.persistDraft(valid, 'customer-one');
 assert.equal(storage.has('bfp-order-session'),false,'Remove legacy unowned drafts');
-const userOne={id:'customer-one',user_metadata:{fullName:'First Customer',phone:'+919876543210'}};
-const userTwo={id:'customer-two',user_metadata:{fullName:'Second Customer',phone:'+916987654321'}};
+const userOne={id:'customer-one',fullName:'First Customer',phone:'+919876543210'};
+const userTwo={id:'customer-two',fullName:'Second Customer',phone:'+916987654321'};
 assert.equal(context.loadState(userOne).address,valid.address);
 assert.equal(context.loadState(userOne).phone,'9876543210');
 assert.equal(context.loadState(userTwo).address,'','No cross-account draft disclosure');
@@ -200,7 +200,7 @@ if (process.argv.includes('--fixtures')) {
     const mockContext={...context,useOrder:()=>state,useOrderDispatch:()=>()=>{}};
     const component=load(`src/features/${path}`,{
       '../../../context/OrderContext':mockContext,'../../../lib/api':{...api,formatINR:()=> '₹[TOTAL]'},
-      '../../../lib/supabase':auth,'../../../lib/env':{env},
+      '../../../lib/auth':auth,'../../../lib/env':{env},
       '../../../components/common/OrderStepper':{default:stepper},'../../../components/common/Notice':{default:notice},
       '../../../components/common/NoActiveOrder':{default:noOrder},'../../../components/common/EmailSignIn':{default:()=>null},
       '../../../components/common/MobileNumberInput':{default:mobileInput},

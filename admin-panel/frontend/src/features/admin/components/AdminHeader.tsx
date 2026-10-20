@@ -1,7 +1,8 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import StoreLink from './StoreLink';
-import { supabase, useSession } from '@shared/lib/supabase';
+import { authClient, signOut, useSession } from '@shared/lib/auth';
+import { updateProfile } from '@shared/lib/profile';
 import { normalizeIndianMobile, validateCustomerDetails } from '@shared/lib/customer';
 
 export interface AdminHeaderProps {
@@ -9,7 +10,7 @@ export interface AdminHeaderProps {
 }
 
 export default function AdminHeader({ onOpenSidebar }: AdminHeaderProps) {
-  const { session } = useSession();
+  const { session, profile } = useSession();
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [signingOut, setSigningOut] = useState(false);
@@ -17,10 +18,10 @@ export default function AdminHeader({ onOpenSidebar }: AdminHeaderProps) {
   // Profile modal / dropdown state
   const [profileOpen, setProfileOpen] = useState(false);
   const [fullName, setFullName] = useState(
-    () => (session?.user?.user_metadata?.fullName as string | undefined) ?? '',
+    () => (session?.user?.fullName as string | undefined) ?? '',
   );
   const [phone, setPhone] = useState(() =>
-    normalizeIndianMobile((session?.user?.user_metadata?.phone as string | undefined) ?? ''),
+    normalizeIndianMobile((session?.user?.phone as string | undefined) ?? ''),
   );
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileMsg, setProfileMsg] = useState('');
@@ -28,18 +29,18 @@ export default function AdminHeader({ onOpenSidebar }: AdminHeaderProps) {
 
   const userEmail = session?.user?.email ?? 'Not signed in';
   const displayName =
-    (session?.user?.user_metadata?.fullName as string | undefined)?.trim() ||
+    (session?.user?.fullName as string | undefined)?.trim() ||
     userEmail.split('@')[0] ||
     'Admin';
-  const userRole = String(session?.user?.app_metadata?.role ?? 'OWNER_ADMIN');
+  const userRole = profile?.role ?? 'Checking role';
   const userPhone =
-    (session?.user?.user_metadata?.phone as string | undefined)?.trim() || 'Not set';
+    (session?.user?.phone as string | undefined)?.trim() || 'Not set';
   const initials = displayName.slice(0, 2).toUpperCase();
 
   function openProfileModal() {
-    setFullName((session?.user?.user_metadata?.fullName as string | undefined) ?? '');
+    setFullName((session?.user?.fullName as string | undefined) ?? '');
     setPhone(
-      normalizeIndianMobile((session?.user?.user_metadata?.phone as string | undefined) ?? ''),
+      normalizeIndianMobile((session?.user?.phone as string | undefined) ?? ''),
     );
     setProfileMsg('');
     setProfileErr('');
@@ -63,17 +64,14 @@ export default function AdminHeader({ onOpenSidebar }: AdminHeaderProps) {
       setProfileErr(validation.fullName || validation.phone || 'Please check your details.');
       return;
     }
-    if (!supabase || savingProfile) return;
+    if (!authClient || savingProfile) return;
 
     setSavingProfile(true);
     try {
-      const { error } = await supabase.auth.updateUser({
-        data: {
+      await updateProfile({
           fullName: fullName.trim(),
           phone: `+91${normalizeIndianMobile(phone)}`,
-        },
       });
-      if (error) throw error;
       setProfileMsg('Profile saved to database ✅');
     } catch (err) {
       setProfileErr(err instanceof Error ? err.message : 'Unable to update profile.');
@@ -83,11 +81,13 @@ export default function AdminHeader({ onOpenSidebar }: AdminHeaderProps) {
   }
 
   async function handleLogout() {
-    if (!supabase || signingOut) return;
+    if (!authClient || signingOut) return;
     setSigningOut(true);
     try {
       setProfileOpen(false);
-      await supabase.auth.signOut();
+      await signOut();
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : 'Unable to sign out. Please try again.');
     } finally {
       setSigningOut(false);
     }
@@ -153,7 +153,7 @@ export default function AdminHeader({ onOpenSidebar }: AdminHeaderProps) {
           <button
             type="button"
             className="btn btn--dark btn--sm"
-            disabled={signingOut || !supabase}
+            disabled={signingOut || !authClient}
             onClick={handleLogout}
           >
             {signingOut ? 'Signing out…' : 'Log out'}

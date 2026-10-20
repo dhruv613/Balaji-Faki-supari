@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useReducer, type ReactNode, type Dispatch } from 'react';
-import type { User } from '@supabase/supabase-js';
+import type { User } from '../lib/auth';
 import type { ProductType, PackSize, OrderFormData, OrderSummary, Order, PaymentStatus, Product, CheckoutQuote } from '../types/orders';
 import { PRODUCT_SHELL, getErrorMessage } from '../lib/api';
 import { PACK_SIZE_PATTERN, PRODUCT_SLUG_PATTERN } from '../constants/store';
@@ -183,7 +183,7 @@ export function hasDraftContent(draft: OrderFormData): boolean {
  * saved draft of that account, so they land back in checkout with what they chose. Another account's draft is never read.
  */
 export function loadState(user: User | null) {
-  const profile = readCustomerDetails(user?.user_metadata);
+  const profile = readCustomerDetails(user);
   let draft = { ...initialState };
   try {
     const guest = restoreDraft(sessionStorage.getItem(`${STORAGE_KEY}:${GUEST_DRAFT_ID}`));

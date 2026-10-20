@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { useSession, supabase } from '@shared/lib/supabase';
+import { useSession, authClient, signOutFromButton } from '@shared/lib/auth';
 import { env } from '@shared/lib/env';
 import EmailSignIn from '@shared/components/common/EmailSignIn';
 import StoreLink from './StoreLink';
@@ -119,8 +119,8 @@ export default function AdminRouteGuard({ children }: { children: ReactNode }) {
         )}
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 16 }}>
-          {supabase && session && (
-            <button type="button" className="btn btn--full" onClick={() => supabase?.auth.signOut()}>
+          {authClient && session && (
+            <button type="button" className="btn btn--full" onClick={signOutFromButton}>
               Log out &amp; sign in with the Admin account
             </button>
           )}

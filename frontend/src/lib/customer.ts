@@ -12,7 +12,7 @@ export function validateCustomerDetails(details: CustomerDetails) {
   return errors;
 }
 
-export function readCustomerDetails(metadata: Record<string, unknown> | undefined): CustomerDetails {
+export function readCustomerDetails(metadata: { fullName?: unknown; phone?: unknown } | null | undefined): CustomerDetails {
   return {
     fullName: typeof metadata?.fullName === 'string' ? metadata.fullName.trim() : '',
     phone: typeof metadata?.phone === 'string' ? normalizeIndianMobile(metadata.phone) : '',

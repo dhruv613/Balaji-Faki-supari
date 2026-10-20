@@ -1,6 +1,6 @@
 import { Link, NavLink } from 'react-router-dom';
 import StoreLink from './StoreLink';
-import { supabase, useSession } from '@shared/lib/supabase';
+import { authClient, useSession, signOutFromButton } from '@shared/lib/auth';
 
 export interface AdminNavItem {
   to: string;
@@ -34,10 +34,10 @@ export default function AdminSidebar({ open, onClose }: AdminSidebarProps) {
   const { session } = useSession();
   const email = session?.user?.email ?? 'Not signed in';
   const fullName =
-    (session?.user?.user_metadata?.fullName as string | undefined)?.trim() ||
+    (session?.user?.fullName as string | undefined)?.trim() ||
     email.split('@')[0] ||
     'Owner Admin';
-  const phone = (session?.user?.user_metadata?.phone as string | undefined)?.trim() || '';
+  const phone = (session?.user?.phone as string | undefined)?.trim() || '';
 
   return (
     <>
@@ -99,14 +99,14 @@ export default function AdminSidebar({ open, onClose }: AdminSidebarProps) {
             ← Customer Store
           </StoreLink>
 
-          {supabase && session && (
+          {authClient && session && (
             <button
               type="button"
               className="btn btn--dark btn--sm"
               style={{ width: '100%' }}
               onClick={() => {
                 onClose();
-                supabase?.auth.signOut();
+                signOutFromButton();
               }}
             >
               Log out

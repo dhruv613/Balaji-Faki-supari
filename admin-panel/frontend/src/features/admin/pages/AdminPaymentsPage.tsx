@@ -210,7 +210,7 @@ export default function AdminPaymentsPage() {
 
       {!isLive && (
         <Notice title="Payment data unavailable">
-          Connect the local FastAPI server and private Supabase Storage to load payment proofs. No sample payments are shown and approvals remain backend-only.
+          Connect the local FastAPI server and private Neon storage to load payment proofs. No sample payments are shown and approvals remain backend-only.
         </Notice>
       )}
       {error && <Notice tone="error" title="Payment queue sync error">{error}</Notice>}

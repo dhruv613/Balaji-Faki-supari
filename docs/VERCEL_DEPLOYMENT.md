@@ -1,101 +1,118 @@
-# Deploying to Vercel (frontend + FastAPI backend in one project)
+# Deploying to Vercel on Neon
 
-One Vercel project, imported from the whole repository. Everything Vercel needs is in the repo, so **no build settings have to be changed in the dashboard**:
+Two Vercel projects deploy from the same GitHub repository on every push. Neon provides the database, sign-in and file storage:
 
-| Part | Where | How Vercel runs it |
+| Part | Where | Runs as |
 |---|---|---|
-| Frontend (Vite + React) | `frontend/`, built by the root `npm run build` into `dist/` | static files from the CDN; unknown paths fall back to `index.html` |
-| Backend (FastAPI) | `backend/app/`, exposed by `api/index.py` | one Python 3.13 serverless function; every `/api/*` request is rewritten to it |
-| Config | `vercel.json` (framework "Other", build command, output dir, rewrites, function settings), `requirements.txt` + `.python-version` (root, same as `backend/`) | |
+| Storefront + API | repo root: `frontend/` (Vite) and `backend/app/` (FastAPI, exposed by `api/index.py`), settings in `vercel.json` | static files plus one Python 3.13 function; every `/api/*` request goes to it |
+| Admin Panel | `admin-panel/` (Root Directory of the second project), settings in `admin-panel/vercel.json` | static files; `/api/*` is forwarded to the storefront's API |
+| Database | Neon Postgres, project `spring-mode-09495880`, branch `production` | schema from `backend/migrations/neon/` |
+| Sign-in | Neon Auth (Managed Better Auth) on the same branch | email + password, email verification and password reset by emailed code |
+| Files | Neon Object Storage, private bucket `assets` | payment screenshots, review photos, payment QR, uploaded product/shop photos |
 
-Browser and API share one domain, so there is no CORS to configure. Production builds call `/api` by default (`VITE_API_BASE_URL` is only for local development).
-Because Vercel is connected to GitHub, every push deploys: the production branch becomes the production deployment, every other branch a preview deployment.
+The API verifies every request's Neon Auth token (EdDSA signature, expiry, issuer and audience) and takes the role only from `public.user_profiles`, so `OWNER_ADMIN` cannot come from the browser.
 
-Checked against Vercel's current docs (FastAPI, Python runtime, Functions limits, `vercel.json`): FastAPI runs as a Vercel Function, `framework: null` selects "Other", dependencies come from `requirements.txt`, Python 3.13 is available, request bodies are capped at 4.5 MB.
-It could not be tested on Vercel itself from the development machine (no access to the project), so the first deploy is the real test: read the build log if it fails.
+## 1. Environment variables
 
-## 1. Environment variables (the only manual step)
+Vercel → Project → Settings → Environment Variables, ticking **Production** and **Preview**. Values come from the Neon Console (or `neon env pull --branch production --file <file>`); never put them in the repo or a chat.
 
-Vercel → Project → Settings → Environment Variables (tick Production and Preview). Names only here; the values come from the Supabase dashboard (Project Settings → API and Database) and never go in the repo or in a chat:
+**Storefront project (`balaji-faki-point`)**
 
-| Variable | Used by | Value |
-|---|---|---|
-| `VITE_SUPABASE_URL` | frontend build **and** backend | `https://<project-ref>.supabase.co` |
-| `VITE_SUPABASE_PUBLISHABLE_KEY` | frontend build **and** backend | the publishable (anon) key |
-| `SUPABASE_SECRET_KEY` | backend only | the secret / service-role key. Never give it a `VITE_` prefix. Mark as Sensitive |
-| `DATABASE_URL` | backend only | the **transaction pooler** string: `postgresql+psycopg://postgres.<project-ref>:<db-password>@aws-<n>-<region>.pooler.supabase.com:6543/postgres` (Supabase "Connect" dialog, Transaction pooler). Mark as Sensitive. If unset, the backend uses `POSTGRES_URL` supplied by the Supabase Vercel integration |
-| `PROOF_SIGNING_SECRET` | backend only | a long random string (32+ characters), e.g. `openssl rand -hex 32`. Signs the short-lived admin links to payment screenshots |
-| `VITE_SUPPORT_WHATSAPP` | frontend (optional) | digits only, e.g. `918000961030` |
-| `SUPABASE_JWT_SECRET` | backend (only if the Supabase project signs tokens with HS256) | the JWT secret from the dashboard; newer projects use signing keys and do not need it |
-
-`SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` default to the `VITE_` values. Do **not** set `BFP_ENV` (any value other than `production` turns on development shortcuts) and do not set `CORS_ORIGINS` (same origin).
-The backend refuses to start without `DATABASE_URL` outside local development, by design: a missing value shows up in the function log, not as lost orders.
-
-Also: Supabase → Authentication → URL Configuration: set the Site URL to the Vercel production domain and add the preview/production URLs to Redirect URLs.
-
-## 2. The database must be ready first
-
-The code expects the current schema (migrations `20261017000000` through `20261020000009` in `supabase/migrations/`). **Do not point a deployment at the existing online Supabase project until it has been inspected and migrated**: an old schema makes the API fail, and the earlier remediation notes warn that the online project may still be in an insecure legacy state.
-Follow `docs/PRODUCTION_REMEDIATION_RUNBOOK.md` (backup, read-only inspection, forward-only migrations, key rotation). Then enter the owner's real prices, stock, store details and payment QR in the admin panel: the migrations create products unpriced and out of stock on purpose, so nothing can be ordered at a made-up price.
-A brand-new Supabase project is the cleaner alternative: run all migrations in order, then create the first Owner Admin.
-
-## 3. Check a deployment
-
-- `https://<deployment>/api/health` returns `{"status":"ok", ...}`.
-- `https://<deployment>/api/products` lists the catalogue.
-- The home page loads, a product card opens its details, sign-up works, and `/admin` accepts an Owner Admin only.
-- Vercel → Deployment → Logs: no `DATABASE_URL is not set` and no Supabase errors.
-
-## 4. Limits and behaviour worth knowing
-
-- **Request bodies are capped at 4.5 MB** by Vercel (`413 FUNCTION_PAYLOAD_TOO_LARGE`), so uploads are limited to 4 MB: payment screenshots, admin product/shop photos, and all review photos of one review together. The client and the server both enforce it.
-- The database connection uses the Supabase pooler with no app-side pool and no prepared statements (`backend/app/db/session.py`, switched on by a pooler URL or the `VERCEL` variable); a direct port-5432 connection is not suited to serverless.
-- Dependencies are pinned (`requirements.txt`, tested on Python 3.13) and the root copy must equal `backend/requirements.txt` (a test checks it). To upgrade: install newer versions in a clean venv, run `python -m unittest discover -s tests` from `backend/`, re-freeze, and replace both files.
-- Preview deployments are behind Vercel Deployment Protection by default; sign in to Vercel to open them.
-- Functions run on Fluid compute (the config sets a 60 s limit); the first request after idle time has a short cold start.
-- The bundle excludes `frontend/`, `docs/`, `supabase/`, `scripts/` and tests (`vercel.json` → `excludeFiles`).
-
-## 5. Admin panel: the `admin-panel/` folder, its own Vercel project
-
-The Admin Panel is a separate app in `admin-panel/`:
-
-| Folder | Contents |
+| Variable | Value |
 |---|---|
-| `admin-panel/frontend/` | the admin UI (Vite + React): `src/app/App.tsx` (routes under `/admin`), `src/features/admin/` (pages, components, API client, styles). Shared code (API client, Supabase sign-in, common components, styles, images) is imported from `frontend/src` through the `@shared` alias, so nothing is duplicated |
-| `admin-panel/backend/` | notes only: the admin API is the shared FastAPI app in `backend/` (`/api/admin/*`), see its README |
-| `admin-panel/vercel.json` | build settings for the admin Vercel project |
+| `DATABASE_URL` | the **pooled** connection string of branch `production` (host contains `-pooler`). Sensitive |
+| `NEON_AUTH_BASE_URL` | the branch's Neon Auth URL (ends in `/neondb/auth`) |
+| `NEON_AUTH_JWKS_URL` | the branch's JWKS URL |
+| `VITE_NEON_AUTH_URL` | the same value as `NEON_AUTH_BASE_URL` (the browser needs it at build time) |
+| `AWS_ENDPOINT_URL_S3`, `AWS_REGION` | Neon Object Storage endpoint and region |
+| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | Neon Object Storage keys. Sensitive |
+| `PROOF_SIGNING_SECRET` | a long random string (32+ characters), e.g. `openssl rand -hex 32`. Sensitive |
+| `VITE_ADMIN_URL` | `https://balaji-faki-supari-admin-panel.vercel.app` (the Owner Admin's "Admin Panel" link) |
+| `VITE_SUPPORT_WHATSAPP` | optional, digits only, e.g. `918000961030` |
 
-The storefront (`frontend/`, root `vercel.json`) no longer contains any admin code. Its "Admin Panel" link (Owner Admin only) points to `VITE_ADMIN_URL`.
+**Admin project (`balaji-faki-supari-admin-panel`)**: `VITE_NEON_AUTH_URL` (same value) and `VITE_STORE_URL=https://balaji-faki-point.vercel.app`. It runs no server code, so it needs nothing else.
 
-Create the admin project (Vercel dashboard, once):
-1. Add New → Project → import the **same** repository (`dhruv613/Balaji-Faki-supari`). Name it e.g. `balaji-faki-admin`.
-2. **Root Directory: `admin-panel`** (Edit next to Root Directory). Leave Framework and Build settings untouched; `admin-panel/vercel.json` sets them. Keep "Include files outside the root directory in the Build Step" enabled (the default): the build installs from the repo root and uses `frontend/src`.
-3. Environment variables (Production and Preview): `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` (same values as the storefront) and `VITE_STORE_URL=https://balaji-faki-point.vercel.app` (the admin's "Store" links). The admin project runs no server code, so it needs no `DATABASE_URL` or secret keys.
-4. Deploy. Then in the **storefront** project add `VITE_ADMIN_URL=https://<admin domain>` and redeploy it, so the Owner Admin sees the "Admin Panel" link. `VITE_APP_MODE` is no longer used and can be deleted from both projects.
-5. Supabase → Authentication → URL Configuration: add the admin domain to Redirect URLs.
+**Delete** from both projects: `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`, `VITE_SUPABASE_ANON_KEY`, `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `SUPABASE_JWKS_URL`, `SUPABASE_JWT_SECRET`, `VITE_APP_MODE`, and any `POSTGRES_*` variables a Supabase integration added. Do not set `BFP_ENV` (anything other than `production` turns on development shortcuts) or `CORS_ORIGINS` (same origin).
 
-From then on every push to GitHub deploys both projects.
+Variables apply only to **new** deployments: redeploy after changing them.
 
-How the admin reaches the API: `admin-panel/vercel.json` rewrites `/api/*` to the storefront's API (`https://balaji-faki-point.vercel.app/api/*`), so the browser only talks to the admin domain and no CORS setup is needed. If the storefront moves to a custom domain, change that one URL. Admin access is enforced by the API on every request (`user_profiles.role` must be `OWNER_ADMIN`), not by the separate address.
-Optional: protect the admin project with Vercel Deployment Protection or a custom domain such as `admin.<your domain>`.
+## 2. Neon settings
 
-Local development: `npm run dev` (storefront, port 5173) and `npm run dev:admin` (Admin Panel, port 5174, `http://localhost:5174/admin`). Both read `frontend/.env`.
+- **Trusted domains** (sign-in only works from listed sites):
+  ```bash
+  neon neon-auth domain add https://balaji-faki-point.vercel.app --branch production
+  neon neon-auth domain add https://balaji-faki-supari-admin-panel.vercel.app --branch production
+  neon neon-auth domain list --branch production
+  ```
+  Add a custom domain the same way if you attach one later. Localhost is allowed by default for development.
+- **Schema**: `python scripts/setup-neon-db.py --project-id spring-mode-09495880 --branch production` (uses the direct `DATABASE_URL_UNPOOLED` from your local `.env`). It applies only the files not yet recorded, in order, inside one transaction, and refuses an edited file.
+- **Emails**: Neon Auth sends the verification and password-reset codes from its shared sender. For a real shop, set up your own SMTP in the Neon Console (Auth → Email), see https://neon.com/docs/auth/production-checklist.md.
 
-## 6. Troubleshooting
+## 3. Cutover from Supabase (once)
 
-**The storefront shows only names, "Awaiting price" and the notice that prices are unavailable:** the API is not reachable. Open `https://<your site>/api/health`:
+1. Stop new orders on the old site (they would not be copied).
+2. Copy the old data: `python scripts/migrate-supabase-to-neon.py` first (export only: backs up everything to `.migration-backups/`, changes nothing), then `python scripts/migrate-supabase-to-neon.py --apply --source-is-quiesced`. It copies all 21 tables and uploaded files into Neon in one transaction and verifies checksums; Supabase is never changed. It refuses if the Neon database already has customers or orders.
+3. Apply the remaining schema files (section 2).
+4. Set the Vercel variables (section 1), add the trusted domains, redeploy both projects.
+5. Check: `https://balaji-faki-point.vercel.app/api/health` returns `{"status":"ok"}`; the store lists the products.
+6. Owner Admin: create your account on the **store** (Create account, then the emailed code). For safety the API never links an Owner Admin profile by email automatically (otherwise whoever registered the owner's email first would get admin access), so link it once in the Neon SQL editor, replacing the email:
+   ```sql
+   -- your verified Neon Auth account
+   select id, email, "emailVerified" from neon_auth."user" where lower(email) = 'you@example.com';
+   -- old owner profile copied from Supabase: attach it to that account (keeps its ID and history)
+   update public.user_profiles
+      set auth_subject = (select id::text from neon_auth."user" where lower(email) = 'you@example.com' and "emailVerified")
+    where lower(email) = 'you@example.com' and role = 'OWNER_ADMIN' and auth_subject is null;
+   -- or, if there was no old owner profile: you signed in once, so a customer profile exists; promote it
+   update public.user_profiles set role = 'OWNER_ADMIN' where lower(email) = 'you@example.com';
+   ```
+   Then sign in on the admin site. Its sign-in has **Forgot password?** but no Create account.
+7. Everyone else: passwords cannot be moved from Supabase. Existing customers use **Create account** (or **Forgot password?** once they have one) with the same email; after the emailed code their old orders reappear.
+
+## 4. Testing changes on a Neon branch
+
+Never test against `production`. A branch is an isolated copy with its own database, sign-in and storage:
+
+```bash
+neon branches create --name dev --parent production
+neon env pull --branch dev --file .env.neon-dev
+python scripts/setup-neon-db.py --project-id spring-mode-09495880 --branch dev --env-file .env.neon-dev
+# start the API with only the dev settings loaded, then:
+python scripts/e2e-neon-dev.py .env.neon-dev
+neon branches delete dev
+```
+
+`scripts/e2e-neon-dev.py` signs up throwaway accounts with real Neon Auth, marks their emails verified directly in the dev database, makes one Owner Admin there, and walks through price setup, ordering, a payment screenshot upload, approval and account reconnection (33 checks). It refuses to run on any branch other than `dev` and stops at the first failure. `node frontend/tests/sdk-probe.mjs <creds.json>` runs the real `src/lib/auth.ts` with the real Neon Auth SDK against the branch (sign-in, token, API call, sign-out).
+
+## 5. Limits and behaviour worth knowing
+
+- **Request bodies are capped at 4.5 MB** by Vercel, so uploads are limited to 4 MB (payment screenshots, admin photos, and all photos of one review together). Client and server both enforce it.
+- The API connects through Neon's pooler with no app-side pool and no prepared statements (`backend/app/db/session.py`); schema setup uses the direct connection.
+- Uploaded product and shop photos are shown through one-hour signed links; payment screenshots and review photos are only ever served through the API after its checks.
+- Sign-in tokens last 15 minutes and are refreshed by the browser automatically. Signing out ends the session; an already-issued token stays valid until it expires.
+- Neon Auth keeps its session on the Neon Auth domain. Browsers that block third-party cookies strictly (Safari, some privacy modes) may need the user to sign in again more often; test on an iPhone after the cutover.
+- Dependencies are pinned (`requirements.txt`, Python 3.13); the root copy must equal `backend/requirements.txt` (a test checks it).
+- The function bundle excludes `frontend/`, `docs/`, `scripts/`, migrations and tests (`vercel.json` → `excludeFiles`).
+
+## 6. Admin Panel project
+
+`admin-panel/` holds the admin UI (`admin-panel/frontend/`, which reuses the storefront's shared code from `frontend/src` through the `@shared` alias) and its Vercel settings. Root Directory of the Vercel project is `admin-panel`; keep "Include files outside the root directory in the Build Step" enabled. Its `vercel.json` forwards `/api/*` to `https://balaji-faki-point.vercel.app/api/*`; change that one URL if the store moves to a custom domain. Admin access is enforced by the API on every request, not by the separate address.
+
+Local development: `npm run dev` (store, port 5173) and `npm run dev:admin` (admin, `http://localhost:5174/admin`). Both read the root `.env`/`frontend/.env`; see `.env.example`.
+
+## 7. Troubleshooting
+
+Open `https://balaji-faki-point.vercel.app/api/health`:
 
 | You see | Meaning | Fix |
 |---|---|---|
-| `503` `The API could not start: DATABASE_URL is not set...` | the backend has no database URL | add `DATABASE_URL` (Supabase transaction pooler string) |
-| `503` `"status":"misconfigured"` with a `missingConfig` list | those settings are not configured (names only) | add the variables listed |
-| `500` `FUNCTION_INVOCATION_FAILED` | the function crashed with something unexpected | Vercel → the deployment → Logs: the traceback is printed there |
-| `404` | the `api/index.py` function was not deployed | check the build log and that Root Directory is the repo root |
-| `200` ok, but `/api/products` fails | the database cannot be reached or is not migrated | check the pooler URL and section 2 |
+| `503` `The API could not start: DATABASE_URL is not set...` | no database URL | add the pooled `DATABASE_URL` |
+| `503` `"status":"misconfigured"` with `missingConfig` | those settings are missing (names only) | add them, redeploy |
+| `500` `FUNCTION_INVOCATION_FAILED` | unexpected crash | Vercel → deployment → Logs |
+| `200`, but sign-in says "invalid domain" or nothing happens | the site is not a trusted domain in Neon Auth | section 2 |
+| `200`, but `/api/me` answers 403 "Verify your email" | the account's email is not verified | finish the emailed code step |
+| Admin says "could not verify your role" | the API is down or the account is not `OWNER_ADMIN` | check `/api/health`, then section 3 step 6 |
 
-Environment variables only apply to **new** deployments: after adding or changing one, redeploy (Deployments → ⋯ → Redeploy). Production and Preview have separate variable scopes, so set both.
-While the API is down the storefront still shows each product's photo and name (a fallback); ordering stays disabled because no price can be shown.
+## 8. Rollback
 
-## 7. Rollback
-
-Vercel → Deployments → pick an earlier deployment → Promote to Production (or Instant Rollback). Database migrations are forward-only and are not undone by a rollback.
+Vercel → Deployments → pick an earlier deployment → Promote to Production. Database changes are forward-only; the Supabase project and the backup in `.migration-backups/` remain the source of the old data.

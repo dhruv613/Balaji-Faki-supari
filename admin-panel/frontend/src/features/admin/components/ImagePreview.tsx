@@ -26,7 +26,7 @@ export default function ImagePreview({
         className="card card--tinted"
         style={{ padding: 16, textAlign: 'center', fontSize: 14 }}
       >
-        <p style={{ fontWeight: 600 }}>Private Supabase Storage Object</p>
+        <p style={{ fontWeight: 600 }}>Private storage object</p>
         {privateStoragePath && (
           <p className="text-small text-secondary" style={{ marginTop: 4, wordBreak: 'break-all' }}>
             Bucket path: <code>{privateStoragePath}</code>

@@ -1,4 +1,4 @@
-"""SQLAlchemy 2.0 ORM models matching the Supabase PostgreSQL schema."""
+"""SQLAlchemy 2.0 ORM models for the Neon PostgreSQL application schema."""
 
 from __future__ import annotations
 
@@ -128,6 +128,7 @@ class UserProfile(Base):
     __tablename__ = "user_profiles"
 
     id: Mapped[str] = mapped_column(GUID(), primary_key=True, default=new_uuid_str)
+    auth_subject: Mapped[Optional[str]] = mapped_column(Text, nullable=True, unique=True)
     email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     full_name: Mapped[str] = mapped_column(String(120), nullable=False, default="")
     phone: Mapped[str] = mapped_column(String(32), nullable=False, default="")

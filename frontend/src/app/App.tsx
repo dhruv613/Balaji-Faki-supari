@@ -1,6 +1,6 @@
 import { AppRouter } from './router';
 import { OrderProvider } from '../context/OrderContext';
-import { useSession } from '../lib/supabase';
+import { useSession } from '../lib/auth';
 
 /**
  * Root Application shell.

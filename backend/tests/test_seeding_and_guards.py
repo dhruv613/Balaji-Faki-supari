@@ -105,7 +105,7 @@ class GuardTests(unittest.TestCase):
 
     def test_signing_secret_never_falls_back_to_a_fixed_string(self) -> None:
         empty = replace(
-            settings, proof_signing_secret="", supabase_jwt_secret="", supabase_secret_key="", app_env="production"
+            settings, proof_signing_secret="", app_env="production"
         )
         with self.assertRaises(storage.PrivateImageStorageError):
             storage.create_signed_proof_query("pay-1", "u/o/p.png", app_settings=empty)

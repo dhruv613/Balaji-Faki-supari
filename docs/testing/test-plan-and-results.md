@@ -52,7 +52,7 @@ npm run build
 - Prevents skipping fulfillment steps and locks `CANCELLED` orders from further transitions.
 - Blocks marking refunds `COMPLETED` without a verified bank transaction reference, bank account, date, and exact amount match.
 - Rejects negative available stock adjustments.
-- Verifies all 18 tables, RLS enablement, `private.is_owner_admin()`, and private `payment-proofs` bucket in [`supabase/migrations/20261017000000_balaji_faki_point_schema.sql`](../../supabase/migrations/20261017000000_balaji_faki_point_schema.sql).
+- Verifies all 21 tables, RLS enablement and that nothing is granted to public roles in [`backend/migrations/neon/001_schema.sql`](../../backend/migrations/neon/001_schema.sql); the live flow is covered by `scripts/e2e-neon-dev.py` on a Neon branch.
 
 ---
 

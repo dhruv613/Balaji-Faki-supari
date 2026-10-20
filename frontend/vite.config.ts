@@ -11,7 +11,7 @@ export default defineConfig({
       output: {
         manualChunks(id) {
           if (id.includes('node_modules')) {
-            if (id.includes('@supabase')) return 'vendor-supabase';
+            if (id.includes('@neondatabase/auth')) return 'vendor-auth';
             if (id.includes('react') || id.includes('scheduler')) return 'vendor-react';
             return 'vendor';
           }

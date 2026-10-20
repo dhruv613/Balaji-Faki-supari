@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -10,11 +11,11 @@ from typing import Any
 from fastapi import APIRouter, Depends, FastAPI, File, Form, Header, HTTPException, Query, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from .core.config import LOCAL_SUPABASE_URL, settings
+from .core.config import settings
 from .core.domain import (
     ALLOWED_DELIVERY_TRANSITIONS,
     CANONICAL_DELIVERY_STATUSES,
@@ -33,7 +34,7 @@ from .core.security import (
     enforce_owner_admin,
     extract_bearer_token,
     resolve_authenticated_principal,
-    verify_supabase_access_token,
+    verify_access_token,
 )
 from .core.storage import (
     PaymentProofStorageError,
@@ -49,6 +50,7 @@ from .core.storage import (
     MAX_REQUEST_UPLOAD_BYTES,
     MAX_REVIEW_PHOTO_BYTES,
     create_signed_proof_query,
+    create_catalogue_image_url,
     delete_private_review_photos,
     read_private_payment_proof,
     read_private_review_photo,
@@ -94,6 +96,7 @@ from .schemas import (
     ReviewPaymentRequestSchema,
     SubmitReviewRequestSchema,
     UpdateAdminReviewRequestSchema,
+    UpdateProfileRequestSchema,
     ConfirmBusinessSettingsRequestSchema,
     UpdateAdminSettingsRequestSchema,
     StockAdjustmentRequestSchema,
@@ -111,37 +114,65 @@ def _iso(dt: datetime | None) -> str:
     return dt.isoformat()
 
 
-def _ensure_user_profile(
-    db: Session,
-    claims: dict[str, Any],
-) -> dict[str, Any]:
-    """Loads or provisions the authenticated user's row in `public.user_profiles`."""
-    user_id = str(claims["sub"])
-    email = str(claims.get("email") or "").strip().lower()
-    raw_user_meta = claims.get("user_metadata")
-    user_meta = raw_user_meta if isinstance(raw_user_meta, dict) else {}
+def _lookup_auth_identity(db: Session, subject: str) -> dict[str, Any] | None:
+    """Read verification from Neon Auth itself, never from editable browser metadata."""
+    try:
+        # Actual Neon Auth users use UUIDs; the app's auth_subject column remains provider-ID text.
+        import uuid
+        auth_id = str(uuid.UUID(subject))
+    except ValueError:
+        return None
+    row = db.execute(text(
+        'SELECT id::text, email, "emailVerified", name, banned FROM neon_auth."user" WHERE id = CAST(:subject AS uuid)'
+    ), {"subject": auth_id}).mappings().first()
+    return dict(row) if row else None
 
-    profile = db.get(UserProfile, user_id)
+
+def _ensure_user_profile(db: Session, claims: dict[str, Any]) -> dict[str, Any]:
+    """Reconnect a verified identity without changing historical profile/order IDs or permissions."""
+    subject = str(claims["sub"])
+    identity = _lookup_auth_identity(db, subject)
+    if not identity or str(identity.get("id")) != subject or identity.get("emailVerified") is not True or identity.get("banned"):
+        raise AuthError(403, "Verify your email with Neon Auth before accessing your account.")
+    email = str(identity.get("email") or "").strip().lower()
+    if not email:
+        raise AuthError(403, "A verified email address is required.")
+    by_subject = select(UserProfile).where(UserProfile.auth_subject == subject)
+    profile = db.scalar(by_subject)  # the common path: already linked, no lock held for the rest of the request
     if profile is None:
-        profile = UserProfile(
-            id=user_id,
-            email=email or f"{user_id}@customer.balajifakipoint.local",
-            full_name=str(user_meta.get("fullName") or "").strip(),
-            phone=str(user_meta.get("phone") or "").strip(),
-            role="CUSTOMER",
-            is_active=True,
-        )
-        db.add(profile)
-        db.flush()
-
+        matches = db.scalars(select(UserProfile).where(func.lower(func.trim(UserProfile.email)) == email).with_for_update()).all()
+        if len(matches) > 1:
+            raise AuthError(409, "Multiple historical accounts use this email. Contact the store owner.")
+        profile = matches[0] if matches else None
+        if profile is not None and profile.auth_subject != subject:
+            if profile.auth_subject:
+                raise AuthError(403, "This email is already linked to a different identity.")
+            if profile.role == "OWNER_ADMIN":
+                # Never hand the owner's profile to whoever registers that email first; the operator links it once.
+                raise AuthError(403, "Owner Admin accounts are linked by the store operator. Contact the store owner.")
+            if not profile.is_active:
+                raise AuthError(403, "This account has been deactivated.")
+            profile.auth_subject = subject
+        elif profile is None:
+            profile = UserProfile(
+                auth_subject=subject, email=email, full_name=str(identity.get("name") or "")[:120],
+                phone="", role="CUSTOMER", is_active=True,
+            )
+            db.add(profile)
+        try:
+            db.commit()
+        except IntegrityError:
+            # A parallel first request of the same user linked or created the profile a moment earlier.
+            db.rollback()
+            profile = db.scalar(by_subject)
+            if profile is None:
+                raise AuthError(409, "Account linking changed concurrently. Please try again.") from None
+    if not profile.is_active:
+        raise AuthError(403, "This account has been deactivated.")
     return {
-        "id": profile.id,
-        "email": profile.email,
-        "full_name": profile.full_name,
-        "phone": profile.phone,
-        "role": profile.role,
-        "is_active": profile.is_active,
-        "created_at": _iso(profile.created_at),
+        "id": profile.id, "auth_subject": profile.auth_subject, "email": profile.email,
+        "full_name": profile.full_name, "phone": profile.phone, "role": profile.role,
+        "is_active": profile.is_active, "created_at": _iso(profile.created_at),
     }
 
 
@@ -151,7 +182,7 @@ def get_current_principal(
 ) -> AuthenticatedPrincipal:
     try:
         token = extract_bearer_token(authorization)
-        claims = verify_supabase_access_token(token)
+        claims = verify_access_token(token)
         profile_dict = _ensure_user_profile(db, claims)
         return resolve_authenticated_principal(claims, profile_dict)
     except AuthError as exc:
@@ -231,7 +262,11 @@ def _serialize_product_information(product: Product) -> dict[str, str]:
 
 
 def _public_storage_url(bucket: str, path: str) -> str:
-    return f"{settings.supabase_url.rstrip('/')}/storage/v1/object/public/{bucket}/{path}"
+    # One photo that cannot be signed (storage down or not configured) must not take the whole catalogue down.
+    try:
+        return create_catalogue_image_url(bucket, path)
+    except CatalogImageStorageError:
+        return ""
 
 
 def _product_image_url(path: str) -> str:
@@ -248,15 +283,12 @@ def _primary_product_image_url(product: Product | None) -> str | None:
 
 
 def _serialize_product_images(product: Product) -> list[dict[str, Any]]:
-    return [
-        {
-            "id": image.id,
-            "url": _product_image_url(image.storage_path),
-            "alt": image.alt_text or product.name,
-            "position": image.position,
-        }
-        for image in product.images
-    ]
+    images = []
+    for image in product.images:
+        url = _product_image_url(image.storage_path)
+        if url:  # skip a photo storage could not sign right now
+            images.append({"id": image.id, "url": url, "alt": image.alt_text or product.name, "position": image.position})
+    return images
 
 
 _PACK_UNITS = {"g": ("mass", 1), "kg": ("mass", 1000), "ml": ("volume", 1), "l": ("volume", 1000)}
@@ -350,12 +382,9 @@ def _serialize_store_profile(db: Session, store: StoreSettings) -> dict[str, Any
         "providerManufacturer": store.provider_manufacturer or "",
         "packagingInfo": store.packaging_info or "",
         "photos": [
-            {
-                "id": photo.id,
-                "url": _public_storage_url(settings.store_photos_bucket, photo.storage_path),
-                "caption": photo.caption,
-            }
-            for photo in photos
+            {"id": photo.id, "url": url, "caption": photo.caption}
+            for photo, url in ((p, _public_storage_url(settings.store_photos_bucket, p.storage_path)) for p in photos)
+            if url  # skip a photo storage could not sign right now
         ],
     }
 
@@ -828,11 +857,12 @@ def _missing_config() -> list[str]:
     if settings.is_local_env:
         return []
     missing = []
-    if settings.supabase_url == LOCAL_SUPABASE_URL:
-        missing.append("VITE_SUPABASE_URL (or SUPABASE_URL)")
-    if not settings.supabase_secret_key:
-        missing.append("SUPABASE_SECRET_KEY")
-    if not (settings.proof_signing_secret or settings.supabase_jwt_secret or settings.supabase_secret_key):
+    if not settings.neon_auth_base_url:
+        missing.append("NEON_AUTH_BASE_URL")
+    if not settings.neon_auth_jwks_url:
+        missing.append("NEON_AUTH_JWKS_URL")
+    missing.extend(key for key in ("AWS_ENDPOINT_URL_S3", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_REGION") if not os.getenv(key, "").strip())
+    if not settings.proof_signing_secret:
         missing.append("PROOF_SIGNING_SECRET")
     return missing
 
@@ -860,6 +890,34 @@ def get_me(
         "isActive": principal.is_active,
         "createdAt": _iso(profile.created_at if profile else None),
     }
+
+
+@router.patch("/me")
+def update_me(
+    payload: UpdateProfileRequestSchema,
+    principal: AuthenticatedPrincipal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    profile = db.get(UserProfile, principal.id)
+    if payload.full_name is not None:
+        full_name = payload.full_name.strip()
+        if len(full_name) < 2:
+            raise HTTPException(status_code=422, detail="Full name must contain at least two characters.")
+        profile.full_name = full_name
+    if payload.phone is not None:
+        try:
+            profile.phone = normalize_indian_phone(payload.phone)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+    customer = db.scalar(select(Customer).where(Customer.user_id == principal.id))
+    if customer:
+        customer.full_name = profile.full_name
+        customer.phone = profile.phone
+    db.commit()
+    return get_me(AuthenticatedPrincipal(
+        id=profile.id, email=profile.email, full_name=profile.full_name, phone=profile.phone,
+        role=principal.role, is_active=profile.is_active,
+    ), db)
 
 
 @router.get("/products")
@@ -1687,7 +1745,7 @@ def get_admin_payment_proof(
     if not authorized:
         try:
             token = extract_bearer_token(authorization)
-            claims = verify_supabase_access_token(token)
+            claims = verify_access_token(token)
             profile_dict = _ensure_user_profile(db, claims)
             principal = resolve_authenticated_principal(claims, profile_dict)
             enforce_owner_admin(principal)
@@ -2804,7 +2862,7 @@ def get_admin_review_photo(
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     if not authorized:
         try:
-            claims = verify_supabase_access_token(extract_bearer_token(authorization))
+            claims = verify_access_token(extract_bearer_token(authorization))
             principal = resolve_authenticated_principal(claims, _ensure_user_profile(db, claims))
             enforce_owner_admin(principal)
         except AuthError as exc:
@@ -3400,7 +3458,7 @@ def get_admin_payment_qr(
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     if not authorized:
         try:
-            claims = verify_supabase_access_token(extract_bearer_token(authorization))
+            claims = verify_access_token(extract_bearer_token(authorization))
             enforce_owner_admin(resolve_authenticated_principal(claims, _ensure_user_profile(db, claims)))
         except AuthError as exc:
             raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc

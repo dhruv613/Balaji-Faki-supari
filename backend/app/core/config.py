@@ -23,10 +23,11 @@ def _load_dotenv_file(env_path: Path) -> None:
 
 _BACKEND_DIR = Path(__file__).resolve().parents[2]
 _ROOT_DIR = _BACKEND_DIR.parent
-_load_dotenv_file(_BACKEND_DIR / ".env")
+_load_dotenv_file(_ROOT_DIR / ".env.local")
 _load_dotenv_file(_ROOT_DIR / ".env")
+_load_dotenv_file(_BACKEND_DIR / ".env.local")
+_load_dotenv_file(_BACKEND_DIR / ".env")
 
-LOCAL_SUPABASE_URL = "http://127.0.0.1:55321"
 LOCAL_CORS_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174"
 
 
@@ -38,19 +39,13 @@ def _configured_value(*keys: str, default: str = "") -> str:
     return default
 
 
-def _default_supabase_url() -> str:
-    return _configured_value(
-        "SUPABASE_URL",
-        "VITE_SUPABASE_URL",
-        default=LOCAL_SUPABASE_URL,
-    ).rstrip("/")
+def _default_auth_url() -> str:
+    return _configured_value("NEON_AUTH_BASE_URL", "VITE_NEON_AUTH_URL").rstrip("/")
 
 
-def _default_supabase_jwks_url() -> str:
-    return _configured_value(
-        "SUPABASE_JWKS_URL",
-        default=f"{_default_supabase_url()}/auth/v1/.well-known/jwks.json",
-    )
+def _default_auth_jwks_url() -> str:
+    base = _default_auth_url()
+    return _configured_value("NEON_AUTH_JWKS_URL", default=f"{base}/.well-known/jwks.json" if base else "")
 
 
 def _default_cors_origins() -> tuple[str, ...]:
@@ -60,24 +55,8 @@ def _default_cors_origins() -> tuple[str, ...]:
 
 @dataclass(frozen=True)
 class Settings:
-    supabase_url: str = field(
-        default_factory=_default_supabase_url
-    )
-    supabase_publishable_key: str = field(
-        default_factory=lambda: os.getenv(
-            "SUPABASE_PUBLISHABLE_KEY",
-            os.getenv("VITE_SUPABASE_PUBLISHABLE_KEY", ""),
-        )
-    )
-    supabase_secret_key: str = field(
-        default_factory=lambda: os.getenv("SUPABASE_SECRET_KEY", "")
-    )
-    supabase_jwt_secret: str = field(
-        default_factory=lambda: os.getenv("SUPABASE_JWT_SECRET", "")
-    )
-    supabase_jwks_url: str = field(
-        default_factory=_default_supabase_jwks_url
-    )
+    neon_auth_base_url: str = field(default_factory=_default_auth_url)
+    neon_auth_jwks_url: str = field(default_factory=_default_auth_jwks_url)
     database_url: str = field(
         default_factory=lambda: _configured_value("DATABASE_URL", "POSTGRES_URL")
     )

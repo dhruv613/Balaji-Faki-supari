@@ -1,6 +1,6 @@
 import { Link, NavLink } from 'react-router-dom';
 import { env } from '../../lib/env';
-import { supabase, useSession } from '../../lib/supabase';
+import { authClient, useSession, signOutFromButton } from '../../lib/auth';
 
 const NAV_ITEMS = [
   { to: '/', label: 'Home' },
@@ -12,10 +12,10 @@ const NAV_ITEMS = [
 ];
 
 export default function Header() {
-  const { session } = useSession();
-  const isOwnerAdmin = session?.user?.app_metadata?.role === 'OWNER_ADMIN' && Boolean(env.adminUrl);
+  const { session, profile } = useSession();
+  const isOwnerAdmin = profile?.role === 'OWNER_ADMIN' && profile.isActive && Boolean(env.adminUrl);
   const displayName =
-    (session?.user?.user_metadata?.fullName as string | undefined)?.trim() ||
+    (session?.user?.fullName as string | undefined)?.trim() ||
     session?.user?.email?.split('@')[0] ||
     'Account';
 
@@ -64,12 +64,12 @@ export default function Header() {
               >
                 👤 {displayName}
               </Link>
-              {supabase && (
+              {authClient && (
                 <button
                   type="button"
                   className="text-button"
                   style={{ fontSize: '0.82rem' }}
-                  onClick={() => supabase?.auth.signOut()}
+                  onClick={signOutFromButton}
                 >
                   Log out
                 </button>

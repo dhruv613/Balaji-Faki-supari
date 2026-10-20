@@ -261,7 +261,7 @@ export interface AdminPaymentSubmission {
   customerPhone: string;
   productSummary?: string;
   expectedAmount: number | null;
-  /** Private Supabase Storage object path; viewed only via short-lived signed URL from FastAPI */
+  /** Private storage object path; viewed only via short-lived signed URL from FastAPI */
   privateScreenshotPath: string;
   signedScreenshotUrl?: string;
   submissionDate: string;

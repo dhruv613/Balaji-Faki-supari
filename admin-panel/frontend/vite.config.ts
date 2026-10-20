@@ -2,7 +2,7 @@ import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
-// The Admin Panel reuses the storefront's shared code (API client, Supabase auth, common components, styles) from
+// The Admin Panel reuses the storefront's shared code (API client, Neon Auth, common components, styles) from
 // frontend/src through the `@shared` alias, and the same .env file and public images.
 const storeFrontend = fileURLToPath(new URL('../../frontend', import.meta.url));
 
@@ -10,7 +10,7 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: { '@shared': `${storeFrontend}/src` },
-    dedupe: ['react', 'react-dom', 'react-router-dom', '@supabase/supabase-js'],
+    dedupe: ['react', 'react-dom', 'react-router-dom', '@neondatabase/auth'],
   },
   envDir: storeFrontend,
   publicDir: `${storeFrontend}/public`,
@@ -23,7 +23,7 @@ export default defineConfig({
       output: {
         manualChunks(id) {
           if (id.includes('node_modules')) {
-            if (id.includes('@supabase')) return 'vendor-supabase';
+            if (id.includes('@neondatabase/auth')) return 'vendor-auth';
             if (id.includes('react') || id.includes('scheduler')) return 'vendor-react';
             return 'vendor';
           }

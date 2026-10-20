@@ -1,13 +1,14 @@
-"""Supabase JWT verification and server-side RBAC enforcement for FastAPI."""
+"""Neon Auth JWT verification and server-side RBAC enforcement for FastAPI."""
 
 from __future__ import annotations
 
 import base64
 import json
 import time
-import uuid
 from dataclasses import dataclass
-from typing import Any, Callable, Protocol
+from typing import Any
+
+from urllib.parse import urlsplit
 
 from .config import Settings, settings
 
@@ -23,7 +24,7 @@ class AuthError(Exception):
 
 @dataclass(frozen=True)
 class AuthenticatedPrincipal:
-    """Verified user identity resolved from a signed Supabase JWT and `public.user_profiles`."""
+    """Verified user identity resolved from a signed Neon Auth JWT and `public.user_profiles`."""
 
     id: str
     email: str
@@ -33,10 +34,6 @@ class AuthenticatedPrincipal:
     is_active: bool
 
 
-class ProfileLookup(Protocol):
-    def __call__(self, user_id: str, email: str, user_metadata: dict[str, Any]) -> dict[str, Any] | None: ...
-
-
 def extract_bearer_token(authorization_header: str | None) -> str:
     if not authorization_header:
         raise AuthError(401, "Authentication required. Missing Authorization Bearer header.")
@@ -44,8 +41,8 @@ def extract_bearer_token(authorization_header: str | None) -> str:
     if len(parts) != 2 or parts[0].lower() != "bearer" or not parts[1].strip():
         raise AuthError(401, "Invalid Authorization header format. Expected 'Bearer <access_token>'.")
     token = parts[1].strip()
-    if token.startswith("bfp-session-") or token.startswith("sb_publishable_") or token.startswith("sb_secret_"):
-        raise AuthError(401, "Synthetic or non-JWT tokens are rejected. Sign in via Supabase Auth.")
+    if token.count(".") != 2:
+        raise AuthError(401, "A signed Neon Auth session token is required.")
     return token
 
 
@@ -68,52 +65,38 @@ def decode_unverified_jwt_parts(token: str) -> tuple[dict[str, Any], dict[str, A
     return _decode_segment(segments[0]), _decode_segment(segments[1])
 
 
+def auth_origin(base_url: str) -> str:
+    parsed = urlsplit(base_url)
+    return f"{parsed.scheme}://{parsed.netloc}" if parsed.scheme and parsed.netloc else ""
+
+
 def validate_jwt_claims(
-    claims: dict[str, Any],
-    *,
-    expected_issuer_prefix: str | None = None,
-    now_epoch: float | None = None,
+    claims: dict[str, Any], *, expected_issuer: str | None = None, now_epoch: float | None = None,
 ) -> dict[str, Any]:
-    """
-    Enforces strict Supabase user JWT invariants:
-    - Rejects `anon` and `service_role` tokens (must be a signed user session token).
-    - Requires a valid UUID `sub` claim (`auth.uid()`).
-    - Verifies `aud == 'authenticated'` and non-expired `exp`.
-    - Never uses `user_metadata` for role or permission decisions.
-    """
+    """Neon signs identity; application permissions always come from the profile table."""
     now = time.time() if now_epoch is None else now_epoch
-
-    jwt_role = str(claims.get("role") or "")
-    if jwt_role in ("anon", "service_role"):
-        raise AuthError(401, "API keys (anon/service_role) cannot be used as user session tokens.")
-    if jwt_role != "authenticated":
-        raise AuthError(401, "Token role must be 'authenticated'.")
-
-    aud = claims.get("aud")
-    aud_valid = aud == "authenticated" or (isinstance(aud, list) and "authenticated" in aud)
-    if not aud_valid:
-        raise AuthError(401, "Invalid JWT audience; expected 'authenticated'.")
-
-    sub = str(claims.get("sub") or "").strip()
-    try:
-        uuid.UUID(sub)
-    except ValueError as exc:
-        raise AuthError(401, "JWT is missing a valid UUID subject ('sub') claim.") from exc
-
-    exp = claims.get("exp")
-    if not isinstance(exp, (int, float)) or float(exp) <= now:
-        raise AuthError(401, "Session token has expired. Please sign in again.")
-
-    if expected_issuer_prefix:
-        iss = str(claims.get("iss") or "")
-        expected_iss = f"{expected_issuer_prefix.rstrip('/')}/auth/v1"
-        if iss and iss.rstrip("/") != expected_iss:
-            raise AuthError(401, "JWT issuer does not match the configured Supabase project.")
-
+    sub = claims.get("sub")
+    if not isinstance(sub, str) or not sub.strip() or len(sub) > 255:
+        raise AuthError(401, "JWT is missing a valid subject ('sub') claim.")
+    for field in ("exp", "iat"):
+        value = claims.get(field)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise AuthError(401, f"JWT is missing a valid '{field}' claim.")
+    if claims["exp"] <= now - CLOCK_SKEW_SECONDS or claims["iat"] > now + CLOCK_SKEW_SECONDS:
+        raise AuthError(401, "Session token has expired or is not yet valid. Please sign in again.")
+    if not claims.get("iss") or not claims.get("aud"):
+        raise AuthError(401, "JWT issuer and audience are required.")
+    if expected_issuer:
+        audiences = claims["aud"] if isinstance(claims["aud"], list) else [claims["aud"]]
+        if claims["iss"] != expected_issuer or expected_issuer not in audiences:
+            raise AuthError(401, "JWT issuer or audience does not match the configured Neon Auth branch.")
     return claims
 
 
 _JWK_CLIENTS: dict[str, object] = {}
+_JWKS_REFETCHED_AT: dict[str, float] = {}
+JWKS_MIN_REFETCH_SECONDS = 60
+CLOCK_SKEW_SECONDS = 60
 
 
 def _jwk_client(url: str):
@@ -122,75 +105,49 @@ def _jwk_client(url: str):
 
     client = _JWK_CLIENTS.get(url)
     if client is None:
-        client = PyJWKClient(url, cache_keys=True)
+        client = PyJWKClient(url, cache_keys=True, lifespan=600, timeout=5)
         _JWK_CLIENTS[url] = client
     return client
 
 
-def verify_supabase_access_token(
-    token: str,
-    *,
-    app_settings: Settings = settings,
-    jwt_secret: str | None = None,
-    jwks_verifier: Callable[[str], dict[str, Any]] | None = None,
-) -> dict[str, Any]:
-    """
-    Cryptographically verifies a signed Supabase Auth access token via JWKS (ES256/RS256)
-    or `SUPABASE_JWT_SECRET` (HS256), then validates all security claims.
-    """
-    import os
+def _signing_key(url: str, kid: object):
+    """Key for `kid` from the cached key set. An unknown kid refetches the set at most once a minute, so forged
+    tokens with random kids cannot make every request wait on an outbound call (genuine key rotation still works)."""
+    client = _jwk_client(url)
+    if not isinstance(kid, str) or not kid:
+        raise AuthError(401, "Invalid or expired Neon Auth session token.")
+    for refresh in (False, True):
+        if refresh:
+            now = time.monotonic()
+            if now - _JWKS_REFETCHED_AT.get(url, float("-inf")) < JWKS_MIN_REFETCH_SECONDS:
+                break
+            _JWKS_REFETCHED_AT[url] = now
+        for key in client.get_jwk_set(refresh=refresh).keys:
+            if key.key_id == kid:
+                return key
+    raise AuthError(401, "Invalid or expired Neon Auth session token.")
 
-    if app_settings.supabase_publishable_key and token == app_settings.supabase_publishable_key:
-        raise AuthError(401, "Publishable/anon key cannot be used as a user Bearer token.")
 
-    header, _unverified_claims = decode_unverified_jwt_parts(token)
-    alg = str(header.get("alg") or "").upper()
-    if alg in ("", "NONE"):
-        raise AuthError(401, "Unsigned JWT tokens are strictly rejected.")
-
-    if jwks_verifier is not None:
-        verified_claims = jwks_verifier(token)
-        return validate_jwt_claims(verified_claims, expected_issuer_prefix=app_settings.supabase_url)
-
+def verify_access_token(token: str, *, app_settings: Settings = settings) -> dict[str, Any]:
+    """Verify Managed Neon Auth Ed25519 signatures and its origin-scoped issuer/audience."""
+    header, _ = decode_unverified_jwt_parts(token)
+    if header.get("alg") != "EdDSA":
+        raise AuthError(401, "Only signed Neon Auth EdDSA tokens are accepted.")
+    issuer = auth_origin(app_settings.neon_auth_base_url)
+    if not issuer or not app_settings.neon_auth_jwks_url:
+        raise AuthError(503, "Neon Auth is not configured on this server.")
     try:
         import jwt
-        from jwt import PyJWKClient
-    except ImportError as exc:
-        raise AuthError(500, "PyJWT is required on the server to verify signed tokens.") from exc
-
-    expected_issuer = f"{app_settings.supabase_url.rstrip('/')}/auth/v1"
-    effective_jwt_secret = (
-        jwt_secret
-        if jwt_secret is not None
-        else (app_settings.supabase_jwt_secret or os.getenv("SUPABASE_JWT_SECRET", ""))
-    )
-    try:
-        if alg in ("ES256", "RS256", "EDDSA") and app_settings.supabase_jwks_url:
-            jwk_client = _jwk_client(app_settings.supabase_jwks_url)
-            signing_key = jwk_client.get_signing_key_from_jwt(token)
-            verified_claims = jwt.decode(
-                token,
-                signing_key.key,
-                algorithms=[alg],
-                audience="authenticated",
-                issuer=expected_issuer,
-            )
-        elif alg == "HS256" and effective_jwt_secret:
-            verified_claims = jwt.decode(
-                token,
-                effective_jwt_secret,
-                algorithms=["HS256"],
-                audience="authenticated",
-                issuer=expected_issuer,
-            )
-        else:
-            raise AuthError(401, f"Unsupported or unconfigured JWT signing algorithm ({alg}).")
+        signing_key = _signing_key(app_settings.neon_auth_jwks_url, header.get("kid"))
+        claims = jwt.decode(
+            token, signing_key.key, algorithms=["EdDSA"], audience=issuer, issuer=issuer, leeway=CLOCK_SKEW_SECONDS,
+            options={"require": ["exp", "iat", "sub", "iss", "aud"]},
+        )
     except AuthError:
         raise
     except Exception as exc:
-        raise AuthError(401, f"Invalid or expired Supabase JWT signature: {exc}") from exc
-
-    return validate_jwt_claims(verified_claims, expected_issuer_prefix=app_settings.supabase_url)
+        raise AuthError(401, "Invalid or expired Neon Auth session token.") from exc
+    return validate_jwt_claims(claims, expected_issuer=issuer)
 
 
 def resolve_authenticated_principal(
@@ -207,35 +164,17 @@ def resolve_authenticated_principal(
       grants Owner Admin permissions.
     """
     validated = validate_jwt_claims(claims)
-    user_id = str(validated["sub"])
-    email = str(validated.get("email") or "").strip().lower()
-    raw_user_meta = validated.get("user_metadata")
-    user_meta = raw_user_meta if isinstance(raw_user_meta, dict) else {}
-
-    if profile_row is not None:
-        is_active = bool(profile_row.get("is_active", True))
-        if not is_active:
-            raise AuthError(403, "This account has been deactivated.")
-        db_role = str(profile_row.get("role") or "CUSTOMER")
-        role = "OWNER_ADMIN" if db_role == "OWNER_ADMIN" else "CUSTOMER"
-        full_name = str(profile_row.get("full_name") or user_meta.get("fullName") or "").strip()
-        phone = str(profile_row.get("phone") or user_meta.get("phone") or "").strip()
-        resolved_email = str(profile_row.get("email") or email).strip().lower()
-    else:
-        # Default newly authenticated users without a profile row to CUSTOMER (never OWNER_ADMIN)
-        is_active = True
-        role = "CUSTOMER"
-        full_name = str(user_meta.get("fullName") or "").strip()
-        phone = str(user_meta.get("phone") or "").strip()
-        resolved_email = email
-
+    if profile_row is None or profile_row.get("auth_subject") != validated["sub"]:
+        raise AuthError(403, "This identity has not been linked to an application account.")
+    if not profile_row.get("is_active", True):
+        raise AuthError(403, "This account has been deactivated.")
     return AuthenticatedPrincipal(
-        id=user_id,
-        email=resolved_email,
-        full_name=full_name,
-        phone=phone,
-        role=role,
-        is_active=is_active,
+        id=str(profile_row["id"]),
+        email=str(profile_row.get("email") or "").strip().lower(),
+        full_name=str(profile_row.get("full_name") or ""),
+        phone=str(profile_row.get("phone") or ""),
+        role="OWNER_ADMIN" if profile_row.get("role") == "OWNER_ADMIN" else "CUSTOMER",
+        is_active=True,
     )
 
 

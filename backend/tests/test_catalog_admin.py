@@ -6,6 +6,8 @@ import os
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import patch
+from urllib.parse import urlsplit
 
 from fastapi import HTTPException
 from sqlalchemy import select
@@ -33,6 +35,14 @@ def patch_body(**body) -> UpdateAdminProductRequestSchema:
 
 class CatalogAdminTests(unittest.TestCase):
     def setUp(self) -> None:
+        from app.core import storage as _storage
+        _storage._cached_client.cache_clear()  # each test swaps boto3 for its own fake
+        self.addCleanup(_storage._cached_client.cache_clear)
+        # Presigning is computed locally, so a placeholder endpoint never reaches the network.
+        provider = patch.dict(os.environ, {"AWS_ENDPOINT_URL_S3": "https://storage.example.test", "AWS_REGION": "us-east-1",
+                                           "AWS_ACCESS_KEY_ID": "test", "AWS_SECRET_ACCESS_KEY": "test"})
+        provider.start()
+        self.addCleanup(provider.stop)
         db_session.Base.metadata.drop_all(bind=db_session.engine)
         db_session.Base.metadata.create_all(bind=db_session.engine)
         global ADMIN
@@ -63,7 +73,9 @@ class CatalogAdminTests(unittest.TestCase):
             # Seeded Faki gallery: box first, tied sachet bundle, promotional banner last, then a Storage-backed image.
             self.assertEqual([i["url"] for i in detail["images"][:3]], ["/images/products/balaji-faki-box.webp", "/images/products/balaji-faki-bundle.jpg", "/images/products/balaji-faki-banner.jpg"])
             self.assertEqual([i["alt"] for i in detail["images"]][-1], "Front of pack")
-            self.assertTrue(detail["images"][3]["url"].endswith("/product-images/faki/front.png"))
+            uploaded = urlsplit(detail["images"][3]["url"])  # a short-lived signed link to the private bucket
+            self.assertTrue(uploaded.path.endswith("/assets/product-images/faki/front.png"))
+            self.assertIn("X-Amz-Signature=", uploaded.query)
             self.assertEqual(detail["priceConfirmed"], {"250g": False, "500g": False, "1kg": True})
             self.assertEqual(detail["prices"]["1kg"], 1000)
             self.assertIsNone(detail["averageRating"])

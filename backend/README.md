@@ -1,63 +1,13 @@
-# Balaji Faki Point — Backend Service
+# Balaji Faki Point — Backend (FastAPI)
 
-## Current Backend Inspection Status
+The API for the storefront and the Admin Panel, deployed on Vercel through `../api/index.py` and running on Neon.
 
-- **Existing Files in `backend/`**:
-  - `package.json` & `package-lock.json`: Contains `@supabase/server` (`^1.9.2`) installed for Supabase server-side credential verification. No Node.js server entrypoint (`index.js`) exists yet.
-  - `.env` & `.env.example`: Server-side Supabase environment variables (`SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`, `SUPABASE_JWKS_URL`, `DATABASE_URL`).
-  - `New Microsoft Excel Worksheet.xlsx`: Preserved user spreadsheet file.
-- **Target Backend Stack**:
-  - **Python 3.11+ / FastAPI**
-  - **SQLAlchemy 2.0** (ORM mapped to the 18 PostgreSQL tables in `supabase/migrations/`)
-  - **Pydantic v2** (Strict request/response validation using integer `paise` for monetary calculations)
-  - **Alembic** (Database migration management alongside Supabase CLI)
+- `app/main.py`: all routes (`/api/*`; admin routes under `/api/admin/*`).
+- `app/core/security.py`: Neon Auth JWT verification (EdDSA via JWKS); roles come only from `public.user_profiles`.
+- `app/core/storage.py`: Neon Object Storage (private `assets` bucket) and short-lived signed links.
+- `app/core/config.py`, `app/db/session.py`: settings and the database engine (pooled Neon connection, no app-side pool).
+- `app/db/models.py`, `app/db/seed.py`: SQLAlchemy models and the local SQLite development seed.
+- `migrations/neon/`: the PostgreSQL schema, applied with `../scripts/setup-neon-db.py`.
+- `tests/`: `python -m unittest discover -s tests` (SQLite, no network).
 
-## Target FastAPI Directory Layout
-
-When implementing the FastAPI service inside `backend/`, use this structure:
-
-```text
-backend/
-├── app/
-│   ├── main.py
-│   ├── core/
-│   │   ├── config.py
-│   │   └── security.py
-│   ├── db/
-│   │   ├── base.py
-│   │   └── session.py
-│   ├── models/
-│   ├── schemas/
-│   ├── repositories/
-│   ├── services/
-│   ├── integrations/
-│   │   ├── supabase/
-│   │   └── email/
-│   └── api/
-│       └── v1/
-│           ├── auth.py
-│           ├── products.py
-│           ├── orders.py
-│           ├── payments.py
-│           ├── tracking.py
-│           ├── reviews.py
-│           └── admin/
-│               ├── dashboard.py
-│               ├── orders.py
-│               ├── payments.py
-│               ├── products.py
-│               ├── inventory.py
-│               ├── delivery.py
-│               ├── customers.py
-│               ├── reviews.py
-│               ├── refunds.py
-│               ├── reports.py
-│               └── settings.py
-├── alembic/
-├── tests/
-├── requirements.txt
-├── .env.example
-└── README.md
-```
-
-See [`../docs/api/api-contracts.md`](../docs/api/api-contracts.md) and [`../docs/database/schema-and-migrations.md`](../docs/database/schema-and-migrations.md) for the complete endpoint and database specifications.
+Run locally: `python -m uvicorn app.main:app --app-dir backend --port 8000` from the repo root, with a Neon branch's variables in the environment. See [../docs/NEON_SETUP.md](../docs/NEON_SETUP.md) and [../.env.example](../.env.example).

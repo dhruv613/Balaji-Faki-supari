@@ -8,7 +8,7 @@
 
 import { env } from './env';
 import type { Product } from '../types/orders';
-import { supabase } from './supabase';
+import { getAccessToken } from './auth';
 
 /* ---------- API Fetch helper ---------- */
 
@@ -46,8 +46,8 @@ export async function apiFetch<T>(
     headers.set('Content-Type', 'application/json');
   }
   headers.set('Accept', 'application/json');
-  const session = supabase ? (await supabase.auth.getSession()).data.session : null;
-  if (session) headers.set('Authorization', `Bearer ${session.access_token}`);
+  const token = await getAccessToken();
+  if (token) headers.set('Authorization', `Bearer ${token}`);
 
   let res: Response;
   try {

@@ -7,11 +7,17 @@
   "functions": {
     "api/index.py": {
       "maxDuration": 60,
-      "excludeFiles": "{frontend/**,dist/**,node_modules/**,docs/**,supabase/**,scripts/**,backend/tests/**,backend/node_modules/**,backend/*.xlsx,backend/*.db}"
+      "excludeFiles": "{frontend/**,dist/**,node_modules/**,docs/**,backend/migrations/**,scripts/**,backend/tests/**,backend/node_modules/**,backend/*.xlsx,backend/*.db}"
     }
   },
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/index" },
-    { "source": "/(.*)", "destination": "/index.html" }
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/index"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
   ]
 }
