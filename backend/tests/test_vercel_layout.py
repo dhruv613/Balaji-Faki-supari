@@ -40,6 +40,11 @@ class VercelLayoutTests(unittest.TestCase):
         self.assertIn("api/index.py", config["functions"])
         self.assertTrue((REPO_ROOT / "api" / "index.py").is_file())
 
+    def test_api_entrypoint_binds_app_at_top_level(self) -> None:
+        # Vercel detects Python functions statically; `app` bound only inside try/except fails the build.
+        source = (REPO_ROOT / "api" / "index.py").read_text(encoding="utf-8")
+        self.assertRegex(source, r"(?m)^app = ")
+
     def test_api_entrypoint_exposes_the_backend_app(self) -> None:
         spec = importlib.util.spec_from_file_location("vercel_api_index", REPO_ROOT / "api" / "index.py")
         module = importlib.util.module_from_spec(spec)
