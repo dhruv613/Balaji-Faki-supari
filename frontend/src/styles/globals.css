@@ -450,11 +450,6 @@ legend {
   opacity: 0; transform: scale(1); transition: opacity 1000ms ease, transform 6500ms ease-out;
 }
 .hero__photo .hero-slide--active { opacity: 1; transform: scale(1.05); }
-.hero-slider__dots { position: absolute; left: 0; right: 0; bottom: 10px; z-index: 1; display: flex; justify-content: center; gap: 2px; }
-.hero-slider__dot { width: 28px; height: 28px; padding: 0; border: 0; background: none; cursor: pointer; display: grid; place-items: center; }
-.hero-slider__dot::before { content: ''; width: 10px; height: 10px; border-radius: 50%; background: rgba(255, 255, 255, 0.85); border: 1px solid rgba(0, 0, 0, 0.25); transition: background var(--transition), transform var(--transition); }
-.hero-slider__dot[aria-pressed="true"]::before { background: var(--color-primary); transform: scale(1.25); }
-.hero-slider__dot:focus-visible { outline: 2px solid var(--color-text); outline-offset: -2px; border-radius: 50%; }
 @media (prefers-reduced-motion: reduce) {
   .hero__photo .hero-slide { transition: none; transform: none; }
 }

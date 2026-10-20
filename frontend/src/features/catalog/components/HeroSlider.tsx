@@ -10,7 +10,7 @@ export function nextSlideIndex(slides: HeroSlide[], url: string): number {
 
 /**
  * Hero photo that crossfades (with a slow zoom) through `slides`. Pauses while hovered or focused, while the tab is hidden,
- * and never auto-advances for people who prefer reduced motion (the dots still switch photos by hand).
+ * and never auto-advances for people who prefer reduced motion.
  * The shown photo is tracked by URL, so when the slide list changes (the catalogue finishing loading) the photo on screen stays put.
  */
 export default function HeroSlider({ slides, intervalMs = 4500 }: { slides: HeroSlide[]; intervalMs?: number }) {
@@ -37,14 +37,6 @@ export default function HeroSlider({ slides, intervalMs = 4500 }: { slides: Hero
           src={slide.url} alt={slide.alt} aria-hidden={slide.url === currentUrl ? undefined : true}
           loading={index === 0 ? 'eager' : 'lazy'} decoding="async" />
       ))}
-      {slides.length > 1 && (
-        <div className="hero-slider__dots" role="group" aria-label="Choose hero photo">
-          {slides.map((slide, index) => (
-            <button key={slide.url} type="button" className="hero-slider__dot" aria-pressed={slide.url === currentUrl}
-              aria-label={`Show photo ${index + 1} of ${slides.length}: ${slide.alt}`} onClick={() => setShownUrl(slide.url)} />
-          ))}
-        </div>
-      )}
     </div>
   );
 }
