@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import StoreLink from './StoreLink';
-import { authClient, signOut, useSession } from '../../../lib/auth';
+import { signOut, useSession } from '../../../lib/auth';
 import { updateProfile } from '../../../lib/profile';
 import { normalizeIndianMobile, validateCustomerDetails } from '../../../lib/customer';
 
@@ -64,7 +64,7 @@ export default function AdminHeader({ onOpenSidebar }: AdminHeaderProps) {
       setProfileErr(validation.fullName || validation.phone || 'Please check your details.');
       return;
     }
-    if (!authClient || savingProfile) return;
+    if (savingProfile) return;
 
     setSavingProfile(true);
     try {
@@ -81,7 +81,7 @@ export default function AdminHeader({ onOpenSidebar }: AdminHeaderProps) {
   }
 
   async function handleLogout() {
-    if (!authClient || signingOut) return;
+    if (signingOut) return;
     setSigningOut(true);
     try {
       setProfileOpen(false);
@@ -153,7 +153,7 @@ export default function AdminHeader({ onOpenSidebar }: AdminHeaderProps) {
           <button
             type="button"
             className="btn btn--dark btn--sm"
-            disabled={signingOut || !authClient}
+            disabled={signingOut}
             onClick={handleLogout}
           >
             {signingOut ? 'Signing out…' : 'Log out'}

@@ -26,10 +26,8 @@ def start_auth(test_class):
     verify = lambda token: security.verify_access_token(token, app_settings=SETTINGS)  # noqa: E731
     for replacement in (
         patch("app.core.security._jwk_client", return_value=client),
-        # Every route module that verifies a Bearer token itself (not via get_current_principal) looks it up locally.
+        # All Bearer checks go through common.principal_from_authorization.
         patch("app.routes.common.verify_access_token", side_effect=verify),
-        patch("app.routes.admin.verify_access_token", side_effect=verify),
-        patch("app.routes.admin_payments.verify_access_token", side_effect=verify),
         patch("app.routes.common._lookup_auth_identity", side_effect=lambda db, subject: IDENTITIES.get(subject)),
     ):
         replacement.start()

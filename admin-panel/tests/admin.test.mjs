@@ -75,7 +75,6 @@ const env = { apiBaseUrl: 'https://api.balajifaki.test/api', supportWhatsApp: '9
 let session = { access_token: 'owner-admin-jwt-token', user: { id: 'admin-1', email: 'owner@balajifaki.com' } };
 const authStub = {
   getAccessToken: async () => session?.access_token ?? null,
-  authClient: {},
   signOut: async () => {},
   useSession: () => ({ session, loading: false }),
 };
@@ -91,7 +90,7 @@ const adminApi = load('src/features/admin/api/index.ts', {
 const routeGuard = load('src/features/admin/components/AdminRouteGuard.tsx', {
   '../../../lib/auth': authStub,
   '../../../lib/env': { env },
-  '../../../components/common/EmailSignIn': { default: () => null },
+  './AdminSignIn': { default: () => null },
   './StoreLink': { default: () => null },
   '../../../components/common/Notice': { default: () => null },
   '../api': adminApi,

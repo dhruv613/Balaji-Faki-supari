@@ -1,6 +1,6 @@
 import { Link, NavLink } from 'react-router-dom';
 import StoreLink from './StoreLink';
-import { authClient, useSession, signOutFromButton } from '../../../lib/auth';
+import { useSession, signOutFromButton } from '../../../lib/auth';
 
 export interface AdminNavItem {
   to: string;
@@ -99,7 +99,7 @@ export default function AdminSidebar({ open, onClose }: AdminSidebarProps) {
             ← Customer Store
           </StoreLink>
 
-          {authClient && session && (
+          {session && (
             <button
               type="button"
               className="btn btn--dark btn--sm"

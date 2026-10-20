@@ -66,6 +66,9 @@ class Settings:
     proof_signing_secret: str = field(
         default_factory=lambda: os.getenv("PROOF_SIGNING_SECRET", "")
     )
+    # The one Owner Admin login of the Admin Panel. Server-side only: never put these in VITE_* variables.
+    admin_email: str = field(default_factory=lambda: os.getenv("ADMIN_EMAIL", "").strip().lower())
+    admin_password: str = field(default_factory=lambda: os.getenv("ADMIN_PASSWORD", "").strip())
     # "local" enables explicit development-only conveniences (random per-process signing key, TEST bank evidence).
     # Anything else (including unset) is treated as non-local and fails closed.
     app_env: str = field(

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import base64
+import hashlib
+import hmac
 import json
 import time
 from dataclasses import dataclass
@@ -176,6 +178,73 @@ def resolve_authenticated_principal(
         role="OWNER_ADMIN" if profile_row.get("role") == "OWNER_ADMIN" else "CUSTOMER",
         is_active=True,
     )
+
+
+# ---- The Admin Panel's single fixed login (ADMIN_EMAIL / ADMIN_PASSWORD), independent of Neon Auth ----
+
+ADMIN_TOKEN_PREFIX = "adm1."
+ADMIN_SESSION_SECONDS = 12 * 3600
+MIN_ADMIN_PASSWORD_LENGTH = 10
+
+
+def _admin_session_key(app_settings: Settings | None = None) -> bytes | None:
+    """None when the admin login is not configured. Changing the password or secret ends every admin session."""
+    app_settings = app_settings or settings
+    if not app_settings.admin_email or len(app_settings.admin_password) < MIN_ADMIN_PASSWORD_LENGTH:
+        return None
+    if not app_settings.proof_signing_secret:
+        return None
+    material = f"admin-session|{app_settings.admin_email}|{app_settings.admin_password}".encode()
+    return hmac.new(app_settings.proof_signing_secret.encode(), material, hashlib.sha256).digest()
+
+
+def admin_login_configured(app_settings: Settings | None = None) -> bool:
+    return _admin_session_key(app_settings) is not None
+
+
+def check_admin_credentials(email: str, password: str, app_settings: Settings | None = None) -> bool:
+    if not admin_login_configured(app_settings):
+        return False
+    app_settings = app_settings or settings
+    email_ok = hmac.compare_digest(email.strip().lower().encode(), app_settings.admin_email.encode())
+    password_ok = hmac.compare_digest(password.encode(), app_settings.admin_password.encode())
+    return email_ok and password_ok
+
+
+def issue_admin_token(app_settings: Settings | None = None, now: float | None = None) -> tuple[str, int]:
+    key = _admin_session_key(app_settings)
+    app_settings = app_settings or settings
+    if key is None:
+        raise AuthError(503, "The admin login is not configured on this server.")
+    expires = int((time.time() if now is None else now) + ADMIN_SESSION_SECONDS)
+    payload = base64.urlsafe_b64encode(json.dumps({"email": app_settings.admin_email, "exp": expires}).encode()).decode().rstrip("=")
+    signature = hmac.new(key, payload.encode(), hashlib.sha256).hexdigest()
+    return f"{ADMIN_TOKEN_PREFIX}{payload}.{signature}", expires
+
+
+def is_admin_token(token: str) -> bool:
+    return token.startswith(ADMIN_TOKEN_PREFIX)
+
+
+def verify_admin_token(token: str, app_settings: Settings | None = None, now: float | None = None) -> str:
+    """Returns the admin email of a valid, unexpired admin session token."""
+    key = _admin_session_key(app_settings)
+    app_settings = app_settings or settings
+    expired = AuthError(401, "Your admin session has ended. Please sign in again.")
+    if key is None or not is_admin_token(token):
+        raise expired
+    payload, _, signature = token[len(ADMIN_TOKEN_PREFIX):].partition(".")
+    if not hmac.compare_digest(hmac.new(key, payload.encode(), hashlib.sha256).hexdigest(), signature):
+        raise expired
+    try:
+        claims = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+    except ValueError:
+        raise expired from None
+    if not isinstance(claims, dict) or claims.get("email") != app_settings.admin_email or not isinstance(claims.get("exp"), int):
+        raise expired
+    if claims["exp"] <= (time.time() if now is None else now):
+        raise expired
+    return app_settings.admin_email
 
 
 def enforce_owner_admin(principal: AuthenticatedPrincipal) -> AuthenticatedPrincipal:

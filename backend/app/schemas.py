@@ -14,6 +14,11 @@ class CamelModel(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
 
+class AdminLoginRequestSchema(CamelModel):
+    email: str = Field(min_length=3, max_length=254)
+    password: str = Field(min_length=1, max_length=200)
+
+
 class UpdateProfileRequestSchema(CamelModel):
     full_name: str | None = Field(default=None, alias="fullName", min_length=2, max_length=100)
     phone: str | None = Field(default=None, min_length=10, max_length=20)

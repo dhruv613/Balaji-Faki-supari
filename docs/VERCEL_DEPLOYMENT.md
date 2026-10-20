@@ -27,10 +27,12 @@ Vercel → Project → Settings → Environment Variables, ticking **Production*
 | `AWS_ENDPOINT_URL_S3`, `AWS_REGION` | Neon Object Storage endpoint and region |
 | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | Neon Object Storage keys. Sensitive |
 | `PROOF_SIGNING_SECRET` | a long random string (32+ characters), e.g. `openssl rand -hex 32`. Sensitive |
+| `ADMIN_EMAIL` | the one Admin Panel login email. Sensitive |
+| `ADMIN_PASSWORD` | the Admin Panel password, 10+ characters. Changing it signs the admin out everywhere. Sensitive |
 | `VITE_ADMIN_URL` | `https://balaji-faki-point-admin.vercel.app` (the Owner Admin's "Admin Panel" link) |
 | `VITE_SUPPORT_WHATSAPP` | optional, digits only, e.g. `918000961030` |
 
-**Admin project (`balaji-faki-point-admin`)**: `VITE_NEON_AUTH_URL` (same value) and `VITE_STORE_URL=https://balaji-faki-point.vercel.app`. It runs no server code, so it needs nothing else.
+**Admin project (`balaji-faki-point-admin`)**: only `VITE_STORE_URL=https://balaji-faki-point.vercel.app`. It runs no server code and has no Neon sign-in: its login is checked by the store's server (`ADMIN_EMAIL` / `ADMIN_PASSWORD` above).
 
 **Delete** from both projects: `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`, `VITE_SUPABASE_ANON_KEY`, `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `SUPABASE_JWKS_URL`, `SUPABASE_JWT_SECRET`, `VITE_APP_MODE`, and any `POSTGRES_*` variables a Supabase integration added. Do not set `BFP_ENV` (anything other than `production` turns on development shortcuts) or `CORS_ORIGINS` (same origin).
 
