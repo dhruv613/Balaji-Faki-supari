@@ -30,3 +30,6 @@ venv/
 supabase/.temp/
 docs/testing/verification/
 .local-dev-credentials.json
+
+# Local run logs
+*.log
