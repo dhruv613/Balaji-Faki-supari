@@ -49,6 +49,9 @@ def _token() -> str:
 
 
 
+PUBLIC_ADMIN_ROUTES = {"/api/admin/login", "/admin/login"}
+
+
 class AdminRouteGuardTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
@@ -61,6 +64,7 @@ class AdminRouteGuardTests(unittest.TestCase):
             route
             for route in app.routes
             if isinstance(route, APIRoute) and route.path.startswith("/api/admin")
+            and route.path not in PUBLIC_ADMIN_ROUTES  # the fixed admin login itself (see test_admin_login.py)
         ]
 
     def test_every_admin_route_is_guarded_by_owner_admin_or_a_signature(self) -> None:

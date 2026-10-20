@@ -21,9 +21,10 @@ admin-panel/
   database and one set of order and payment rules. `vercel.json` forwards `/api/*` to the store's deployment, so the
   browser only talks to the admin domain (no CORS). Product photos are stored as `/images/...` paths of the store, so
   `/images/*` is forwarded there too (and to the store's dev server by `vite.config.ts` in development).
-- **Sign-in**: Neon Auth (`src/lib/auth.ts`); the server decides who is Owner Admin.
-- **Environment**: `VITE_NEON_AUTH_URL` (Neon Auth URL of the branch) and `VITE_STORE_URL` (store address for the "Store"
-  links). Local development also needs `VITE_API_BASE_URL=http://127.0.0.1:8000/api`. Put them in `admin-panel/.env.local`
+- **Sign-in**: one fixed admin email and password, checked by the store's backend (`POST /api/admin/login`). They are
+  set only on the **store's** Vercel project as `ADMIN_EMAIL` and `ADMIN_PASSWORD` (at least 10 characters), never here.
+  The admin gets a 12-hour session for that browser tab (`src/lib/auth.ts`). Customers keep their own Neon Auth sign-in.
+- **Environment**: `VITE_STORE_URL` (store address for the "Store" links). Local development also needs `VITE_API_BASE_URL=http://127.0.0.1:8000/api`. Put them in `admin-panel/.env.local`
   (gitignored); see `.env.example`.
 
 ```powershell

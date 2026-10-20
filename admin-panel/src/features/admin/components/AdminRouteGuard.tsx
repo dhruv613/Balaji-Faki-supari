@@ -1,8 +1,8 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { useSession, authClient, signOutFromButton } from '../../../lib/auth';
+import { useSession, signOutFromButton } from '../../../lib/auth';
 import { env } from '../../../lib/env';
-import EmailSignIn from '../../../components/common/EmailSignIn';
+import AdminSignIn from './AdminSignIn';
 import StoreLink from './StoreLink';
 import Notice from '../../../components/common/Notice';
 import { getAdminMe } from '../api';
@@ -26,7 +26,7 @@ export function evaluateAdminRouteAccess(params: {
     return {
       allowed: false,
       status: 'DENIED_UNAUTHENTICATED',
-      reason: 'Sign in with an authorized Owner Admin account to access the Admin Panel.',
+      reason: 'Sign in with the admin email and password.',
     };
   }
   if (!apiConnected) {
@@ -99,7 +99,7 @@ export default function AdminRouteGuard({ children }: { children: ReactNode }) {
         <p className="text-secondary">{check.reason}</p>
 
         {!session ? (
-          <EmailSignIn signInOnly />
+          <AdminSignIn />
         ) : (
           <>
             <div className="card" style={{ padding: 12, margin: '12px 0', background: '#fff', border: '1px solid var(--border)' }}>
@@ -119,9 +119,9 @@ export default function AdminRouteGuard({ children }: { children: ReactNode }) {
         )}
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 16 }}>
-          {authClient && session && (
+          {session && (
             <button type="button" className="btn btn--full" onClick={signOutFromButton}>
-              Log out &amp; sign in with the Admin account
+              Log out
             </button>
           )}
           <StoreLink className="btn btn--outline btn--full">

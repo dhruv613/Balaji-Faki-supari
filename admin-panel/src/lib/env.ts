@@ -8,9 +8,6 @@ export const env = {
   /** FastAPI base URL, e.g. http://localhost:8000/api. Production builds default to the same-origin `/api` (the backend service of the same Vercel project). */
   apiBaseUrl: (import.meta.env.VITE_API_BASE_URL ?? (import.meta.env.PROD ? '/api' : '')).replace(/\/$/, ''),
 
-  /** Public Managed Neon Auth endpoint. */
-  neonAuthUrl: import.meta.env.VITE_NEON_AUTH_URL ?? '',
-
   /** Support WhatsApp number in international format, digits only. */
   supportWhatsApp: import.meta.env.VITE_SUPPORT_WHATSAPP ?? '918000961030',
 

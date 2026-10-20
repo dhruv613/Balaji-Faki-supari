@@ -20,8 +20,10 @@ from ..core.security import (
     AuthError,
     enforce_owner_admin,
     extract_bearer_token,
+    is_admin_token,
     resolve_authenticated_principal,
     verify_access_token,
+    verify_admin_token,
 )
 from ..core.storage import (
     CatalogImageStorageError,
@@ -119,15 +121,46 @@ def _ensure_user_profile(db: Session, claims: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _ensure_admin_profile(db: Session, email: str) -> UserProfile:
+    """The profile that records the fixed admin login's actions (audit logs, reviews). Created or promoted on demand."""
+    matches = db.scalars(
+        select(UserProfile).where(func.lower(func.trim(UserProfile.email)) == email).order_by(UserProfile.created_at)
+    ).all()
+    profile = next((p for p in matches if p.role == "OWNER_ADMIN"), matches[0] if matches else None)
+    if profile is None:
+        profile = UserProfile(email=email, full_name="Owner Admin", phone="", role="OWNER_ADMIN", is_active=True)
+        db.add(profile)
+    elif profile.role != "OWNER_ADMIN" or not profile.is_active:
+        profile.role, profile.is_active = "OWNER_ADMIN", True
+    else:
+        return profile
+    db.commit()
+    return profile
+
+
+def _admin_principal(db: Session, token: str) -> AuthenticatedPrincipal:
+    profile = _ensure_admin_profile(db, verify_admin_token(token))
+    return AuthenticatedPrincipal(
+        id=str(profile.id), email=profile.email, full_name=profile.full_name, phone=profile.phone,
+        role="OWNER_ADMIN", is_active=True,
+    )
+
+
+def principal_from_authorization(db: Session, authorization: str | None) -> AuthenticatedPrincipal:
+    """The caller behind an Authorization header: the fixed admin login's session, or a customer's Neon Auth JWT."""
+    token = extract_bearer_token(authorization)
+    if is_admin_token(token):
+        return _admin_principal(db, token)
+    claims = verify_access_token(token)
+    return resolve_authenticated_principal(claims, _ensure_user_profile(db, claims))
+
+
 def get_current_principal(
     authorization: str | None = Header(default=None, alias="Authorization"),
     db: Session = Depends(get_db),
 ) -> AuthenticatedPrincipal:
     try:
-        token = extract_bearer_token(authorization)
-        claims = verify_access_token(token)
-        profile_dict = _ensure_user_profile(db, claims)
-        return resolve_authenticated_principal(claims, profile_dict)
+        return principal_from_authorization(db, authorization)
     except AuthError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 

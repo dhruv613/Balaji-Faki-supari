@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, Response, UploadFile
@@ -15,10 +16,10 @@ from ..core.domain import inr_to_paise, paise_to_inr, PIN_CODE_REGEX
 from ..core.security import (
     AuthenticatedPrincipal,
     AuthError,
+    admin_login_configured,
+    check_admin_credentials,
     enforce_owner_admin,
-    extract_bearer_token,
-    resolve_authenticated_principal,
-    verify_access_token,
+    issue_admin_token,
 )
 from ..core.storage import (
     CatalogImageStorageError,
@@ -49,12 +50,13 @@ from ..db.models import (
 )
 from ..db.session import get_db
 from ..schemas import (
+    AdminLoginRequestSchema,
     ConfirmBusinessSettingsRequestSchema,
     UpdateAdminReviewRequestSchema,
     UpdateAdminSettingsRequestSchema,
 )
 from .common import (
-    _ensure_user_profile,
+    _ensure_admin_profile,
     _get_store_settings,
     _iso,
     _qr_response,
@@ -62,9 +64,33 @@ from .common import (
     _serialize_store_profile,
     _serviceable_pins,
     get_owner_admin_principal,
+    principal_from_authorization,
 )
 
 router = APIRouter()
+
+# ponytail: counted per serverless instance, so it slows guessing rather than stopping it; a shared store (DB/Redis)
+# would make it global if the admin login ever sees real attacks.
+ADMIN_LOGIN_MAX_FAILURES = 10
+ADMIN_LOGIN_WINDOW_SECONDS = 15 * 60
+_admin_login_failures: list[float] = []
+
+
+@router.post("/admin/login")
+def admin_login(payload: AdminLoginRequestSchema, db: Session = Depends(get_db)) -> dict[str, Any]:
+    """The Admin Panel's one fixed login (ADMIN_EMAIL / ADMIN_PASSWORD on the server). Returns a 12-hour session token."""
+    if not admin_login_configured():
+        raise HTTPException(status_code=503, detail="The admin login is not set up on the server yet (ADMIN_EMAIL and ADMIN_PASSWORD).")
+    now = time.time()
+    _admin_login_failures[:] = [t for t in _admin_login_failures if now - t < ADMIN_LOGIN_WINDOW_SECONDS]
+    if len(_admin_login_failures) >= ADMIN_LOGIN_MAX_FAILURES:
+        raise HTTPException(status_code=429, detail="Too many wrong attempts. Wait 15 minutes and try again.")
+    if not check_admin_credentials(payload.email, payload.password):
+        _admin_login_failures.append(now)
+        raise HTTPException(status_code=401, detail="The admin email or password is incorrect.")
+    _ensure_admin_profile(db, payload.email.strip().lower())  # equals ADMIN_EMAIL after the check above
+    token, expires = issue_admin_token()
+    return {"token": token, "expiresAt": expires}
 
 
 def _serialize_admin_review(db: Session, review: Review) -> dict[str, Any]:
@@ -194,9 +220,7 @@ def get_admin_review_photo(
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     if not authorized:
         try:
-            claims = verify_access_token(extract_bearer_token(authorization))
-            principal = resolve_authenticated_principal(claims, _ensure_user_profile(db, claims))
-            enforce_owner_admin(principal)
+            enforce_owner_admin(principal_from_authorization(db, authorization))
         except AuthError as exc:
             raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
     return _review_photo_response(photo, "private, no-store, max-age=0")
@@ -649,8 +673,7 @@ def get_admin_payment_qr(
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     if not authorized:
         try:
-            claims = verify_access_token(extract_bearer_token(authorization))
-            enforce_owner_admin(resolve_authenticated_principal(claims, _ensure_user_profile(db, claims)))
+            enforce_owner_admin(principal_from_authorization(db, authorization))
         except AuthError as exc:
             raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
     return _qr_response(store)

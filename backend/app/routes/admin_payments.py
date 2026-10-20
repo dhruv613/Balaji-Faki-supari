@@ -16,9 +16,6 @@ from ..core.security import (
     AuthenticatedPrincipal,
     AuthError,
     enforce_owner_admin,
-    extract_bearer_token,
-    resolve_authenticated_principal,
-    verify_access_token,
 )
 from ..core.storage import (
     create_signed_proof_query,
@@ -42,7 +39,7 @@ from ..schemas import (
     RejectPaymentRequestSchema,
     ReviewPaymentRequestSchema,
 )
-from .common import _ensure_user_profile, _iso, get_owner_admin_principal
+from .common import _iso, get_owner_admin_principal, principal_from_authorization
 
 router = APIRouter()
 
@@ -189,11 +186,7 @@ def get_admin_payment_proof(
     )
     if not authorized:
         try:
-            token = extract_bearer_token(authorization)
-            claims = verify_access_token(token)
-            profile_dict = _ensure_user_profile(db, claims)
-            principal = resolve_authenticated_principal(claims, profile_dict)
-            enforce_owner_admin(principal)
+            enforce_owner_admin(principal_from_authorization(db, authorization))
             authorized = True
         except AuthError as exc:
             raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
