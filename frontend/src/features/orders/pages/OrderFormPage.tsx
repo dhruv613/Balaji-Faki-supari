@@ -82,7 +82,8 @@ export default function OrderFormPage() {
   // Preselect product from URL query param (?product=faki or ?product=supari)
   useEffect(() => {
     const p = searchParams.get('product');
-    if (p && p !== state.product && state.products.some((item) => item.type === p)) {
+    if (!p || !state.products.length) return;
+    if (p !== state.product && state.products.some((item) => item.type === p)) {
       dispatch({ type: 'SET_PRODUCT', payload: p });
     }
     if (p) {
@@ -90,15 +91,19 @@ export default function OrderFormPage() {
       remaining.delete('product');
       setSearchParams(remaining, { replace: true });
     }
-  }, [searchParams, dispatch, setSearchParams]);
+  }, [searchParams, dispatch, setSearchParams, state.products, state.product]);
 
   const summary = buildSummary(state);
   const currentProduct = state.products.find((p) => p.type === state.product);
+  const canReview = Boolean(currentProduct && (state.customAmount
+    ? currentProduct.pricePerKg != null && !typedAmountError(state.packSize)
+    : currentProduct.prices[state.packSize] != null && currentProduct.inStock?.[state.packSize] !== false && currentProduct.priceConfirmed?.[state.packSize] !== false));
   const products = state.products;
   const errors = submitted ? validateForm(state) : {};
   const errorCount = Object.keys(errors).length;
 
   function handleReview() {
+    if (!canReview) return;
     setSubmitted(true);
     const found = validateForm(state);
     const firstInvalid = (Object.keys(FIELD_IDS) as Array<keyof OrderFormData>).find(
@@ -189,7 +194,9 @@ export default function OrderFormPage() {
                     }
                   >
                     {(currentProduct?.packSizes ?? []).map((sz) => (
-                      <option key={sz} value={sz}>{formatPackSize(sz)}</option>
+                      <option key={sz} value={sz} disabled={currentProduct?.prices[sz] == null || currentProduct?.inStock?.[sz] === false || currentProduct?.priceConfirmed?.[sz] === false}>
+                        {formatPackSize(sz)}{currentProduct?.inStock?.[sz] === false ? ' (out of stock)' : currentProduct?.priceConfirmed?.[sz] === false ? ' (awaiting approval)' : ''}
+                      </option>
                     ))}
                     {currentProduct?.pricePerKg != null && <option value={TYPED_OPTION}>Other amount (type your own)</option>}
                   </select>
@@ -335,10 +342,13 @@ export default function OrderFormPage() {
             </div>
 
             {state.catalogStatus && <p className="text-small text-secondary catalog-status" role="status">{state.catalogStatus}</p>}
+            {state.catalogError && <Notice tone="error" title="Cannot load products and prices">
+              {state.catalogError} <button type="button" className="btn btn--sm" onClick={() => dispatch({ type: 'RETRY_CATALOG' })}>Try again</button>
+            </Notice>}
             {state.quoteStatus && <p className="text-small text-secondary catalog-status" role="status">{state.quoteStatus}</p>}
             <button
               type="button"
-              disabled={!currentProduct}
+              disabled={!canReview}
               className="btn btn--primary btn--full"
               id="review-order-btn"
               onClick={handleReview}

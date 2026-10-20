@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useReducer, type ReactNode, type Dispatch } from 'react';
+import { useLocation } from 'react-router-dom';
 import type { User } from '../lib/auth';
 import type { ProductType, PackSize, OrderFormData, OrderSummary, Order, PaymentStatus, Product, CheckoutQuote } from '../types/orders';
 import { PRODUCT_SHELL, getErrorMessage } from '../lib/api';
@@ -20,6 +21,8 @@ export interface OrderState extends OrderFormData {
   paymentStatus: PaymentStatus | null;
   products: Product[];
   catalogStatus: string;
+  catalogError: string;
+  catalogLoadAttempt: number;
   quote: CheckoutQuote | null;
   quoteStatus: string;
 }
@@ -30,7 +33,7 @@ export const initialState: OrderState = {
   checkoutKey: '', orderLoadStatus: '', orderLoadAttempt: 0,
   orderId: '', orderNumber: '', serverOrder: null,
   screenshotFile: null, screenshotPreview: '', paymentStatus: null,
-  products: PRODUCT_SHELL, catalogStatus: 'Loading current prices…', quote: null, quoteStatus: '',
+  products: [], catalogStatus: 'Loading current prices…', catalogError: '', catalogLoadAttempt: 0, quote: null, quoteStatus: '',
 };
 
 const orderReset = {
@@ -49,7 +52,8 @@ export type Action =
   | { type: 'SET_SERVER_ORDER'; payload: Order }
   | { type: 'SET_PAYMENT_STATUS'; payload: PaymentStatus }
   | { type: 'SET_SCREENSHOT'; payload: { file: File | null; preview: string } }
-  | { type: 'SET_CATALOG'; payload: { products: Product[]; status: string } }
+  | { type: 'SET_CATALOG'; payload: { products: Product[]; status: string; error?: string } }
+  | { type: 'RETRY_CATALOG' }
   | { type: 'SET_QUOTE'; payload: { quote: CheckoutQuote | null; status: string } }
   | { type: 'SET_CHECKOUT_KEY'; payload: string }
   | { type: 'SET_ORDER_LOAD_STATUS'; payload: string }
@@ -59,10 +63,11 @@ export type Action =
 
 export const MAX_QUANTITY = 20;
 
-/** First pack size that currently has a price, else the first one (never a hard-coded size). */
+/** First pack size that has a price and stock, else the first one (never a hard-coded size). */
 function defaultPackSize(products: Product[], type: ProductType): PackSize {
   const product = products.find((item) => item.type === type);
-  return product?.packSizes.find((size) => product.prices[size] != null) ?? product?.packSizes[0] ?? '250g';
+  return product?.packSizes.find((size) => product.prices[size] != null && product.inStock?.[size] !== false && product.priceConfirmed?.[size] !== false)
+    ?? product?.packSizes[0] ?? '250g';
 }
 
 export function reducer(state: OrderState, action: Action): OrderState {
@@ -91,8 +96,10 @@ export function reducer(state: OrderState, action: Action): OrderState {
       const product = products.find((item) => item.type === state.product) ?? products[0];
       const keepTyped = state.customAmount && product?.type === state.product && product.pricePerKg != null;
       const packSize = keepTyped || product?.packSizes.includes(state.packSize) ? state.packSize : defaultPackSize(products, product?.type ?? state.product);
-      return { ...state, products, catalogStatus: action.payload.status, ...(product ? { product: product.type, packSize, customAmount: keepTyped } : {}) };
+      return { ...state, products, catalogStatus: action.payload.status, catalogError: action.payload.error ?? '', ...(product ? { product: product.type, packSize, customAmount: keepTyped } : {}) };
     }
+    case 'RETRY_CATALOG':
+      return { ...state, catalogLoadAttempt: state.catalogLoadAttempt + 1, catalogError: '', catalogStatus: 'Loading current prices…' };
     case 'SET_QUOTE':
       return { ...state, quote: action.payload.quote, quoteStatus: action.payload.status };
     case 'SET_CHECKOUT_KEY':
@@ -104,7 +111,7 @@ export function reducer(state: OrderState, action: Action): OrderState {
     case 'RESET_SERVER':
       return { ...state, ...orderReset };
     case 'RESET':
-      return { ...initialState, fullName: state.fullName, phone: state.phone, products: state.products, catalogStatus: state.catalogStatus };
+      return { ...initialState, fullName: state.fullName, phone: state.phone, products: state.products, catalogStatus: state.catalogStatus, catalogError: state.catalogError, catalogLoadAttempt: state.catalogLoadAttempt };
   }
 }
 
@@ -214,6 +221,7 @@ const DispatchContext = createContext<Dispatch<Action>>(() => {});
 
 export function OrderProvider({ children, user }: { children: ReactNode; user: User | null }) {
   const [state, dispatch] = useReducer(reducer, user, loadState);
+  const { pathname } = useLocation();
   const draftOwner = user?.id ?? GUEST_DRAFT_ID;
   useEffect(() => { persistDraft(state, draftOwner); }, [state, draftOwner]);
   useEffect(() => () => {
@@ -221,16 +229,36 @@ export function OrderProvider({ children, user }: { children: ReactNode; user: U
   }, [state.screenshotPreview]);
   useEffect(() => {
     let active = true;
-    fetchProducts().then(products => {
-      if (active) dispatch({ type: 'SET_CATALOG', payload: { products, status: products.length ? '' : 'No products are currently available. Please contact the store.' } });
-    }).catch(() => {
-      if (active) dispatch({ type: 'SET_CATALOG', payload: { products: PRODUCT_SHELL, status: 'Current prices are unavailable right now. Please try again shortly or contact the store.' } });
-    });
-    return () => { active = false; };
-  }, []);
+    let inFlight = false;
+    async function refresh() {
+      if (document.visibilityState === 'hidden' || inFlight) return;
+      inFlight = true;
+      try {
+        const products = await fetchProducts();
+        if (active) dispatch({ type: 'SET_CATALOG', payload: { products, status: products.length ? '' : 'No products are currently available. Please contact the store.' } });
+      } catch (error) {
+        if (active) dispatch({ type: 'SET_CATALOG', payload: { products: [], status: '', error: getErrorMessage(error) } });
+      } finally {
+        inFlight = false;
+      }
+    }
+    void refresh();
+    window.addEventListener('focus', refresh);
+    window.addEventListener('pageshow', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    const timer = window.setInterval(refresh, 60_000);
+    return () => {
+      active = false;
+      window.removeEventListener('focus', refresh);
+      window.removeEventListener('pageshow', refresh);
+      document.removeEventListener('visibilitychange', refresh);
+      window.clearInterval(timer);
+    };
+  }, [pathname, state.catalogLoadAttempt]);
   useEffect(() => {
     let active = true;
     dispatch({ type: 'SET_QUOTE', payload: { quote: null, status: '' } });
+    if (!state.products.some(product => product.type === state.product)) return;
     if (!/^[1-9]\d{5}$/.test(state.pinCode)) return;
     dispatch({ type: 'SET_QUOTE', payload: { quote: null, status: 'Checking current totals…' } });
     if (state.customAmount && typedAmountError(state.packSize)) return;
@@ -238,7 +266,7 @@ export function OrderProvider({ children, user }: { children: ReactNode; user: U
       .then(quote => { if (active) dispatch({ type: 'SET_QUOTE', payload: { quote, status: '' } }); })
       .catch(error => { if (active) dispatch({ type: 'SET_QUOTE', payload: { quote: null, status: getErrorMessage(error) } }); });
     return () => { active = false; };
-  }, [state.product, state.packSize, state.customAmount, state.quantity, state.pinCode]);
+  }, [state.product, state.packSize, state.customAmount, state.quantity, state.pinCode, state.products]);
   useEffect(() => {
     let active = true;
     if (user && state.orderId && !state.serverOrder) {

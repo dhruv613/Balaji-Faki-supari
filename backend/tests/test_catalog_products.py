@@ -39,6 +39,20 @@ class CatalogProductsTests(unittest.TestCase):
         self.assertEqual(sorted(["1kg", "500g", "250g"], key=_pack_sort_key), ["250g", "500g", "1kg"])
         self.assertEqual(sorted(["1l", "500ml"], key=_pack_sort_key), ["500ml", "1l"])
 
+    def test_the_owners_price_shows_even_when_a_pack_is_sold_out_but_hidden_when_off_sale(self) -> None:
+        from app.db.models import Product, ProductVariant
+        from sqlalchemy import select
+        with db_session.SessionLocal() as db:
+            seed_development_data(db)
+            faki = db.scalar(select(Product).where(Product.slug == "faki"))
+            variants = {v.pack_size: v for v in db.scalars(select(ProductVariant).where(ProductVariant.product_id == faki.id))}
+            variants["250g"].price_paise, variants["250g"].total_stock, variants["250g"].reserved_stock = 25_000, 0, 0
+            variants["500g"].price_paise, variants["500g"].is_available = 55_000, False
+            db.commit()
+            shown = get_public_product("faki", db)
+            self.assertEqual((shown["prices"]["250g"], shown["inStock"]["250g"]), (250, False))  # price visible, not orderable
+            self.assertIsNone(shown["prices"]["500g"])  # the owner took it off sale
+
     def test_each_product_exposes_only_its_own_pack_sizes_images_and_unconfirmed_prices(self) -> None:
         with db_session.SessionLocal() as db:
             seed_development_data(db)

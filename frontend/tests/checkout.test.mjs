@@ -78,8 +78,8 @@ assert.equal(context.hasDraftContent(initialState), false);
 assert.equal(context.hasDraftContent({ ...initialState, quantity: 3 }), true);
 context.persistDraft(adopted, 'customer-one');
 assert.equal(context.loadState(userOne).address, valid.address);
-// No fabricated prices: the shell shows names only until the database answers.
-assert.ok(Object.values(initialState.products[0].prices).every(price => price === null));
+// No fabricated catalog: loading/errors never render metadata as unpriced products.
+assert.equal(initialState.products.length, 0);
 assert.equal(api.PRODUCT_SHELL.map(p => p.type).join(), "faki,supari,mitho-mavo,water,chuno,tamaku");
 for (const product of api.PRODUCT_SHELL) assert.ok(existsSync(new URL(`../public${product.imageUrl}`, import.meta.url)), `${product.type}: the offline fallback photo exists`);
 assert.equal(api.PRODUCTS, undefined, 'hard-coded price list must not exist');
@@ -169,7 +169,7 @@ assert.equal(amount.perKgPrice(800,750),600); assert.equal(amount.perKgPrice(333
   assert.equal(noTyped.customAmount,false,'typed mode ends when the owner switches per-kg pricing off');
 }
 assert.equal(api.formatPackSize('250g'),'250 g'); assert.equal(api.formatPackSize('1kg'),'1 kg'); assert.equal(api.formatPackSize('500ml'),'500 ml'); assert.equal(api.formatPackSize('1l'),'1 L');
-const withWater = reducer(valid,{type:'SET_PRODUCT',payload:'water'});
+const withWater = reducer({...valid,products:[{...catalogProduct,type:'water',name:'Water Bottle',packSizes:['1l'],prices:{'1l':20}}]},{type:'SET_PRODUCT',payload:'water'});
 assert.equal(withWater.product,'water'); assert.equal(withWater.packSize,'1l','the default pack size comes from the product, not a fixed list');
 assert.equal(validateForm({...valid,product:'mitho-mavo',packSize:'500ml'}).product,undefined);
 const fallback = reducer({...valid,product:'gone',packSize:'9kg'},{type:'SET_CATALOG',payload:{products:[catalogProduct],status:''}});

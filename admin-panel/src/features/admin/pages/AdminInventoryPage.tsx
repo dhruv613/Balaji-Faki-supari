@@ -5,8 +5,8 @@ import { env } from '../../../lib/env';
 import { formatPackSize, getErrorMessage } from '../../../lib/api';
 import { getAdminInventory, createStockAdjustment } from '../api';
 import type { AdminInventoryItem, AdminInventoryResponse } from '../types';
-import { validateStockAdjustment } from '../lib/orderStateMachine';
-import { StatCard, DetailDrawer, LoadingSkeleton, useAdminToast } from '../components';
+import { notifyAdminDataChanged, validateStockAdjustment } from '../lib/orderStateMachine';
+import { StatCard, DetailDrawer, ErrorState, LoadingSkeleton, useAdminToast } from '../components';
 
 const EMPTY_INVENTORY: AdminInventoryResponse = {
   summary: {
@@ -40,10 +40,12 @@ export default function AdminInventoryPage() {
   const [loading, setLoading] = useState(Boolean(env.apiBaseUrl));
   const [error, setError] = useState('');
   const [isLive, setIsLive] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
 
   useEffect(() => {
     let active = true;
     if (!env.apiBaseUrl) {
+      setError('The API URL is missing. Configure VITE_API_BASE_URL and rebuild the Admin Panel.');
       setLoading(false);
       return;
     }
@@ -65,7 +67,7 @@ export default function AdminInventoryPage() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [loadAttempt]);
 
   const filteredItems = inventory.items.filter((item) => {
     if (lowStockOnly && !item.isLowStock) return false;
@@ -86,7 +88,7 @@ export default function AdminInventoryPage() {
 
   async function handleStockAdjustment(e: FormEvent) {
     e.preventDefault();
-    if (!adjustingItem) return;
+    if (!adjustingItem || busy) return;
     setValidationError('');
 
     const qty = Number(adjustmentQty);
@@ -120,13 +122,18 @@ export default function AdminInventoryPage() {
     setBusy(true);
     try {
       await createStockAdjustment(requestPayload);
-      // Reload so stock levels, alerts and the movement log all reflect the server state.
-      setInventory(await getAdminInventory());
+      setAdjustingItem(null);
+      notifyAdminDataChanged();
       showToast(
         `Adjusted stock for ${adjustingItem.productName} (${adjustingItem.packSize}).`,
         'success',
       );
-      setAdjustingItem(null);
+      try {
+        setInventory(await getAdminInventory());
+        setError('');
+      } catch (err) {
+        setError(`Stock was saved, but updated inventory could not be loaded. ${getErrorMessage(err)}`);
+      }
     } catch (err) {
       setValidationError(getErrorMessage(err));
     } finally {
@@ -152,10 +159,10 @@ export default function AdminInventoryPage() {
 
       {!isLive && (
         <Notice title="Inventory data unavailable">
-          Connect the local FastAPI server to load stock and audit history. No sample inventory or movements are shown.
+          {loading ? 'Loading stock and audit history from the API…' : 'Stock changes are saved through the FastAPI backend.'} No sample inventory or movements are shown.
         </Notice>
       )}
-      {error && <Notice tone="error" title="Inventory sync failed">{error}</Notice>}
+      {error && <ErrorState title="Inventory sync failed" message={error} onRetry={() => setLoadAttempt((attempt) => attempt + 1)} />}
 
       <div className="stats-grid">
         <StatCard
@@ -174,7 +181,7 @@ export default function AdminInventoryPage() {
           subtitle={
             isLive
               ? `Expires after ${inventory.summary.reservationExpiryMinutes}m if unpaid`
-              : 'Loaded from the local inventory service'
+              : 'Loaded from the inventory API'
           }
         />
         <StatCard
@@ -334,7 +341,7 @@ export default function AdminInventoryPage() {
                   {inventory.movements.length === 0 && (
                     <tr>
                       <td colSpan={7} className="text-secondary">
-                        No stock movements are available from the local inventory service.
+                        No stock movements were returned by the inventory API.
                       </td>
                     </tr>
                   )}

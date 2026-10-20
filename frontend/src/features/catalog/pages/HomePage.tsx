@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import Modal from '../../../components/common/Modal';
+import Notice from '../../../components/common/Notice';
 import { RatingLine } from '../../../components/common/Stars';
-import { useOrder } from '../../../context/OrderContext';
+import { useOrder, useOrderDispatch } from '../../../context/OrderContext';
 import { contactDetails, useStoreProfile } from '../../store/storeApi';
 import HeroSlider, { type HeroSlide } from '../components/HeroSlider';
 import ProductDetailsView from '../components/ProductDetailsView';
@@ -19,7 +20,8 @@ const HERO_SLIDES: HeroSlide[] = [
 ];
 
 export default function HomePage() {
-  const { products, catalogStatus } = useOrder();
+  const { products, catalogStatus, catalogError } = useOrder();
+  const dispatch = useOrderDispatch();
   const { profile } = useStoreProfile();
   const contact = contactDetails(profile);
   // Clicking a product card opens its full details (with the Order button) on this same page.
@@ -56,6 +58,9 @@ export default function HomePage() {
       <section className="section" id="choose-pack">
         <div className="wrapper">
           <h2>Our products</h2>
+          {catalogError && <Notice tone="error" title="Cannot load products and prices">
+            {catalogError} <button type="button" className="btn btn--sm" onClick={() => dispatch({ type: 'RETRY_CATALOG' })}>Try again</button>
+          </Notice>}
           <div className="product-cards" style={{ marginTop: 28 }}>
             {products.map((product) => {
               const image = primaryImage(product);

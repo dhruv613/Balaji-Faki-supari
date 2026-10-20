@@ -136,6 +136,9 @@ export default function ReviewOrderPage() {
             </>
           )}
           {state.quoteStatus && <p className="text-small text-secondary catalog-status" role="status">{state.quoteStatus}</p>}
+          {!state.serverOrder && state.catalogError && <Notice tone="error" title="Cannot load products and prices">
+            {state.catalogError} <button type="button" className="btn btn--sm" onClick={() => dispatch({ type: 'RETRY_CATALOG' })}>Try again</button>
+          </Notice>}
           {/* Items card */}
           <section className="card" style={{ marginBottom: 24 }} aria-labelledby="items-heading">
             <div className="detail-header">
@@ -196,7 +199,7 @@ export default function ReviewOrderPage() {
               <strong>{formatINR(summary.total)}</strong>
             </div>
 
-            {!hasServerTotals && !state.quote && (
+            {!hasServerTotals && !state.quote && !state.catalogError && (
               <p className="text-secondary text-small" style={{ margin: '8px 0 0' }}>
                 Online ordering is not connected yet. Prices and delivery charges must be confirmed by the store before payment.
               </p>

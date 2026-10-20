@@ -18,13 +18,14 @@ export function PackPrices({ product, selected, onSelect }: {
     <ul className="pack-prices" aria-label={`${product.name} pack sizes and prices`} style={{ listStyle: 'none', padding: 0, margin: '12px 0' }}>
       {product.packSizes.map((size) => {
         const price = product.prices[size];
-        const unavailable = price === null || product.inStock?.[size] === false;
+        const unavailable = price == null || product.inStock?.[size] === false || product.priceConfirmed?.[size] === false;
         const development = price !== null && product.priceConfirmed?.[size] === false;
         const content = (
           <>
             <span>{formatPackSize(size)}</span>
             <span>
-              <strong>{price === null ? (product.inStock?.[size] === false ? 'Out of stock' : 'Awaiting price') : formatINR(price)}</strong>
+              <strong>{price === null ? 'Awaiting price' : formatINR(price)}</strong>
+              {price !== null && product.inStock?.[size] === false && <span className="text-small text-secondary" style={{ marginLeft: 8 }}>Out of stock</span>}
               {development && <span className="badge badge--dev" title="Development price - not yet approved by the owner" style={{ marginLeft: 8 }}>Development price</span>}
             </span>
           </>

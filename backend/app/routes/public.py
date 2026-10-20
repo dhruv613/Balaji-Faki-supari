@@ -18,6 +18,7 @@ from ..schemas import CheckoutQuoteRequestSchema
 from .common import (
     _catalogue_order,
     _get_store_settings,
+    _no_store,
     _pack_sort_key,
     _price_line,
     _review_summary,
@@ -38,7 +39,8 @@ def _serialize_public_product(db: Session, product: Product) -> dict[str, Any]:
     in_stock: dict[str, bool] = {v.pack_size: False for v in variants}
     for variant in variants:
         sellable = variant.is_available and variant.available_stock > 0
-        prices[variant.pack_size] = paise_to_inr(variant.price_paise) if sellable else None
+        # The owner's price is always shown for packs on sale; sold-out packs say so via inStock (orders check stock again).
+        prices[variant.pack_size] = paise_to_inr(variant.price_paise) if variant.is_available else None
         price_confirmed[variant.pack_size] = bool(variant.price_confirmed)
         in_stock[variant.pack_size] = sellable
     summary = _review_summary(db, product.id)
@@ -84,7 +86,7 @@ def get_health() -> Any:
     return {"status": "ok", "service": "balaji-faki-point-api"}
 
 
-@router.get("/products")
+@router.get("/products", dependencies=[Depends(_no_store)])
 def list_public_products(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
     products = db.scalars(
         _catalogue_order(select(Product).where(Product.is_active.is_(True)))
@@ -92,7 +94,7 @@ def list_public_products(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
     return [_serialize_public_product(db, product) for product in products]
 
 
-@router.get("/products/{slug}")
+@router.get("/products/{slug}", dependencies=[Depends(_no_store)])
 def get_public_product(slug: str, db: Session = Depends(get_db)) -> dict[str, Any]:
     product = db.scalar(select(Product).where(Product.slug == slug.strip().lower(), Product.is_active.is_(True)))
     if product is None:
