@@ -6,6 +6,7 @@ import { PACK_SIZE_PATTERN, PRODUCT_SLUG_PATTERN } from '../constants/store';
 import { fetchProducts } from '../features/catalog/api/catalogApi';
 import { getCheckoutQuote, getOrder } from '../features/orders/api/ordersApi';
 import { normalizeIndianMobile, readCustomerDetails, validateCustomerDetails } from '../lib/customer';
+import { amountToGrams, perKgPrice, typedAmountError } from '../lib/amount';
 
 export interface OrderState extends OrderFormData {
   checkoutKey: string;
@@ -24,7 +25,7 @@ export interface OrderState extends OrderFormData {
 }
 
 export const initialState: OrderState = {
-  product: 'faki', packSize: '250g', quantity: 1,
+  product: 'faki', packSize: '250g', customAmount: false, quantity: 1,
   fullName: '', phone: '', address: '', pinCode: '',
   checkoutKey: '', orderLoadStatus: '', orderLoadAttempt: 0,
   orderId: '', orderNumber: '', serverOrder: null,
@@ -41,6 +42,8 @@ const orderReset = {
 export type Action =
   | { type: 'SET_PRODUCT'; payload: ProductType }
   | { type: 'SET_PACK_SIZE'; payload: PackSize }
+  /** An amount the customer typed, e.g. 750g (validated in validateForm and again by the server). */
+  | { type: 'SET_CUSTOM_AMOUNT'; payload: PackSize }
   | { type: 'SET_QUANTITY'; payload: number }
   | { type: 'SET_FIELD'; payload: { field: 'fullName' | 'phone' | 'address' | 'pinCode'; value: string } }
   | { type: 'SET_SERVER_ORDER'; payload: Order }
@@ -66,9 +69,11 @@ export function reducer(state: OrderState, action: Action): OrderState {
   switch (action.type) {
     case 'SET_PRODUCT':
       if (state.product === action.payload) return state;
-      return { ...state, ...orderReset, product: action.payload, packSize: defaultPackSize(state.products, action.payload), quote: null };
+      return { ...state, ...orderReset, product: action.payload, packSize: defaultPackSize(state.products, action.payload), customAmount: false, quote: null };
     case 'SET_PACK_SIZE':
-      return { ...state, ...orderReset, packSize: action.payload, quote: null };
+      return { ...state, ...orderReset, packSize: action.payload, customAmount: false, quote: null };
+    case 'SET_CUSTOM_AMOUNT':
+      return { ...state, ...orderReset, packSize: action.payload, customAmount: true, quote: null };
     case 'SET_QUANTITY':
       if (!Number.isFinite(action.payload)) return state;
       return { ...state, ...orderReset, quantity: Math.min(MAX_QUANTITY, Math.max(1, Math.trunc(action.payload))), quote: null };
@@ -84,8 +89,9 @@ export function reducer(state: OrderState, action: Action): OrderState {
       // A saved draft can name a product or pack size the catalogue no longer has: fall back to a real one.
       const { products } = action.payload;
       const product = products.find((item) => item.type === state.product) ?? products[0];
-      const packSize = product?.packSizes.includes(state.packSize) ? state.packSize : defaultPackSize(products, product?.type ?? state.product);
-      return { ...state, products, catalogStatus: action.payload.status, ...(product ? { product: product.type, packSize } : {}) };
+      const keepTyped = state.customAmount && product?.type === state.product && product.pricePerKg != null;
+      const packSize = keepTyped || product?.packSizes.includes(state.packSize) ? state.packSize : defaultPackSize(products, product?.type ?? state.product);
+      return { ...state, products, catalogStatus: action.payload.status, ...(product ? { product: product.type, packSize, customAmount: keepTyped } : {}) };
     }
     case 'SET_QUOTE':
       return { ...state, quote: action.payload.quote, quoteStatus: action.payload.status };
@@ -106,7 +112,9 @@ export function buildSummary(state: OrderState): OrderSummary {
   const product = state.products.find(p => p.type === state.product) ?? PRODUCT_SHELL[0];
   const server = state.serverOrder;
   const quote = server ?? state.quote;
-  const price = product.prices[state.packSize];
+  const grams = amountToGrams(state.packSize);
+  const price = !state.customAmount ? product.prices[state.packSize]
+    : product.pricePerKg != null && grams !== null && !typedAmountError(state.packSize) ? perKgPrice(product.pricePerKg, grams) : null;
   return {
     product: server?.product ?? state.product,
     productName: server?.productName ?? product.name,
@@ -124,7 +132,10 @@ export type FormErrors = Partial<Record<keyof OrderFormData, string>>;
 export function validateForm(state: OrderFormData): FormErrors {
   const errors: FormErrors = { ...validateCustomerDetails(state) };
   if (!PRODUCT_SLUG_PATTERN.test(state.product)) errors.product = 'Choose a product';
-  if (!PACK_SIZE_PATTERN.test(state.packSize)) errors.packSize = 'Choose an available pack size';
+  if (state.customAmount) {
+    const typedError = typedAmountError(state.packSize);
+    if (typedError) errors.packSize = typedError;
+  } else if (!PACK_SIZE_PATTERN.test(state.packSize)) errors.packSize = 'Choose an available pack size';
   if (!Number.isInteger(state.quantity) || state.quantity < 1 || state.quantity > MAX_QUANTITY) errors.quantity = `Choose a quantity between 1 and ${MAX_QUANTITY}`;
   const address = state.address.trim();
   if (!address) errors.address = 'Delivery address is required';
@@ -134,7 +145,7 @@ export function validateForm(state: OrderFormData): FormErrors {
 }
 
 export function toOrderFormData(state: OrderFormData): OrderFormData {
-  return { product: state.product, packSize: state.packSize, quantity: state.quantity,
+  return { product: state.product, packSize: state.packSize, customAmount: state.customAmount, quantity: state.quantity,
     fullName: state.fullName.trim(), phone: `+91${normalizeIndianMobile(state.phone)}`,
     address: state.address.trim(), pinCode: state.pinCode };
 }
@@ -151,6 +162,7 @@ export function restoreDraft(raw: string | null): OrderState {
     const draft = { ...initialState };
     if (typeof data.product === 'string' && PRODUCT_SLUG_PATTERN.test(data.product)) draft.product = data.product;
     if (typeof data.packSize === 'string' && PACK_SIZE_PATTERN.test(data.packSize)) draft.packSize = data.packSize;
+    if (data.customAmount === true && !typedAmountError(draft.packSize)) draft.customAmount = true;
     if (typeof data.quantity === 'number' && Number.isInteger(data.quantity) && data.quantity >= 1 && data.quantity <= MAX_QUANTITY) draft.quantity = data.quantity;
     for (const field of ['fullName', 'phone', 'address', 'pinCode', 'orderId', 'checkoutKey'] as const) {
       if (typeof data[field] === 'string') draft[field] = data[field].slice(0, 2000);
@@ -173,7 +185,7 @@ export const GUEST_DRAFT_ID = 'guest';
 /** True when a visitor has already chosen something worth keeping across the sign-in step. */
 export function hasDraftContent(draft: OrderFormData): boolean {
   return Boolean(
-    draft.product !== initialState.product || draft.packSize !== initialState.packSize || draft.quantity !== initialState.quantity ||
+    draft.product !== initialState.product || draft.packSize !== initialState.packSize || draft.customAmount || draft.quantity !== initialState.quantity ||
     draft.fullName.trim() || draft.phone.trim() || draft.address.trim() || draft.pinCode.trim(),
   );
 }
@@ -221,11 +233,12 @@ export function OrderProvider({ children, user }: { children: ReactNode; user: U
     dispatch({ type: 'SET_QUOTE', payload: { quote: null, status: '' } });
     if (!/^[1-9]\d{5}$/.test(state.pinCode)) return;
     dispatch({ type: 'SET_QUOTE', payload: { quote: null, status: 'Checking current totals…' } });
-    getCheckoutQuote({ product: state.product, packSize: state.packSize, quantity: state.quantity, pinCode: state.pinCode })
+    if (state.customAmount && typedAmountError(state.packSize)) return;
+    getCheckoutQuote({ product: state.product, packSize: state.packSize, customAmount: state.customAmount, quantity: state.quantity, pinCode: state.pinCode })
       .then(quote => { if (active) dispatch({ type: 'SET_QUOTE', payload: { quote, status: '' } }); })
       .catch(error => { if (active) dispatch({ type: 'SET_QUOTE', payload: { quote: null, status: getErrorMessage(error) } }); });
     return () => { active = false; };
-  }, [state.product, state.packSize, state.quantity, state.pinCode]);
+  }, [state.product, state.packSize, state.customAmount, state.quantity, state.pinCode]);
   useEffect(() => {
     let active = true;
     if (user && state.orderId && !state.serverOrder) {

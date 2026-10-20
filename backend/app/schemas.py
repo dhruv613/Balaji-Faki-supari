@@ -22,6 +22,8 @@ class UpdateProfileRequestSchema(CamelModel):
 class CheckoutQuoteRequestSchema(CamelModel):
     product: ProductSlug
     pack_size: PackSize = Field(alias="packSize")
+    # True: `packSize` is an amount the customer typed (e.g. 750g), priced per kg, never one of the stocked packs.
+    custom_amount: bool = Field(default=False, alias="customAmount")
     quantity: int = Field(ge=1, le=20)
     pin_code: str = Field(alias="pinCode", min_length=6, max_length=6)
 
@@ -36,6 +38,7 @@ class CheckoutQuoteResponseSchema(CamelModel):
 class CreateOrderRequestSchema(CamelModel):
     product: ProductSlug
     pack_size: PackSize = Field(alias="packSize")
+    custom_amount: bool = Field(default=False, alias="customAmount")
     quantity: int = Field(ge=1, le=20)
     full_name: str = Field(alias="fullName", min_length=2, max_length=100)
     phone: str = Field(min_length=10, max_length=20)
@@ -186,6 +189,9 @@ class ProductInformationSchema(CamelModel):
 
 class UpdateAdminProductRequestSchema(CamelModel):
     name: Optional[str] = None
+    # Per-kg prices for typed amounts (weight products only); null switches typed amounts off.
+    price_per_kg: Optional[float] = Field(default=None, alias="pricePerKg", gt=0, le=1_000_000)
+    cost_per_kg: Optional[float] = Field(default=None, alias="costPerKg", ge=0, le=1_000_000)
     name_gu: Optional[str] = Field(default=None, alias="nameGu")
     category: Optional[str] = None
     description: Optional[str] = None

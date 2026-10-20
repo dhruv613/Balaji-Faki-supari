@@ -567,7 +567,8 @@ export default function AdminOrdersPage() {
                       {item.productName} (<span lang="gu">{item.productNameGu}</span>)
                     </strong>
                     <p className="text-small text-secondary">
-                      Pack Size: {formatPackSize(item.packSize)} · Quantity: {item.quantity}
+                      {item.typedAmount ? 'Amount' : 'Pack Size'}: {formatPackSize(item.packSize)}
+                      {item.typedAmount && <strong> (weigh to order)</strong>} · Quantity: {item.quantity}
                     </p>
                     <p className="text-small text-secondary">
                       Unit Price: {formatINR(item.unitPrice)}

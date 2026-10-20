@@ -181,6 +181,27 @@ def main() -> int:
     mine = api.get(f"{API}/orders/{order['id']}", headers=cust).json()
     check("customer sees the confirmed order", mine.get("status") == "CONFIRMED", str(mine.get("status")))
 
+    # ---- typed amounts: any weight from 100 g to 10 kg at the owner's per-kg price, no stock held --------------------
+    per_kg = api.patch(f"{API}/admin/products/faki", headers=admin, json={"pricePerKg": 800, "costPerKg": 560})
+    check("owner sets a per-kg price", per_kg.status_code == 200 and per_kg.json().get("pricePerKg") == 800, per_kg.text[:160])
+    check("water cannot get a per-kg price", api.patch(f"{API}/admin/products/water", headers=admin, json={"pricePerKg": 20}).status_code == 422)
+    check("public catalogue shows the per-kg price", api.get(f"{API}/products/faki").json().get("pricePerKg") == 800)
+    typed = {**body, "packSize": "750g", "customAmount": True}
+    typed_quote = api.post(f"{API}/checkout/quote", json={k: typed[k] for k in ("product", "packSize", "customAmount", "quantity", "pinCode")})
+    check("typed 750 g is quoted at the per-kg price", typed_quote.status_code == 200 and typed_quote.json().get("subtotal") == 600, typed_quote.text[:160])
+    bad = api.post(f"{API}/checkout/quote", json={"product": "faki", "packSize": "125g", "customAmount": True, "quantity": 1, "pinCode": "360005"})
+    check("amounts off the 50 g steps are refused", bad.status_code == 422)
+    def pack_stock():
+        product = next(p for p in api.get(f"{API}/admin/products", headers=admin).json() if p["type"] == "faki")
+        return {(v["packSize"], v["availableQuantity"], v["reservedQuantity"]) for v in product["variants"]}
+    before = pack_stock()
+    typed_order = api.post(f"{API}/orders", headers={**cust, "Idempotency-Key": uuid.uuid4().hex}, json=typed)
+    check("customer orders a typed amount", typed_order.status_code == 200 and typed_order.json().get("subtotal") == 600 and typed_order.json().get("packSize") == "750g", typed_order.text[:200])
+    check("a typed amount holds no pack stock", pack_stock() == before)
+    detail = api.get(f"{API}/admin/orders/{typed_order.json()['id']}", headers=admin).json()
+    lines = detail.get("items") or detail.get("order", {}).get("items") or []
+    check("admin sees it as weigh-to-order", any(line.get("typedAmount") for line in lines), str(lines)[:160])
+
     # ---- account linking: a historical profile reconnects only through a verified Neon identity -----------------------
     legacy_email = f"bfp-e2e-legacy-{uuid.uuid4().hex[:8]}@example.com"
     legacy_id = db.execute("insert into public.user_profiles (email, full_name, phone, role) values (%s, 'Old Customer', '', 'CUSTOMER') returning id",

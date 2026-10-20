@@ -170,6 +170,8 @@ export interface AdminOrderItem {
   productNameGu: string;
   productImage: string;
   packSize: PackSize;
+  /** true: an amount the customer typed; weigh it to order (no stocked pack). */
+  typedAmount?: boolean;
   quantity: number;
   unitPrice: number | null;
   unitCostPrice?: number | null;
@@ -337,6 +339,10 @@ export interface AdminProduct {
   images: AdminProductImage[];
   active: boolean;
   variants: AdminProductVariant[];
+  /** Sold by weight (g/kg packs): customers may also type an amount, priced per kg. */
+  soldByWeight?: boolean;
+  pricePerKg?: number | null;
+  costPerKg?: number | null;
   updatedAt: string;
 }
 
@@ -351,6 +357,9 @@ export interface UpdateAdminProductRequest {
   description?: string;
   active?: boolean;
   information?: Partial<ProductInformation>;
+  /** Typed amounts (100 g to 10 kg): price per kg; null switches them off. */
+  pricePerKg?: number | null;
+  costPerKg?: number | null;
   variants?: Array<{
     packSize: PackSize;
     costPrice?: number | null;

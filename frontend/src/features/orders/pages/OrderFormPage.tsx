@@ -11,6 +11,7 @@ import {
   MAX_QUANTITY,
 } from '../../../context/OrderContext';
 import { formatINR, formatPackSize } from '../../../lib/api';
+import { amountToGrams, canonicalAmount, perKgPrice, typedAmountError } from '../../../lib/amount';
 import { primaryImage } from '../../catalog/components/ProductParts';
 import type { ProductType, PackSize, OrderFormData } from '../../../types/orders';
 import ProductName from '../../../components/common/ProductName';
@@ -24,6 +25,52 @@ const FIELD_IDS: Partial<Record<keyof OrderFormData, string>> = {
   address: 'address',
   pinCode: 'pin-code',
 };
+
+const TYPED_OPTION = '__typed';
+
+/** Any amount from 100 g to 10 kg in 50 g steps, typed in g or kg; shows the per-kg price and the amount's price. */
+function TypedAmountInput({ packSize, pricePerKg, onChange }: {
+  packSize: string; pricePerKg: number; onChange: (packSize: string) => void;
+}) {
+  const startGrams = amountToGrams(packSize) ?? 1000;
+  const [unit, setUnit] = useState<'g' | 'kg'>(startGrams >= 1000 ? 'kg' : 'g');
+  const [text, setText] = useState(String(startGrams >= 1000 ? startGrams / 1000 : startGrams));
+  const error = typedAmountError(packSize);
+  const grams = amountToGrams(packSize);
+
+  function update(nextText: string, nextUnit: 'g' | 'kg') {
+    setText(nextText);
+    setUnit(nextUnit);
+    const value = Number(nextText.replace(',', '.'));
+    const typed = Number.isFinite(value) && value > 0 ? Math.round(value * (nextUnit === 'kg' ? 1000 : 1)) : 0;
+    onChange(canonicalAmount(typed));
+  }
+
+  return (
+    <div style={{ marginTop: 12 }}>
+      <label htmlFor="typed-amount">Your amount</label>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <input
+          id="typed-amount"
+          className="input"
+          inputMode="decimal"
+          value={text}
+          onChange={(e) => update(e.target.value, unit)}
+          aria-invalid={Boolean(error)}
+          aria-describedby="typed-amount-hint"
+        />
+        <select className="input" style={{ width: 'auto' }} aria-label="Unit" value={unit}
+          onChange={(e) => update(text, e.target.value as 'g' | 'kg')}>
+          <option value="g">g</option>
+          <option value="kg">kg</option>
+        </select>
+      </div>
+      <p id="typed-amount-hint" className={error ? 'field-error' : 'text-small text-secondary'}>
+        {error ?? `${formatINR(pricePerKg)} per kg · ${formatPackSize(packSize)} = ${formatINR(perKgPrice(pricePerKg, grams ?? 0))}`}
+      </p>
+    </div>
+  );
+}
 
 export default function OrderFormPage() {
   const state = useOrder();
@@ -134,15 +181,26 @@ export default function OrderFormPage() {
                   <select
                     id="pack-size"
                     className="input"
-                    value={state.packSize}
+                    value={state.customAmount ? TYPED_OPTION : state.packSize}
                     onChange={(e) =>
-                      dispatch({ type: 'SET_PACK_SIZE', payload: e.target.value as PackSize })
+                      e.target.value === TYPED_OPTION
+                        ? dispatch({ type: 'SET_CUSTOM_AMOUNT', payload: '1kg' })
+                        : dispatch({ type: 'SET_PACK_SIZE', payload: e.target.value as PackSize })
                     }
                   >
                     {(currentProduct?.packSizes ?? []).map((sz) => (
                       <option key={sz} value={sz}>{formatPackSize(sz)}</option>
                     ))}
+                    {currentProduct?.pricePerKg != null && <option value={TYPED_OPTION}>Other amount (type your own)</option>}
                   </select>
+                  {state.customAmount && currentProduct?.pricePerKg != null && (
+                    <TypedAmountInput
+                      key={state.product}
+                      packSize={state.packSize}
+                      pricePerKg={currentProduct.pricePerKg}
+                      onChange={(packSize) => dispatch({ type: 'SET_CUSTOM_AMOUNT', payload: packSize })}
+                    />
+                  )}
                 </div>
                 <div>
                   <label id="quantity-label">Quantity</label>

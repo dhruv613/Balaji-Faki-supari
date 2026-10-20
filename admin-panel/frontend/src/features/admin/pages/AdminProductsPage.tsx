@@ -73,6 +73,7 @@ export default function AdminProductsPage() {
   const [products, setProducts] = useState<AdminProduct[]>([]);
   const [row, setRow] = useState<RowEdit | null>(null);
   const [rowBusy, setRowBusy] = useState(false);
+  const [kgRow, setKgRow] = useState<{ productId: string; cost: string; price: string } | null>(null);
 
   const [editing, setEditing] = useState<AdminProduct | null>(null);
   const [form, setForm] = useState({ name: '', nameGu: '', category: '', description: '', active: true });
@@ -124,6 +125,25 @@ export default function AdminProductsPage() {
       replaceProduct(await updateAdminProduct(product.id, { variants: [patch] }));
       setRow(null);
       showToast(`Saved ${product.name} ${formatPackSize(row.packSize)}. Price changes apply to future orders only.`, 'success');
+    } catch (err) {
+      showToast(getErrorMessage(err), 'error');
+    } finally { setRowBusy(false); }
+  }
+
+  /** Typed amounts: one per-kg price (and optional cost) per weight product; an empty price switches them off. */
+  async function saveKgRow(product: AdminProduct) {
+    if (!kgRow || kgRow.productId !== product.id || rowBusy) return;
+    const price = kgRow.price.trim() === '' ? null : Number(kgRow.price);
+    const cost = kgRow.cost.trim() === '' ? null : Number(kgRow.cost);
+    if ((price !== null && !(price > 0)) || (cost !== null && !(cost >= 0))) {
+      showToast('Enter a price per kg above zero (or leave it empty to switch typed amounts off).', 'warning');
+      return;
+    }
+    setRowBusy(true);
+    try {
+      replaceProduct(await updateAdminProduct(product.id, { pricePerKg: price, costPerKg: cost }));
+      setKgRow(null);
+      showToast(price === null ? `Typed amounts switched off for ${product.name}.` : `Saved ${product.name}: ${formatINR(price)} per kg for typed amounts.`, 'success');
     } catch (err) {
       showToast(getErrorMessage(err), 'error');
     } finally { setRowBusy(false); }
@@ -239,8 +259,8 @@ export default function AdminProductsPage() {
                 </tr>
               </thead>
               <tbody>
-                {products.flatMap((product) =>
-                  product.variants.map((variant) => {
+                {products.flatMap((product) => [
+                  ...product.variants.map((variant) => {
                     const mine = row?.productId === product.id && row?.packSize === variant.packSize ? row : null;
                     return (
                       <tr key={`${product.id}-${variant.packSize}`}>
@@ -293,7 +313,48 @@ export default function AdminProductsPage() {
                       </tr>
                     );
                   }),
-                )}
+                  ...(product.soldByWeight ? [(() => {
+                    const mine = kgRow?.productId === product.id ? kgRow : null;
+                    return (
+                      <tr key={`${product.id}-per-kg`}>
+                        <td><strong>{product.name}</strong> <span lang="gu" className="text-secondary">({product.nameGu})</span></td>
+                        <td><strong>Typed amount</strong><br /><span className="text-small text-secondary">100 g – 10 kg, per kg</span></td>
+                        <td>
+                          {mine ? (
+                            <input type="number" min="0" step="0.01" className="input admin-price-input" aria-label={`Cost per kg for ${product.name}`}
+                              placeholder="Cost per kg (₹)" value={mine.cost} disabled={rowBusy}
+                              onChange={(e) => setKgRow((prev) => (prev ? { ...prev, cost: e.target.value } : null))} />
+                          ) : product.costPerKg != null ? <strong>{formatINR(product.costPerKg)}/kg</strong>
+                            : <span className="text-secondary">Not configured</span>}
+                        </td>
+                        <td>
+                          {mine ? (
+                            <input type="number" min="0" step="0.01" className="input admin-price-input" aria-label={`Price per kg for ${product.name}`}
+                              placeholder="Price per kg (₹)" value={mine.price} disabled={rowBusy}
+                              onChange={(e) => setKgRow((prev) => (prev ? { ...prev, price: e.target.value } : null))} />
+                          ) : <strong>{product.pricePerKg != null ? `${formatINR(product.pricePerKg)}/kg` : 'Off'}</strong>}
+                        </td>
+                        <td><span className="text-secondary">—</span></td>
+                        <td><span className="text-secondary">No limit</span></td>
+                        <td>{product.pricePerKg != null ? 'On sale' : <span className="text-secondary">Off</span>}</td>
+                        <td>
+                          {mine ? (
+                            <div className="admin-action-group">
+                              <button type="button" className="btn btn--primary btn--sm" disabled={rowBusy} onClick={() => void saveKgRow(product)}>{rowBusy ? 'Saving…' : 'Save'}</button>
+                              <button type="button" className="btn btn--outline btn--sm" disabled={rowBusy} onClick={() => setKgRow(null)}>Cancel</button>
+                            </div>
+                          ) : (
+                            <button type="button" className="btn btn--outline btn--sm" onClick={() => setKgRow({
+                              productId: product.id,
+                              cost: product.costPerKg != null ? String(product.costPerKg) : '',
+                              price: product.pricePerKg != null ? String(product.pricePerKg) : '',
+                            })}>Edit</button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })()] : []),
+                ])}
                 {products.length === 0 && (
                   <tr><td colSpan={8} className="text-secondary">No products are available from the local catalog yet.</td></tr>
                 )}

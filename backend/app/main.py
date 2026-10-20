@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 import os
 import re
 from datetime import datetime, timedelta, timezone
@@ -301,6 +302,37 @@ def _pack_sort_key(pack_size: str) -> tuple[str, int]:
     return family, int(number) * factor
 
 
+TYPED_MIN_GRAMS, TYPED_MAX_GRAMS, TYPED_STEP_GRAMS = 100, 10_000, 50
+
+
+def _is_weight_product(product: Product) -> bool:
+    """Faki, Supari, Mitho Mavo, Chuno, Tamaku: sold by weight. Water (litres) is not."""
+    return bool(product.variants) and all(_pack_sort_key(v.pack_size)[0] == "mass" for v in product.variants)
+
+
+def _typed_amounts_offered(product: Product) -> bool:
+    return product.price_per_kg_paise is not None and _is_weight_product(product)
+
+
+def _typed_amount_grams(pack_size: str) -> int:
+    """Grams of a typed amount such as 750g or 2kg; 422 unless 100 g to 10 kg in steps of 50 g."""
+    match = re.fullmatch(r"([0-9]+)(g|kg)", pack_size)
+    grams = int(match.group(1)) * (1000 if match.group(2) == "kg" else 1) if match else 0
+    if not TYPED_MIN_GRAMS <= grams <= TYPED_MAX_GRAMS or grams % TYPED_STEP_GRAMS:
+        raise HTTPException(status_code=422, detail="Choose an amount from 100 g to 10 kg in steps of 50 g.")
+    return grams
+
+
+def _canonical_amount(grams: int) -> str:
+    """2kg, 750g, 2500g: fits the 4-digit pack-size format for everything up to 10 kg."""
+    return f"{grams // 1000}kg" if grams % 1000 == 0 else f"{grams}g"
+
+
+def _per_kg_price_paise(per_kg_paise: int, grams: int) -> int:
+    """Price of `grams` at a per-kg rate, rounded half-up to a whole rupee."""
+    return (per_kg_paise * grams + 50_000) // 100_000 * 100
+
+
 def _catalogue_order(statement):
     """Catalogue order: the order products were added (Faki, Supari, then newer ones), slug as the tie-break."""
     return statement.order_by(Product.created_at.asc(), Product.slug.asc())
@@ -330,6 +362,7 @@ def _serialize_public_product(db: Session, product: Product) -> dict[str, Any]:
         "prices": prices,
         "priceConfirmed": price_confirmed,
         "inStock": in_stock,
+        "pricePerKg": paise_to_inr(product.price_per_kg_paise) if _typed_amounts_offered(product) else None,
         "averageRating": summary["average"],
         "reviewCount": summary["count"],
     }
@@ -347,6 +380,9 @@ def _serialize_admin_product(p: Product) -> dict[str, Any]:
         "images": _serialize_product_images(p),
         "information": _serialize_product_information(p),
         "active": p.is_active,
+        "soldByWeight": _is_weight_product(p),
+        "pricePerKg": paise_to_inr(p.price_per_kg_paise),
+        "costPerKg": paise_to_inr(p.cost_per_kg_paise),
         "updatedAt": _iso(p.updated_at),
         "variants": [
             {
@@ -620,6 +656,7 @@ def _serialize_admin_order_detail(db: Session, order: Order) -> dict[str, Any]:
                 "productNameGu": product.name_gu if product else "",
                 "productImage": _primary_product_image_url(product) or "/images/hero-product.jpg",
                 "packSize": item.pack_size,
+                "typedAmount": item.variant_id is None,
                 "quantity": item.quantity,
                 "unitPrice": paise_to_inr(item.unit_price_paise),
                 "unitCostPrice": paise_to_inr(item.unit_cost_paise),
@@ -714,6 +751,8 @@ def _cancel_order(
     can_release_stock = previous_status != "DELIVERY_FAILED"
     if can_release_stock:
         for item in order.items:
+            if item.variant_id is None:
+                continue  # typed amounts never reserved stock
             variant = db.scalar(
                 select(ProductVariant)
                 .where(ProductVariant.id == item.variant_id)
@@ -941,6 +980,50 @@ def get_public_store_profile(db: Session = Depends(get_db)) -> dict[str, Any]:
     return _serialize_store_profile(db, _get_store_settings(db))
 
 
+@dataclass(frozen=True)
+class _PricedLine:
+    variant: ProductVariant | None  # None for a typed amount
+    pack_size: str
+    unit_price_paise: int
+    unit_cost_paise: int | None
+
+
+def _price_line(
+    db: Session, product: Product, pack_size: str, typed: bool, quantity: int, store: StoreSettings, *, lock: bool = False,
+) -> _PricedLine:
+    """The server-side price of one order line: a stocked pack at its own price, or a typed amount at the per-kg rate."""
+    if typed:
+        if not _typed_amounts_offered(product):
+            raise HTTPException(status_code=400, detail=f"{product.name} cannot be ordered in a custom amount yet.")
+        if not settings.is_local_env and store.business_settings_confirmed_at is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Ordering is not open yet: prices and payment details are awaiting owner confirmation.",
+            )
+        grams = _typed_amount_grams(pack_size)
+        cost = product.cost_per_kg_paise
+        return _PricedLine(
+            None, _canonical_amount(grams), _per_kg_price_paise(int(product.price_per_kg_paise), grams),
+            (int(cost) * grams + 500) // 1000 if cost is not None else None,
+        )
+    statement = select(ProductVariant).where(ProductVariant.product_id == product.id, ProductVariant.pack_size == pack_size)
+    variant = db.scalar(statement.with_for_update() if lock else statement)
+    if variant is None or not variant.is_available:
+        raise HTTPException(status_code=400, detail="Selected pack size is currently unavailable.")
+    if variant.price_paise is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Price for this pack size has not been configured by the store yet.",
+        )
+    _assert_ordering_open(variant, store)
+    if variant.available_stock < quantity:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Insufficient stock for {product.name} ({pack_size}). Available: {variant.available_stock}.",
+        )
+    return _PricedLine(variant, variant.pack_size, int(variant.price_paise), variant.cost_price_paise)
+
+
 @router.post("/checkout/quote")
 def create_checkout_quote(
     payload: CheckoutQuoteRequestSchema,
@@ -963,27 +1046,8 @@ def create_checkout_quote(
     if product is None:
         raise HTTPException(status_code=404, detail="Selected product is not available.")
 
-    variant = db.scalar(
-        select(ProductVariant).where(
-            ProductVariant.product_id == product.id,
-            ProductVariant.pack_size == payload.pack_size,
-        )
-    )
-    if variant is None or not variant.is_available:
-        raise HTTPException(status_code=400, detail="Selected pack size is currently unavailable.")
-    if variant.price_paise is None:
-        raise HTTPException(
-            status_code=400,
-            detail="Price for this pack size has not been configured by the store yet.",
-        )
-    _assert_ordering_open(variant, store)
-    if variant.available_stock < payload.quantity:
-        raise HTTPException(
-            status_code=409,
-            detail=f"Insufficient stock for {product.name} ({payload.pack_size}). Available: {variant.available_stock}.",
-        )
-
-    subtotal_paise = int(variant.price_paise) * int(payload.quantity)
+    line = _price_line(db, product, payload.pack_size, payload.custom_amount, payload.quantity, store)
+    subtotal_paise = line.unit_price_paise * int(payload.quantity)
     delivery_fee_paise = int(store.delivery_charge_paise or 0)
     if (
         store.free_delivery_threshold_paise is not None
@@ -1039,27 +1103,9 @@ def create_customer_order(
     if product is None:
         raise HTTPException(status_code=404, detail="Selected product is not available.")
 
-    variant = db.scalar(
-        select(ProductVariant).where(
-            ProductVariant.product_id == product.id,
-            ProductVariant.pack_size == payload.pack_size,
-        ).with_for_update()
-    )
-    if variant is None or not variant.is_available:
-        raise HTTPException(status_code=400, detail="Selected pack size is currently unavailable.")
-    if variant.price_paise is None:
-        raise HTTPException(
-            status_code=400,
-            detail="Price for this pack size has not been configured by the store yet.",
-        )
-    _assert_ordering_open(variant, store)
-    if variant.available_stock < payload.quantity:
-        raise HTTPException(
-            status_code=409,
-            detail=f"Insufficient stock for {product.name} ({payload.pack_size}). Available: {variant.available_stock}.",
-        )
-
-    subtotal_paise = int(variant.price_paise) * int(payload.quantity)
+    line = _price_line(db, product, payload.pack_size, payload.custom_amount, payload.quantity, store, lock=True)
+    variant = line.variant
+    subtotal_paise = line.unit_price_paise * int(payload.quantity)
     delivery_fee_paise = int(store.delivery_charge_paise or 0)
     if (
         store.free_delivery_threshold_paise is not None
@@ -1094,10 +1140,11 @@ def create_customer_order(
         customer.address = payload.address.strip()
         customer.pin_code = payload.pin_code
 
-    # Reserve stock for this order
-    prev_avail = variant.available_stock
-    variant.reserved_stock = int(variant.reserved_stock) + int(payload.quantity)
-    new_avail = variant.available_stock
+    # Reserve stock for this order (a typed amount is weighed to order and holds no stock)
+    if variant is not None:
+        prev_avail = variant.available_stock
+        variant.reserved_stock = int(variant.reserved_stock) + int(payload.quantity)
+        new_avail = variant.available_stock
 
     order_count = db.scalar(select(func.count()).select_from(Order)) or 0
     order_number = f"#BFP-{1001 + int(order_count)}"
@@ -1132,30 +1179,31 @@ def create_customer_order(
     order_item = OrderItem(
         order_id=order.id,
         product_id=product.id,
-        variant_id=variant.id,
+        variant_id=variant.id if variant is not None else None,
         product_slug=product.slug,
         product_name=product.name,
-        pack_size=variant.pack_size,
+        pack_size=line.pack_size,
         quantity=payload.quantity,
-        unit_cost_paise=variant.cost_price_paise,
-        unit_price_paise=int(variant.price_paise),
+        unit_cost_paise=line.unit_cost_paise,
+        unit_price_paise=line.unit_price_paise,
         line_total_paise=subtotal_paise,
     )
     db.add(order_item)
 
-    db.add(
-        InventoryMovement(
-            variant_id=variant.id,
-            movement_type="RESERVED",
-            quantity_delta=-int(payload.quantity),
-            previous_available=prev_avail,
-            new_available=new_avail,
-            reason=f"Stock reserved for order {order.order_number}",
-            reference_order_id=order.id,
-            actor_id=principal.id,
-            actor_name=payload.full_name.strip(),
+    if variant is not None:
+        db.add(
+            InventoryMovement(
+                variant_id=variant.id,
+                movement_type="RESERVED",
+                quantity_delta=-int(payload.quantity),
+                previous_available=prev_avail,
+                new_available=new_avail,
+                reason=f"Stock reserved for order {order.order_number}",
+                reference_order_id=order.id,
+                actor_id=principal.id,
+                actor_name=payload.full_name.strip(),
+            )
         )
-    )
     db.add(
         OrderStatusHistory(
             order_id=order.id,
@@ -2105,6 +2153,8 @@ def confirm_admin_order(
 
     # Recheck stock and deduct inventory atomically
     for item in order.items:
+        if item.variant_id is None:
+            continue  # a typed amount is weighed to order; no stock to deduct
         variant = db.scalar(
             select(ProductVariant).where(ProductVariant.id == item.variant_id).with_for_update()
         )
@@ -2567,6 +2617,13 @@ def update_admin_product(
         product.description = payload.description.strip()
     if payload.active is not None:
         product.is_active = bool(payload.active)
+    fields_set = payload.model_fields_set
+    if ("price_per_kg" in fields_set or "cost_per_kg" in fields_set) and not _is_weight_product(product):
+        raise HTTPException(status_code=422, detail="Per-kg prices are only for products sold by weight.")
+    if "price_per_kg" in fields_set:
+        product.price_per_kg_paise = inr_to_paise(payload.price_per_kg) if payload.price_per_kg is not None else None
+    if "cost_per_kg" in fields_set:
+        product.cost_per_kg_paise = inr_to_paise(payload.cost_per_kg) if payload.cost_per_kg is not None else None
     if payload.information is not None:
         for attribute in _PRODUCT_INFORMATION_FIELDS:
             if attribute in payload.information.model_fields_set:
