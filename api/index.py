@@ -26,8 +26,16 @@ def _startup_error_app(exc: Exception):
     return app
 
 
-try:
-    from app.main import app  # Vercel serves the ASGI object named `app`
-except Exception as exc:  # noqa: BLE001
-    traceback.print_exc()
-    app = _startup_error_app(exc)
+def _load_app():
+    try:
+        from app.main import app as backend_app
+
+        return backend_app
+    except Exception as exc:  # noqa: BLE001
+        traceback.print_exc()
+        return _startup_error_app(exc)
+
+
+# Must stay a plain top-level assignment: Vercel finds the function by statically looking for a top-level `app`,
+# and fails the build ("doesn't match any Serverless Functions") when it is only bound inside try/except.
+app = _load_app()
