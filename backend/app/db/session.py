@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from collections.abc import Generator
 from pathlib import Path
 from typing import Any
@@ -26,11 +27,25 @@ def resolve_database_url(explicit_url: str | None = None) -> str:
             # A silent local SQLite file would lose every order on a serverless host (read-only, per-instance filesystem).
             raise RuntimeError("DATABASE_URL is not set. Outside local development the backend needs a PostgreSQL database URL.")
         return f"sqlite:///{_DEFAULT_SQLITE_PATH.as_posix()}"
+    # Values pasted into a dashboard often keep wrappers from where they were copied: `DATABASE_URL=...`, quotes,
+    # or Neon's `psql '...'` command. Strip those; never echo the value (it contains the password).
+    url = re.sub(r"^(?:DATABASE_URL\s*=\s*)?(?:psql\s+)?", "", url).strip().strip("'\"").strip()
     # Standard PostgreSQL URLs use the installed psycopg 3 driver.
     for prefix in ("postgres://", "postgresql://"):
         if url.startswith(prefix):
             url = "postgresql+psycopg://" + url[len(prefix) :]
             break
+    try:
+        parsed = make_url(url)
+    except Exception:
+        parsed = None
+    if parsed is None or parsed.get_backend_name() not in {"postgresql", "sqlite"} or (
+        parsed.get_backend_name() == "postgresql" and not parsed.host
+    ):
+        raise RuntimeError(
+            "DATABASE_URL is not a valid connection string. It must be the Neon pooled URL starting with "
+            "postgresql:// (no quotes, no 'psql', no 'DATABASE_URL=')."
+        )
     return url
 
 

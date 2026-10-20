@@ -57,6 +57,20 @@ class ServerlessEngineTests(unittest.TestCase):
             self.assertEqual(session.resolve_database_url(raw), "postgresql+psycopg://u:pw@h:6543/postgres")
         self.assertEqual(session.resolve_database_url(POOLER), POOLER)
 
+    def test_pasted_wrappers_are_removed_and_bad_values_get_a_clear_error(self) -> None:
+        clean = "postgresql+psycopg://u:pw@ep-x-pooler.neon.tech/neondb?sslmode=require"
+        for pasted in (
+            "'postgresql://u:pw@ep-x-pooler.neon.tech/neondb?sslmode=require'",
+            "psql 'postgresql://u:pw@ep-x-pooler.neon.tech/neondb?sslmode=require'",
+            'DATABASE_URL="postgresql://u:pw@ep-x-pooler.neon.tech/neondb?sslmode=require"',
+        ):
+            with self.subTest(pasted=pasted[:12]):
+                self.assertEqual(session.resolve_database_url(pasted), clean)
+        for bad in ("not a url", "https://ep-x.neon.tech/neondb", "postgresql:///neondb"):
+            with self.subTest(bad=bad), self.assertRaises(RuntimeError) as error:
+                session.resolve_database_url(bad)
+            self.assertNotIn("pw", str(error.exception), "the message never repeats the value")
+
     def test_sqlite_is_untouched(self) -> None:
         self.assertFalse(session.build_engine("sqlite:///:memory:").dialect.name == "postgresql")
 
