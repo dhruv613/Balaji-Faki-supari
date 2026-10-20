@@ -14,11 +14,16 @@ step('1. Frontend TypeScript Validation', 'npm run typecheck');
 step('2. Automated Test Suites (Checkout, Secondary Pages, Auth, Admin & DB Schema)', 'npm test');
 step('3. Backend FastAPI Security & JWT Verification Tests', 'python -m unittest discover -s backend/tests -v');
 step('4. Local Vite Build', 'npm run build');
+step('5. Admin Panel Build', 'npm run build:admin');
 
 const requiredPaths = [
   'frontend/src/app/App.tsx',
   'frontend/src/app/router.tsx',
   'frontend/dist/index.html',
+  'admin-panel/frontend/src/app/App.tsx',
+  'admin-panel/frontend/dist/index.html',
+  'admin-panel/vercel.json',
+  'admin-panel/backend/README.md',
   'supabase/migrations/20261017000000_balaji_faki_point_schema.sql',
   'supabase/migrations/20261017000001_optimize_rls_and_security_advisors.sql',
   'supabase/migrations/20261017000002_simple_db_auth.sql',

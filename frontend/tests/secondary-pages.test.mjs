@@ -17,7 +17,7 @@ function loadPage(path) {
   return context.exports;
 }
 
-const customersSource = readFileSync(new URL('../src/features/admin/pages/AdminCustomersPage.tsx', import.meta.url), 'utf8');
+const customersSource = readFileSync(new URL('../../admin-panel/frontend/src/features/admin/pages/AdminCustomersPage.tsx', import.meta.url), 'utf8');
 assert.doesNotMatch(customersSource, /SAMPLE_|Development reference|XXX XX/, 'the customers screen shows real accounts only');
 assert.match(customersSource, /getAdminCustomers\(/, 'customers come from the server');
 assert.doesNotMatch(customersSource, /method:\s*'(POST|PATCH|DELETE|PUT)'/, 'customers are read-only');

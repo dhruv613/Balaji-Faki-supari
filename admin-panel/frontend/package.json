@@ -1,0 +1,26 @@
+{
+  "name": "balaji-faki-point-admin",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node --input-type=module -e \"import{existsSync}from'node:fs';import{resolve}from'node:path';import{pathToFileURL}from'node:url';const r=resolve(['./node_modules/','../../node_modules/'].map(d=>d+'vite/bin/vite.js').find(existsSync));process.argv=[process.argv[0],r,...process.argv.slice(1)];await import(pathToFileURL(r).href)\"",
+    "build": "npm run typecheck && node --input-type=module -e \"import{existsSync}from'node:fs';import{resolve}from'node:path';import{pathToFileURL}from'node:url';const r=resolve(['./node_modules/','../../node_modules/'].map(d=>d+'vite/bin/vite.js').find(existsSync));process.argv=[process.argv[0],r,'build'];await import(pathToFileURL(r).href)\"",
+    "preview": "node --input-type=module -e \"import{existsSync}from'node:fs';import{resolve}from'node:path';import{pathToFileURL}from'node:url';const r=resolve(['./node_modules/','../../node_modules/'].map(d=>d+'vite/bin/vite.js').find(existsSync));process.argv=[process.argv[0],r,'preview',...process.argv.slice(1)];await import(pathToFileURL(r).href)\"",
+    "typecheck": "node --input-type=module -e \"import{existsSync}from'node:fs';import{resolve}from'node:path';import{pathToFileURL}from'node:url';const r=resolve(['./node_modules/','../../node_modules/'].map(d=>d+'typescript/bin/tsc').find(existsSync));process.argv=[process.argv[0],r,'--noEmit'];await import(pathToFileURL(r).href)\"",
+    "test": "node tests/admin.test.mjs"
+  },
+  "dependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-router-dom": "^7.1.0",
+    "@supabase/supabase-js": "^2.49.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.0",
+    "typescript": "~5.6.0",
+    "vite": "^6.0.0"
+  }
+}

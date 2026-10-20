@@ -15,9 +15,6 @@ export default defineConfig({
             if (id.includes('react') || id.includes('scheduler')) return 'vendor-react';
             return 'vendor';
           }
-          if (id.includes('/src/features/admin/')) {
-            return 'admin-panel';
-          }
         },
       },
     },

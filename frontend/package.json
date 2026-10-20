@@ -8,7 +8,7 @@
     "build": "npm run typecheck && node --input-type=module -e \"import{existsSync}from'node:fs';import{resolve}from'node:path';import{pathToFileURL}from'node:url';const r=resolve(existsSync('./node_modules/vite/bin/vite.js')?'./node_modules/vite/bin/vite.js':'../node_modules/vite/bin/vite.js');process.argv=[process.argv[0],r,'build'];await import(pathToFileURL(r).href)\"",
     "preview": "node --input-type=module -e \"import{existsSync}from'node:fs';import{resolve}from'node:path';import{pathToFileURL}from'node:url';const r=resolve(existsSync('./node_modules/vite/bin/vite.js')?'./node_modules/vite/bin/vite.js':'../node_modules/vite/bin/vite.js');process.argv=[process.argv[0],r,'preview',...process.argv.slice(1)];await import(pathToFileURL(r).href)\"",
     "typecheck": "node --input-type=module -e \"import{existsSync}from'node:fs';import{resolve}from'node:path';import{pathToFileURL}from'node:url';const r=resolve(existsSync('./node_modules/typescript/bin/tsc')?'./node_modules/typescript/bin/tsc':'../node_modules/typescript/bin/tsc');process.argv=[process.argv[0],r,'--noEmit'];await import(pathToFileURL(r).href)\"",
-    "test": "node tests/checkout.test.mjs && node tests/secondary-pages.test.mjs && node tests/auth.test.mjs && node tests/orders.test.mjs && node tests/admin.test.mjs"
+    "test": "node tests/checkout.test.mjs && node tests/secondary-pages.test.mjs && node tests/auth.test.mjs && node tests/orders.test.mjs"
   },
   "dependencies": {
     "react": "^19.0.0",

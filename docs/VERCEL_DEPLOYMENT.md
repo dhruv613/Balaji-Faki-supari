@@ -55,25 +55,31 @@ A brand-new Supabase project is the cleaner alternative: run all migrations in o
 - Functions run on Fluid compute (the config sets a 60 s limit); the first request after idle time has a short cold start.
 - The bundle excludes `frontend/`, `docs/`, `supabase/`, `scripts/` and tests (`vercel.json` → `excludeFiles`).
 
-## 5. Admin panel as its own Vercel project
+## 5. Admin panel: the `admin-panel/` folder, its own Vercel project
 
-The same repository serves two separate sites, chosen at build time by one environment variable, `VITE_APP_MODE`:
+The Admin Panel is a separate app in `admin-panel/`:
 
-| Project | `VITE_APP_MODE` | Serves |
-|---|---|---|
-| storefront (existing, `balaji-faki-point`) | `customer` (recommended) | customer site only; `/admin` becomes a 404 and the "Admin Panel" link disappears |
-| admin (new) | `admin` | Admin Panel only; every other path lands on `/admin/dashboard`, sign-in is Owner Admin only (no "Create account") |
-| not set | (default) | both, as in local development |
+| Folder | Contents |
+|---|---|
+| `admin-panel/frontend/` | the admin UI (Vite + React): `src/app/App.tsx` (routes under `/admin`), `src/features/admin/` (pages, components, API client, styles). Shared code (API client, Supabase sign-in, common components, styles, images) is imported from `frontend/src` through the `@shared` alias, so nothing is duplicated |
+| `admin-panel/backend/` | notes only: the admin API is the shared FastAPI app in `backend/` (`/api/admin/*`), see its README |
+| `admin-panel/vercel.json` | build settings for the admin Vercel project |
+
+The storefront (`frontend/`, root `vercel.json`) no longer contains any admin code. Its "Admin Panel" link (Owner Admin only) points to `VITE_ADMIN_URL`.
 
 Create the admin project (Vercel dashboard, once):
-1. Add New → Project → import the **same** repository (`dhruv613/Balaji-Faki-supari`) again. Name it e.g. `balaji-faki-admin`. Keep **Root Directory** at the repo root; leave Framework / Build settings untouched (`vercel.json` decides them).
-2. Before the first deploy, add the environment variables: `VITE_APP_MODE=admin` plus the **same** variables as the storefront project (section 1: `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`, `DATABASE_URL`, `PROOF_SIGNING_SECRET`, ...). Optional: `VITE_STORE_URL=https://<storefront domain>` to show a "Store" link inside the admin.
-3. In the storefront project add `VITE_APP_MODE=customer` and redeploy it.
-4. Supabase → Authentication → URL Configuration: add the admin domain to Redirect URLs.
-5. Deploy. Every push to GitHub now deploys both projects.
+1. Add New → Project → import the **same** repository (`dhruv613/Balaji-Faki-supari`). Name it e.g. `balaji-faki-admin`.
+2. **Root Directory: `admin-panel`** (Edit next to Root Directory). Leave Framework and Build settings untouched; `admin-panel/vercel.json` sets them. Keep "Include files outside the root directory in the Build Step" enabled (the default): the build installs from the repo root and uses `frontend/src`.
+3. Environment variables (Production and Preview): `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` (same values as the storefront) and `VITE_STORE_URL=https://balaji-faki-point.vercel.app` (the admin's "Store" links). The admin project runs no server code, so it needs no `DATABASE_URL` or secret keys.
+4. Deploy. Then in the **storefront** project add `VITE_ADMIN_URL=https://<admin domain>` and redeploy it, so the Owner Admin sees the "Admin Panel" link. `VITE_APP_MODE` is no longer used and can be deleted from both projects.
+5. Supabase → Authentication → URL Configuration: add the admin domain to Redirect URLs.
 
-Each project runs its own copy of the API function against the same Supabase database, so the admin panel needs no CORS setup either. Admin access is enforced by the server on every request (`/api/me` must return `OWNER_ADMIN`), not by the hidden routes; keeping the admin on its own address just removes it from the public site.
-Optional: protect the admin project with Vercel Deployment Protection / a custom domain such as `admin.<your domain>`.
+From then on every push to GitHub deploys both projects.
+
+How the admin reaches the API: `admin-panel/vercel.json` rewrites `/api/*` to the storefront's API (`https://balaji-faki-point.vercel.app/api/*`), so the browser only talks to the admin domain and no CORS setup is needed. If the storefront moves to a custom domain, change that one URL. Admin access is enforced by the API on every request (`user_profiles.role` must be `OWNER_ADMIN`), not by the separate address.
+Optional: protect the admin project with Vercel Deployment Protection or a custom domain such as `admin.<your domain>`.
+
+Local development: `npm run dev` (storefront, port 5173) and `npm run dev:admin` (Admin Panel, port 5174, `http://localhost:5174/admin`). Both read `frontend/.env`.
 
 ## 6. Troubleshooting
 

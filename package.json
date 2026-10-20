@@ -4,14 +4,17 @@
   "version": "1.0.0",
   "type": "module",
   "workspaces": [
-    "frontend"
+    "frontend",
+    "admin-panel/frontend"
   ],
   "scripts": {
     "dev": "npm --prefix frontend run dev",
+    "dev:admin": "npm --prefix admin-panel/frontend run dev",
     "build": "npm --prefix frontend run build && node --input-type=module -e \"import{cpSync,rmSync}from'node:fs';rmSync('dist',{recursive:true,force:true});cpSync('frontend/dist','dist',{recursive:true})\"",
+    "build:admin": "npm --prefix admin-panel/frontend run build",
     "preview": "npm --prefix frontend run preview",
-    "typecheck": "npm --prefix frontend run typecheck",
-    "test": "npm --prefix frontend test",
+    "typecheck": "npm --prefix frontend run typecheck && npm --prefix admin-panel/frontend run typecheck",
+    "test": "npm --prefix frontend test && npm --prefix admin-panel/frontend test",
     "verify": "node scripts/verify-all.mjs"
   },
   "dependencies": {
