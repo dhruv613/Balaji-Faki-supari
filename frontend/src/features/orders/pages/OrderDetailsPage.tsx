@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { useSession } from '../../../lib/supabase';
+import { useSession } from '../../../lib/auth';
 import { formatINR, formatPackSize, getErrorMessage } from '../../../lib/api';
 import EmailSignIn from '../../../components/common/EmailSignIn';
 import Notice from '../../../components/common/Notice';

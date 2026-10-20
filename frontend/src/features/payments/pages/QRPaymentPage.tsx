@@ -6,7 +6,7 @@ import NoActiveOrder from '../../../components/common/NoActiveOrder';
 import { useOrder, useOrderDispatch } from '../../../context/OrderContext';
 import { formatINR, getErrorMessage, isNetworkError, resolveApiUrl } from '../../../lib/api';
 import type { PaymentStatusResponse } from '../../../types/orders';
-import { useSession } from '../../../lib/supabase';
+import { useSession } from '../../../lib/auth';
 import EmailSignIn from '../../../components/common/EmailSignIn';
 import {
   SCREENSHOT_ACCEPT,
@@ -129,7 +129,7 @@ export default function QRPaymentPage() {
 
     setSubmitting(true);
     try {
-      // FastAPI stores the screenshot in private Supabase Storage and sets
+      // FastAPI stores the screenshot in private Neon storage and sets
       // Payment = SUBMITTED and Order = PAYMENT_REVIEW. This is NOT verified payment.
       const result = await submitPayment(order!.id, {
         screenshot: state.screenshotFile,

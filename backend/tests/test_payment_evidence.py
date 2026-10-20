@@ -19,7 +19,7 @@ os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 os.environ["BFP_ENV"] = "local"
 
 import app.db.session as db_session
-import app.main as main_module
+import app.routes.admin_payments as admin_payments_module
 from app.core.security import AuthenticatedPrincipal
 from app.db.models import BankCredit, Customer, Order, PaymentAttempt, UserProfile
 from app.schemas import ApprovePaymentRequestSchema
@@ -58,7 +58,7 @@ class ScreenshotOnlyApprovalTests(unittest.TestCase):
         return attempt
 
     def approve(self, db, attempt: PaymentAttempt, **body):
-        return main_module.approve_admin_payment(
+        return admin_payments_module.approve_admin_payment(
             attempt.id, ApprovePaymentRequestSchema.model_validate(body), None, self.admin, db
         )
 

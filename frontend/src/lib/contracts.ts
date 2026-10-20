@@ -104,6 +104,7 @@ export function readProducts(value: unknown): Product[] {
       !productImages(product.images) ||
       (product.averageRating !== undefined && product.averageRating !== null && typeof product.averageRating !== 'number') ||
       (product.reviewCount !== undefined && typeof product.reviewCount !== 'number') ||
+      (product.pricePerKg !== undefined && product.pricePerKg !== null && !money(product.pricePerKg)) ||
       !Array.isArray(product.packSizes) ||
       !product.packSizes.length ||
       !record(product.prices)

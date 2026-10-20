@@ -18,20 +18,21 @@ function load(path, stubs = {}, globals = {}) {
 let fakeFetch;
 let session = null;
 const env = { apiBaseUrl: '', supportWhatsApp: '918000961030' };
-const auth = { supabase: { auth: { getSession: async () => ({ data: { session } }) } }, useSession: () => ({ session: { user: { id: 'ui-test-user' } }, loading: false }) };
-const api = load('src/lib/api.ts', { './env': { env }, './supabase': auth }, { fetch: (...args) => fakeFetch(...args) });
+const auth = { getAccessToken: async () => session?.access_token ?? null, useSession: () => ({ session: { user: { id: 'ui-test-user' } }, loading: false }) };
+const api = load('src/lib/api.ts', { './env': { env }, './auth': auth }, { fetch: (...args) => fakeFetch(...args) });
 const store = load('src/constants/store.ts');
 const contracts = load('src/lib/contracts.ts', { '../constants/store': store });
 const ordersApi = load('src/features/orders/api/ordersApi.ts', { '../../../lib/api': api, '../../../lib/contracts': contracts });
 const paymentsApi = load('src/features/payments/api/paymentsApi.ts', { '../../../lib/api': api, '../../../lib/contracts': contracts });
 const catalogApi = load('src/features/catalog/api/catalogApi.ts', { '../../../lib/api': api, '../../../lib/contracts': contracts });
 const customer = load('src/lib/customer.ts');
+const amount = load('src/lib/amount.ts');
 const mobileInput = load('src/components/common/MobileNumberInput.tsx', { '../../lib/customer': customer }).default;
 const storage = new Map();
 const sessionStorage = { getItem: key => storage.get(key) ?? null, setItem: (key,value) => storage.set(key,value), removeItem: key => storage.delete(key) };
 const context = load('src/context/OrderContext.tsx', {
   '../lib/api': api, '../constants/store': store, '../features/catalog/api/catalogApi': catalogApi,
-  '../features/orders/api/ordersApi': ordersApi, '../lib/customer': customer,
+  '../features/orders/api/ordersApi': ordersApi, '../lib/customer': customer, '../lib/amount': amount,
 }, { sessionStorage });
 const { initialState, reducer, restoreDraft, validateForm, buildSummary, toOrderFormData } = context;
 const valid = { ...initialState, product: 'faki', packSize: '500g', quantity: 2, fullName: '  હેતલ પટેલ  ', phone: '+91 98765 43210', address: 'Riddhi Siddhi Complex, Rajkot', pinCode: '360005' };
@@ -51,8 +52,8 @@ assert.ok(customer.validateCustomerDetails({fullName:'A'.repeat(101),phone:'9876
 storage.set('bfp-order-session', JSON.stringify(valid));
 context.persistDraft(valid, 'customer-one');
 assert.equal(storage.has('bfp-order-session'),false,'Remove legacy unowned drafts');
-const userOne={id:'customer-one',user_metadata:{fullName:'First Customer',phone:'+919876543210'}};
-const userTwo={id:'customer-two',user_metadata:{fullName:'Second Customer',phone:'+916987654321'}};
+const userOne={id:'customer-one',fullName:'First Customer',phone:'+919876543210'};
+const userTwo={id:'customer-two',fullName:'Second Customer',phone:'+916987654321'};
 assert.equal(context.loadState(userOne).address,valid.address);
 assert.equal(context.loadState(userOne).phone,'9876543210');
 assert.equal(context.loadState(userTwo).address,'','No cross-account draft disclosure');
@@ -145,6 +146,28 @@ assert.equal(contracts.readQuote({subtotal:100,deliveryFee:0,total:100,currency:
 assert.throws(() => contracts.readProducts([{type:'faki'}]));
 const catalogProduct = {type:'faki',name:'Faki',nameGu:'ફાકી',category:'Faki',description:'',imageUrl:'/images/faki.png',information:{ingredients:'Test-confirmed ingredients.',popularity:'',characteristics:'',productionPackaging:'Test-confirmed packaging.',providerManufacturer:'',safetyStorage:'Test-confirmed storage guidance.'},packSizes:['250g','500g','1kg'],prices:{'250g':250,'500g':500,'1kg':1000}};
 // Products and pack sizes come from the catalogue: any slug-shaped product and unit-shaped pack size is accepted by the client.
+// Typed amounts: 100 g to 10 kg in 50 g steps, priced per kg and rounded half-up to a rupee (same as the server).
+assert.equal(api.formatPackSize('2500g'),'2.5 kg'); assert.equal(api.formatPackSize('750g'),'750 g');
+assert.equal(amount.canonicalAmount(2000),'2kg'); assert.equal(amount.canonicalAmount(2500),'2500g'); assert.equal(amount.amountToGrams('2kg'),2000);
+assert.equal(amount.amountToGrams('1l'),null,'litres are never a typed weight');
+for (const ok of ['100g','750g','2500g','10kg']) assert.equal(amount.typedAmountError(ok),null,ok);
+for (const bad of ['50g','125g','10050g','11kg','0g','1l']) assert.ok(amount.typedAmountError(bad),bad);
+assert.equal(amount.perKgPrice(800,750),600); assert.equal(amount.perKgPrice(333,150),50); assert.equal(amount.perKgPrice(330,150),50); assert.equal(amount.perKgPrice(329,150),49);
+{
+  const typedCatalog={...catalogProduct,pricePerKg:800};
+  let typed=reducer({...initialState,products:[typedCatalog]},{type:'SET_CUSTOM_AMOUNT',payload:'750g'});
+  assert.equal(typed.customAmount,true);
+  assert.equal(buildSummary(typed).subtotal,600,'the typed amount is priced per kg before the server quote arrives');
+  assert.equal(JSON.stringify(toOrderFormData({...valid,...typed}).customAmount),'true','the request tells the server it is a typed amount');
+  assert.match(validateForm({...valid,packSize:'125g',customAmount:true}).packSize,/steps of 50 g/);
+  assert.equal(validateForm({...valid,packSize:'750g',customAmount:true}).packSize,undefined);
+  typed=reducer(typed,{type:'SET_PACK_SIZE',payload:'1kg'});
+  assert.equal(typed.customAmount,false,'choosing a pack leaves typed mode');
+  assert.equal(restoreDraft(JSON.stringify({...valid,packSize:'750g',customAmount:true})).customAmount,true,'a saved typed amount survives a refresh');
+  assert.equal(restoreDraft(JSON.stringify({...valid,packSize:'125g',customAmount:true})).customAmount,false,'an invalid saved amount is dropped');
+  const noTyped=reducer({...initialState,product:'faki',packSize:'750g',customAmount:true},{type:'SET_CATALOG',payload:{products:[catalogProduct],status:''}});
+  assert.equal(noTyped.customAmount,false,'typed mode ends when the owner switches per-kg pricing off');
+}
 assert.equal(api.formatPackSize('250g'),'250 g'); assert.equal(api.formatPackSize('1kg'),'1 kg'); assert.equal(api.formatPackSize('500ml'),'500 ml'); assert.equal(api.formatPackSize('1l'),'1 L');
 const withWater = reducer(valid,{type:'SET_PRODUCT',payload:'water'});
 assert.equal(withWater.product,'water'); assert.equal(withWater.packSize,'1l','the default pack size comes from the product, not a fixed list');
@@ -200,10 +223,10 @@ if (process.argv.includes('--fixtures')) {
     const mockContext={...context,useOrder:()=>state,useOrderDispatch:()=>()=>{}};
     const component=load(`src/features/${path}`,{
       '../../../context/OrderContext':mockContext,'../../../lib/api':{...api,formatINR:()=> '₹[TOTAL]'},
-      '../../../lib/supabase':auth,'../../../lib/env':{env},
+      '../../../lib/auth':auth,'../../../lib/env':{env},
       '../../../components/common/OrderStepper':{default:stepper},'../../../components/common/Notice':{default:notice},
       '../../../components/common/NoActiveOrder':{default:noOrder},'../../../components/common/EmailSignIn':{default:()=>null},
-      '../../../components/common/MobileNumberInput':{default:mobileInput},
+      '../../../components/common/MobileNumberInput':{default:mobileInput},'../../../lib/amount':amount,
       '../api/ordersApi':ordersApi,'../api/paymentsApi':paymentsApi,
     }).default;
     const markup=renderToStaticMarkup(React.createElement(MemoryRouter,null,React.createElement(component)));

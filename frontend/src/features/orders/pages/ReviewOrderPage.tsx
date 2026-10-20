@@ -14,7 +14,7 @@ import { formatINR, formatPackSize, getErrorMessage, isNetworkError } from '../.
 import { env } from '../../../lib/env';
 import { createOrder } from '../api/ordersApi';
 import { primaryImage } from '../../catalog/components/ProductParts';
-import { useSession } from '../../../lib/supabase';
+import { useSession } from '../../../lib/auth';
 import EmailSignIn from '../../../components/common/EmailSignIn';
 import ProductName from '../../../components/common/ProductName';
 

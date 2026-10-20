@@ -26,10 +26,13 @@ venv/
 *.sqlite3
 .private_storage/
 
-# Supabase CLI temporary state & local verification captures
-supabase/.temp/
+# Local verification captures
 docs/testing/verification/
 .local-dev-credentials.json
 
 # Local run logs
 *.log
+.neon
+.migration-backups/
+# Supabase CLI state written by scripts/migrate-supabase-to-neon.py
+supabase/

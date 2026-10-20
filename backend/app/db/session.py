@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from collections.abc import Generator
 from pathlib import Path
 from typing import Any
@@ -24,23 +25,37 @@ def resolve_database_url(explicit_url: str | None = None) -> str:
     if not url:
         if not settings.is_local_env:
             # A silent local SQLite file would lose every order on a serverless host (read-only, per-instance filesystem).
-            raise RuntimeError("DATABASE_URL is not set. Outside local development the backend needs the Supabase database URL.")
+            raise RuntimeError("DATABASE_URL is not set. Outside local development the backend needs a PostgreSQL database URL.")
         return f"sqlite:///{_DEFAULT_SQLITE_PATH.as_posix()}"
-    # Supabase's "Connect" dialog gives postgres:// or postgresql://; both mean psycopg 3 here (psycopg2 is not installed).
+    # Values pasted into a dashboard often keep wrappers from where they were copied: `DATABASE_URL=...`, quotes,
+    # or Neon's `psql '...'` command. Strip those; never echo the value (it contains the password).
+    url = re.sub(r"^(?:DATABASE_URL\s*=\s*)?(?:psql\s+)?", "", url).strip().strip("'\"").strip()
+    # Standard PostgreSQL URLs use the installed psycopg 3 driver.
     for prefix in ("postgres://", "postgresql://"):
         if url.startswith(prefix):
             url = "postgresql+psycopg://" + url[len(prefix) :]
             break
-    if url.startswith("postgresql+psycopg://"):
-        # Supabase's Vercel integration adds a marker that psycopg/libpq does not accept.
-        return make_url(url).difference_update_query(["supa"]).render_as_string(hide_password=False)
+    try:
+        parsed = make_url(url)
+    except Exception:
+        parsed = None
+    if parsed is None or parsed.get_backend_name() not in {"postgresql", "sqlite"} or (
+        parsed.get_backend_name() == "postgresql" and not parsed.host
+    ):
+        raise RuntimeError(
+            "DATABASE_URL is not a valid connection string. It must be the Neon pooled URL starting with "
+            "postgresql:// (no quotes, no 'psql', no 'DATABASE_URL=')."
+        )
     return url
 
 
 def _is_serverless_pooled(url: str) -> bool:
-    """Vercel, or a Supabase pooler URL (transaction mode, port 6543): connections are short-lived and shared by many
+    """Vercel and Neon pooled connections are short-lived and shared by many
     function instances, so the app keeps no pool of its own and must not use prepared statements."""
-    return bool(os.environ.get("VERCEL")) or "pooler.supabase.com" in url or ":6543/" in url
+    host = make_url(url).host or ""
+    return bool(os.environ.get("VERCEL")) or (
+        host.endswith(".neon.tech") and "-pooler." in host
+    )
 
 
 def build_engine(database_url: str | None = None) -> Engine:
@@ -85,7 +100,7 @@ def configure_database(database_url: str) -> Engine:
 def init_db(target_engine: Engine | None = None) -> None:
     """Creates tables for SQLite (local fixtures/tests) only.
 
-    On PostgreSQL the schema is owned by `supabase/migrations`; creating tables from the ORM there could
+    On PostgreSQL the schema is owned by explicit migrations; creating tables from the ORM there could
     silently drift from the migrated schema (types, CHECKs, RLS), so it is never done automatically.
     """
     eng = target_engine or engine

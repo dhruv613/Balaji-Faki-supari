@@ -8,7 +8,7 @@
 
 import { env } from './env';
 import type { Product } from '../types/orders';
-import { supabase } from './supabase';
+import { getAccessToken } from './auth';
 
 /* ---------- API Fetch helper ---------- */
 
@@ -46,8 +46,8 @@ export async function apiFetch<T>(
     headers.set('Content-Type', 'application/json');
   }
   headers.set('Accept', 'application/json');
-  const session = supabase ? (await supabase.auth.getSession()).data.session : null;
-  if (session) headers.set('Authorization', `Bearer ${session.access_token}`);
+  const token = await getAccessToken();
+  if (token) headers.set('Authorization', `Bearer ${token}`);
 
   let res: Response;
   try {
@@ -161,5 +161,8 @@ export function formatINR(amount: number | null): string {
 /** 250g -> "250 g", 1kg -> "1 kg", 500ml -> "500 ml", 1l -> "1 L" */
 export function formatPackSize(size: string): string {
   const match = /^([0-9]+)(g|kg|ml|l)$/.exec(size);
-  return match ? `${match[1]} ${match[2] === 'l' ? 'L' : match[2]}` : size;
+  if (!match) return size;
+  const [, amount, unit] = match;
+  if (unit === 'g' && Number(amount) >= 1000) return `${Number(amount) / 1000} kg`; // a typed 2500g reads 2.5 kg
+  return `${amount} ${unit === 'l' ? 'L' : unit}`;
 }

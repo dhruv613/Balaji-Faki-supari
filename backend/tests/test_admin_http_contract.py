@@ -17,12 +17,12 @@ BACKEND_ROOT = Path(__file__).resolve().parents[1]
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
-SECRET = "test-supabase-hs256-secret-for-contract-suite-32by"
 TMP = Path(tempfile.mkdtemp(prefix="bfp_contract_test_"))
 DB_URL = f"sqlite:///{(TMP / 'contract.sqlite3').as_posix()}"
 os.environ["DATABASE_URL"] = DB_URL
-os.environ["SUPABASE_URL"] = "http://127.0.0.1:55321"
 os.environ["BFP_ENV"] = "local"
+
+from auth_support import mint_token, start_auth  # noqa: E402
 
 import app.db.session as db_session  # noqa: E402
 from app.db.models import Customer, Order, OrderItem, ProductVariant, Review, UserProfile  # noqa: E402
@@ -40,21 +40,18 @@ PNG = (
 
 
 def token(user_id: str) -> str:
-    claims = {
-        "sub": user_id, "aud": "authenticated", "role": "authenticated", "email": "owner-contract@example.test",
-        "iss": "http://127.0.0.1:55321/auth/v1", "exp": int(time.time()) + 3600,
-    }
-    return pyjwt.encode(claims, SECRET, algorithm="HS256")
+    return mint_token(user_id, "owner-contract@example.test")
+
 
 
 class AdminHttpContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        os.environ["SUPABASE_JWT_SECRET"] = SECRET
+        start_auth(cls)
         db_session.configure_database(DB_URL)
         with db_session.SessionLocal() as db:
             seed_development_data(db)
-            db.add(UserProfile(id=ADMIN_ID, email="owner-contract@example.test", full_name="Owner", role="OWNER_ADMIN"))
+            db.add(UserProfile(id=ADMIN_ID, auth_subject=ADMIN_ID, email="owner-contract@example.test", full_name="Owner", role="OWNER_ADMIN"))
             buyer = UserProfile(email="buyer-contract@example.test", full_name="Buyer")
             db.add(buyer)
             db.flush()
@@ -116,7 +113,7 @@ class AdminHttpContractTests(unittest.TestCase):
         def put(bucket, path, content, mime, **_):
             self.storage[(bucket, path)] = content
 
-        with patch("app.main.put_storage_object", side_effect=put):
+        with patch("app.routes.admin.put_storage_object", side_effect=put):
             qr = self.client.post("/api/admin/settings/qr", headers=self.headers, files={"qr": ("qr.png", PNG, "image/png")})
         self.assertEqual(qr.status_code, 200, qr.text)
         self.assertTrue(qr.json()["officialUpiQrImageUrl"].startswith("/api/admin/settings/qr?sig="))

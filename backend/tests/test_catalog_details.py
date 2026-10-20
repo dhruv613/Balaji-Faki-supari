@@ -18,7 +18,9 @@ os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 import app.db.session as db_session
 from app.db.models import Customer, Order, OrderItem, Product, ProductVariant, StoreSettings, UserProfile
 from app.db.seed import seed_development_data
-from app.main import _serialize_customer_order, _serialize_store_profile, list_public_products
+from app.routes.common import _serialize_store_profile
+from app.routes.orders import _serialize_customer_order
+from app.routes.public import list_public_products
 
 
 class CatalogDetailsTests(unittest.TestCase):

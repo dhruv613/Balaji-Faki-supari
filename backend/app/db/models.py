@@ -1,4 +1,4 @@
-"""SQLAlchemy 2.0 ORM models matching the Supabase PostgreSQL schema."""
+"""SQLAlchemy 2.0 ORM models for the Neon PostgreSQL application schema."""
 
 from __future__ import annotations
 
@@ -128,6 +128,7 @@ class UserProfile(Base):
     __tablename__ = "user_profiles"
 
     id: Mapped[str] = mapped_column(GUID(), primary_key=True, default=new_uuid_str)
+    auth_subject: Mapped[Optional[str]] = mapped_column(Text, nullable=True, unique=True)
     email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     full_name: Mapped[str] = mapped_column(String(120), nullable=False, default="")
     phone: Mapped[str] = mapped_column(String(32), nullable=False, default="")
@@ -181,6 +182,9 @@ class Product(Base):
     safety_disclosures: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     image_url: Mapped[str] = mapped_column(String(512), nullable=False, default="")
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # Typed amounts (100 g to 10 kg) of a weight product are priced per kg; None = not offered.
+    price_per_kg_paise: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    cost_per_kg_paise: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow
@@ -319,8 +323,9 @@ class OrderItem(Base):
     product_id: Mapped[str] = mapped_column(
         GUID(), ForeignKey("products.id", ondelete="RESTRICT"), nullable=False, index=True
     )
-    variant_id: Mapped[str] = mapped_column(
-        GUID(), ForeignKey("product_variants.id", ondelete="RESTRICT"), nullable=False, index=True
+    # None for a typed amount (weighed to order, priced per kg, no stock reserved or deducted).
+    variant_id: Mapped[Optional[str]] = mapped_column(
+        GUID(), ForeignKey("product_variants.id", ondelete="RESTRICT"), nullable=True, index=True
     )
     product_slug: Mapped[str] = mapped_column(String(32), nullable=False)
     product_name: Mapped[str] = mapped_column(String(120), nullable=False)

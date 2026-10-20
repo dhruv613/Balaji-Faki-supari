@@ -19,7 +19,7 @@ os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 os.environ["BFP_ENV"] = "local"
 
 import app.db.session as db_session
-import app.main as main_module
+import app.routes.admin_orders as admin_orders_module
 from app.core.security import AuthenticatedPrincipal
 from app.db.models import Customer, Order, PaymentAttempt, Refund, UserProfile
 from app.schemas import RecordRefundTransferRequestSchema
@@ -65,7 +65,7 @@ class RefundEvidenceTests(unittest.TestCase):
             self.admin = AuthenticatedPrincipal(owner.id, owner.email, owner.full_name, "", "OWNER_ADMIN", True)
 
     def record(self, db, **overrides):
-        return main_module.record_admin_refund_transfer(self.refund_id, transfer(**overrides), None, self.admin, db)
+        return admin_orders_module.record_admin_refund_transfer(self.refund_id, transfer(**overrides), None, self.admin, db)
 
     def test_unattested_or_mislabelled_evidence_never_completes_a_refund(self) -> None:
         with db_session.SessionLocal() as db:
@@ -79,14 +79,14 @@ class RefundEvidenceTests(unittest.TestCase):
                 self.assertEqual(refused.exception.status_code, 422)
             self.assertEqual(db.get(Refund, self.refund_id).status, "APPROVED")
 
-            original = main_module.settings
+            original = admin_orders_module.settings
             try:
-                main_module.settings = replace(original, app_env="production")
+                admin_orders_module.settings = replace(original, app_env="production")
                 with self.assertRaises(HTTPException) as outside_local:
                     self.record(db, evidenceKind="LOCAL_TEST", refundTransactionReference="TEST-REF-1", transferSettlementChecked=False)
                 self.assertEqual(outside_local.exception.status_code, 422)
             finally:
-                main_module.settings = original
+                admin_orders_module.settings = original
             self.assertEqual(db.get(Refund, self.refund_id).status, "APPROVED")
 
     def test_attested_transfer_with_exact_amount_completes_once(self) -> None:

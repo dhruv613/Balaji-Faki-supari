@@ -22,7 +22,8 @@ from app.core import storage
 from app.core.config import settings
 from app.db.models import Product, ProductVariant, StoreSettings
 from app.db.seed import seed_development_data
-from app.main import _assert_ordering_open, _serviceable_pins, create_checkout_quote, get_public_store_profile, list_public_products
+from app.routes.common import _assert_ordering_open, _serviceable_pins
+from app.routes.public import create_checkout_quote, get_public_store_profile, list_public_products
 from app.schemas import CheckoutQuoteRequestSchema
 
 
@@ -90,22 +91,22 @@ class GuardTests(unittest.TestCase):
         variant = ProductVariant(pack_size="1kg", sku="X", price_paise=100000, price_confirmed=False)
         store = StoreSettings(business_settings_confirmed_at=None)
         # Local mode (tests run with BFP_ENV=local or default production): evaluate both explicitly.
-        import app.main as main_module
+        import app.routes.common as common_module
 
-        original = main_module.settings
+        original = common_module.settings
         try:
-            main_module.settings = replace(original, app_env="local")
+            common_module.settings = replace(original, app_env="local")
             _assert_ordering_open(variant, store)  # allowed locally
-            main_module.settings = replace(original, app_env="production")
+            common_module.settings = replace(original, app_env="production")
             with self.assertRaises(HTTPException) as blocked:
                 _assert_ordering_open(variant, store)
             self.assertEqual(blocked.exception.status_code, 503)
         finally:
-            main_module.settings = original
+            common_module.settings = original
 
     def test_signing_secret_never_falls_back_to_a_fixed_string(self) -> None:
         empty = replace(
-            settings, proof_signing_secret="", supabase_jwt_secret="", supabase_secret_key="", app_env="production"
+            settings, proof_signing_secret="", app_env="production"
         )
         with self.assertRaises(storage.PrivateImageStorageError):
             storage.create_signed_proof_query("pay-1", "u/o/p.png", app_settings=empty)

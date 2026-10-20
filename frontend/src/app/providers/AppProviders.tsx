@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import type { User } from '@supabase/supabase-js';
+import type { User } from '../../lib/auth';
 import { OrderProvider } from '../../context/OrderContext';
 
 interface AppProvidersProps {

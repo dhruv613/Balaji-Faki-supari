@@ -97,6 +97,8 @@ export interface Product {
   /** false = development price the owner has not approved yet. */
   priceConfirmed?: Record<PackSize, boolean>;
   inStock?: Record<PackSize, boolean>;
+  /** Price per kg for an amount the customer types (weight products); null/absent = only the packs above. */
+  pricePerKg?: number | null;
   averageRating?: number | null;
   reviewCount?: number;
 }
@@ -104,6 +106,8 @@ export interface Product {
 export interface OrderFormData {
   product: ProductType;
   packSize: PackSize;
+  /** true: packSize is an amount the customer typed (e.g. 750g), priced per kg instead of a stocked pack. */
+  customAmount: boolean;
   quantity: number;
   fullName: string;
   phone: string;
@@ -152,6 +156,7 @@ export interface Order {
 export interface CheckoutQuoteRequest {
   product: ProductType;
   packSize: PackSize;
+  customAmount: boolean;
   quantity: number;
   pinCode: string;
 }

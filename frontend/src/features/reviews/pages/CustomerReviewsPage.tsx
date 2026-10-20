@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from '
 import { Link, useSearchParams } from 'react-router-dom';
 import Notice from '../../../components/common/Notice';
 import { formatPackSize, getErrorMessage, resolveApiUrl } from '../../../lib/api';
-import { useSession } from '../../../lib/supabase';
+import { useSession } from '../../../lib/auth';
 import { useOrder } from '../../../context/OrderContext';
 import { PRODUCT_SLUG_PATTERN } from '../../../constants/store';
 import { getMyOrders } from '../../orders/api/ordersApi';

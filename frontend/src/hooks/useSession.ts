@@ -1,1 +1,1 @@
-export { useSession } from '../lib/supabase';
+export { useSession } from '../lib/auth';

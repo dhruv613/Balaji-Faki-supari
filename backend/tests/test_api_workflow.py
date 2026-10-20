@@ -22,14 +22,12 @@ BACKEND_ROOT = Path(__file__).resolve().parents[1]
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
-TEST_JWT_SECRET = "test-supabase-hs256-secret-for-integration-suite-32bytes"
 TEST_TMP_DIR = Path(tempfile.mkdtemp(prefix="bfp_api_test_"))
 TEST_DB_URL = f"sqlite:///{(TEST_TMP_DIR / 'test_bfp.sqlite3').as_posix()}"
-TEST_SUPABASE_URL = "http://127.0.0.1:55321"
 os.environ["DATABASE_URL"] = TEST_DB_URL
 os.environ["BFP_ENV"] = "local"
-os.environ["SUPABASE_URL"] = TEST_SUPABASE_URL
-os.environ["SUPABASE_JWT_SECRET"] = TEST_JWT_SECRET
+
+from auth_support import mint_token, start_auth  # noqa: E402
 
 import app.db.session as db_session  # noqa: E402
 from app.db.models import UserProfile  # noqa: E402
@@ -69,29 +67,17 @@ def _mint_jwt(
     phone: str = "+919876543210",
     metadata_role: str = "CUSTOMER",
 ) -> str:
-    claims = {
-        "sub": user_id,
-        "aud": "authenticated",
-        "role": "authenticated",
-        "email": email,
-        "iss": f"{TEST_SUPABASE_URL}/auth/v1",
-        "exp": int(time.time()) + 3600,
-        "user_metadata": {
-            "fullName": full_name,
-            "phone": phone,
-            "role": metadata_role,
-        },
-    }
-    return pyjwt.encode(claims, TEST_JWT_SECRET, algorithm="HS256")
+    return mint_token(user_id, email, full_name, user_metadata={"role": metadata_role, "phone": phone})
+
 
 
 class FastApiWorkflowIntegrationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        os.environ["SUPABASE_JWT_SECRET"] = TEST_JWT_SECRET
+        start_auth(cls)
         db_session.configure_database(TEST_DB_URL)
-        cls._store_proof_patch = patch("app.main.store_private_payment_proof", side_effect=_store_test_payment_proof)
-        cls._read_proof_patch = patch("app.main.read_private_payment_proof", side_effect=_read_test_payment_proof)
+        cls._store_proof_patch = patch("app.routes.payments.store_private_payment_proof", side_effect=_store_test_payment_proof)
+        cls._read_proof_patch = patch("app.routes.admin_payments.read_private_payment_proof", side_effect=_read_test_payment_proof)
         cls._store_proof_patch.start()
         cls._read_proof_patch.start()
         cls.client = TestClient(app)
@@ -126,6 +112,7 @@ class FastApiWorkflowIntegrationTests(unittest.TestCase):
             db.add(
                 UserProfile(
                     id=cls.admin_id,
+                    auth_subject=cls.admin_id,  # linked once by the operator, never by email
                     email="dp334218@gmail.com",
                     full_name="Dhruv Admin",
                     phone="+918160628688",
@@ -160,6 +147,10 @@ class FastApiWorkflowIntegrationTests(unittest.TestCase):
         me_c1 = self.client.get("/api/me", headers=c1_headers)
         self.assertEqual(me_c1.status_code, 200)
         self.assertEqual(me_c1.json()["role"], "CUSTOMER")
+        with db_session.SessionLocal() as db:
+            profile = db.get(UserProfile, me_c1.json()["id"])
+            self.assertIsNotNone(profile)
+            self.assertEqual(profile.role, "CUSTOMER")
 
         forbidden_admin = self.client.get("/api/admin/dashboard", headers=c1_headers)
         self.assertEqual(forbidden_admin.status_code, 403)

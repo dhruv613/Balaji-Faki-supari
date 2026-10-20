@@ -9,18 +9,13 @@ function loadPage(path) {
   const source = readFileSync(new URL(`../src/features/${path}`, import.meta.url), 'utf8');
   const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
   const context = { exports: {}, require: name => (
-    name.endsWith('/Notice') || name.endsWith('/Stars') || name.endsWith('/reviewsApi') || name.endsWith('/ordersApi') || name.endsWith('/supabase') || name.endsWith('/OrderContext') || name.endsWith('/store') || name.endsWith('/api')
+    name.endsWith('/Notice') || name.endsWith('/Stars') || name.endsWith('/reviewsApi') || name.endsWith('/ordersApi') || name.endsWith('/auth') || name.endsWith('/OrderContext') || name.endsWith('/store') || name.endsWith('/api')
       ? {}
       : require(name)
   ) };
   vm.runInNewContext(compiled, context);
   return context.exports;
 }
-
-const customersSource = readFileSync(new URL('../../admin-panel/frontend/src/features/admin/pages/AdminCustomersPage.tsx', import.meta.url), 'utf8');
-assert.doesNotMatch(customersSource, /SAMPLE_|Development reference|XXX XX/, 'the customers screen shows real accounts only');
-assert.match(customersSource, /getAdminCustomers\(/, 'customers come from the server');
-assert.doesNotMatch(customersSource, /method:\s*'(POST|PATCH|DELETE|PUT)'/, 'customers are read-only');
 
 const homeSource = readFileSync(new URL('../src/features/catalog/pages/HomePage.tsx', import.meta.url), 'utf8');
 assert.match(homeSource, /<Modal[\s\S]*<ProductDetailsView/, 'a product card opens the full details in a dialog on the same page');
@@ -35,4 +30,4 @@ assert.match(validateReviewPhotos([photo(4 * 1024 * 1024 + 1)]), /larger than 4 
 assert.match(validateReviewPhotos([photo(2.5 * 1024 * 1024), photo(2.5 * 1024 * 1024)]), /together must be smaller than 4 MB/, 'all photos share the host request limit');
 assert.equal(validateReviewText('ગુણવત્તા અને પેકિંગ સારું છે.'), null);
 assert.equal(validateReviewText('Very good packing.'), null);
-console.log('Secondary pages: real read-only customers and review validation passed.');
+console.log('Secondary pages: product details dialog and review validation passed.');

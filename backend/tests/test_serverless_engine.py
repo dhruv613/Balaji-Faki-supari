@@ -1,4 +1,4 @@
-"""The database engine suits Vercel: pooled Supabase URLs get no app-side pool and no prepared statements."""
+"""The database engine suits Vercel: pooled Neon URLs get no app-side pool and no prepared statements."""
 
 from __future__ import annotations
 
@@ -20,11 +20,19 @@ os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 
 import app.db.session as session  # noqa: E402
 
-POOLER = "postgresql+psycopg://postgres.abcdefgh:pw@aws-0-ap-south-1.pooler.supabase.com:6543/postgres"
-DIRECT = "postgresql+psycopg://postgres:pw@db.abcdefgh.supabase.co:5432/postgres"
+POOLER = "postgresql+psycopg://app:pw@ep-example-pooler.ap-southeast-1.aws.neon.tech/neondb?sslmode=require"
+DIRECT = "postgresql+psycopg://app:pw@ep-example.ap-southeast-1.aws.neon.tech/neondb?sslmode=require"
 
 
 class ServerlessEngineTests(unittest.TestCase):
+    def test_neon_pooler_uses_psycopg_without_an_extra_connection_pool(self) -> None:
+        raw = "postgresql://app:pw@ep-example-pooler.c-2.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
+        with patch.object(session, "create_engine") as create:
+            session.build_engine(raw)
+        self.assertEqual(create.call_args.kwargs["poolclass"], NullPool)
+        self.assertEqual(create.call_args.kwargs["connect_args"], {"prepare_threshold": None})
+        self.assertEqual(make_url(create.call_args.args[0]).query["sslmode"], "require")
+
     def test_pooler_url_gets_no_app_pool_and_no_prepared_statements(self) -> None:
         engine = session.build_engine(POOLER)
         self.assertIsInstance(engine.pool, NullPool)
@@ -44,18 +52,24 @@ class ServerlessEngineTests(unittest.TestCase):
         with patch.object(session, "settings", replace(session.settings, database_url="", app_env="local")):
             self.assertTrue(session.resolve_database_url().startswith("sqlite:///"))
 
-    def test_supabase_dialog_urls_use_psycopg3(self) -> None:
+    def test_plain_postgres_urls_use_psycopg3(self) -> None:
         for raw in ("postgres://u:pw@h:6543/postgres", "postgresql://u:pw@h:6543/postgres"):
             self.assertEqual(session.resolve_database_url(raw), "postgresql+psycopg://u:pw@h:6543/postgres")
         self.assertEqual(session.resolve_database_url(POOLER), POOLER)
 
-    def test_integration_marker_is_removed_without_changing_credentials_or_ssl(self) -> None:
-        raw = "postgres://postgres.example:p%40ss%2Fword%3F@pooler.example:6543/postgres?supa=base-pooler.x&sslmode=require&application_name=balaji"
-        url = make_url(session.resolve_database_url(raw))
-        self.assertEqual(url.drivername, "postgresql+psycopg")
-        self.assertEqual(url.username, "postgres.example")
-        self.assertEqual(url.password, "p@ss/word?")
-        self.assertEqual(url.query, {"sslmode": "require", "application_name": "balaji"})
+    def test_pasted_wrappers_are_removed_and_bad_values_get_a_clear_error(self) -> None:
+        clean = "postgresql+psycopg://u:pw@ep-x-pooler.neon.tech/neondb?sslmode=require"
+        for pasted in (
+            "'postgresql://u:pw@ep-x-pooler.neon.tech/neondb?sslmode=require'",
+            "psql 'postgresql://u:pw@ep-x-pooler.neon.tech/neondb?sslmode=require'",
+            'DATABASE_URL="postgresql://u:pw@ep-x-pooler.neon.tech/neondb?sslmode=require"',
+        ):
+            with self.subTest(pasted=pasted[:12]):
+                self.assertEqual(session.resolve_database_url(pasted), clean)
+        for bad in ("not a url", "https://ep-x.neon.tech/neondb", "postgresql:///neondb"):
+            with self.subTest(bad=bad), self.assertRaises(RuntimeError) as error:
+                session.resolve_database_url(bad)
+            self.assertNotIn("pw", str(error.exception), "the message never repeats the value")
 
     def test_sqlite_is_untouched(self) -> None:
         self.assertFalse(session.build_engine("sqlite:///:memory:").dialect.name == "postgresql")

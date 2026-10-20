@@ -17,16 +17,17 @@ BACKEND_ROOT = Path(__file__).resolve().parents[1]
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
-SECRET = "test-supabase-hs256-secret-for-admin-guard-suite-32b"
 TMP = Path(tempfile.mkdtemp(prefix="bfp_guard_test_"))
 DB_URL = f"sqlite:///{(TMP / 'guard.sqlite3').as_posix()}"
 os.environ["DATABASE_URL"] = DB_URL
-os.environ["SUPABASE_URL"] = "http://127.0.0.1:55321"
 os.environ["BFP_ENV"] = "local"
+
+from auth_support import mint_token, start_auth  # noqa: E402
 
 import app.db.session as db_session  # noqa: E402
 from app.db.seed import seed_development_data  # noqa: E402
-from app.main import app, get_owner_admin_principal  # noqa: E402
+from app.main import app  # noqa: E402
+from app.routes.common import get_owner_admin_principal  # noqa: E402
 
 CUSTOMER_ID = "44444444-4444-4444-8444-444444444444"
 # Image routes accept either a short-lived HMAC signature or an Owner Admin Bearer token; both are exercised below.
@@ -44,23 +45,14 @@ def _depends_on_owner_admin(dependant) -> bool:
 
 
 def _token() -> str:
-    claims = {
-        "sub": CUSTOMER_ID,
-        "aud": "authenticated",
-        "role": "authenticated",
-        "email": "guard-customer@example.com",
-        "iss": "http://127.0.0.1:55321/auth/v1",
-        "exp": int(time.time()) + 3600,
-        "user_metadata": {"fullName": "Guard Customer", "phone": "+919876543210", "role": "OWNER_ADMIN"},
-        "app_metadata": {"role": "OWNER_ADMIN"},  # a forged claim must never grant API access
-    }
-    return pyjwt.encode(claims, SECRET, algorithm="HS256")
+    return mint_token(CUSTOMER_ID, "guard-customer@example.com", "Guard Customer", user_metadata={"role": "OWNER_ADMIN"}, app_metadata={"role": "OWNER_ADMIN"})
+
 
 
 class AdminRouteGuardTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        os.environ["SUPABASE_JWT_SECRET"] = SECRET  # other modules set their own at import time
+        start_auth(cls)
         db_session.configure_database(DB_URL)
         with db_session.SessionLocal() as db:
             seed_development_data(db)  # settings row exists, so signed-URL routes reach their signature check

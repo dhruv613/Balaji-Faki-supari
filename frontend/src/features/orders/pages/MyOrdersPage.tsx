@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { supabase, useSession } from '../../../lib/supabase';
+import { authClient, signOut, useSession } from '../../../lib/auth';
 import { formatINR, formatPackSize, getErrorMessage } from '../../../lib/api';
 import EmailSignIn from '../../../components/common/EmailSignIn';
 import Notice from '../../../components/common/Notice';
@@ -58,7 +58,7 @@ export default function MyOrdersPage() {
   return (
     <div className="wrapper">
       <div className="detail-header"><h1 className="page__header">My Orders</h1>{session && <button className="btn btn--sm" type="button" onClick={async () => {
-        try { const result = await supabase?.auth.signOut(); if (result?.error) setError(result.error.message); }
+        try { await signOut(); }
         catch { setError('Unable to sign out. Please try again.'); }
       }}>Sign out</button>}</div>
       <div className="order-filters" aria-label="Filter orders">

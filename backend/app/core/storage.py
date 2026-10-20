@@ -4,11 +4,15 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import os
 import secrets
 import time
-from urllib.parse import quote
+from contextlib import closing, nullcontext
+from functools import lru_cache
 
-import httpx
+import boto3
+from botocore.config import Config
+from botocore.exceptions import BotoCoreError, ClientError
 
 from .config import Settings, settings
 from .security import AuthError
@@ -26,15 +30,15 @@ MAX_REVIEW_PHOTO_BYTES = MAX_REQUEST_UPLOAD_BYTES
 
 
 class PrivateImageStorageError(RuntimeError):
-    """Private Supabase Storage is unavailable or rejected an image object."""
+    """Private image storage is unavailable or rejected an image object."""
 
 
 class PaymentProofStorageError(PrivateImageStorageError):
-    """Private Supabase Storage is unavailable or rejected a proof object."""
+    """Private image storage is unavailable or rejected a proof object."""
 
 
 class ReviewPhotoStorageError(PrivateImageStorageError):
-    """Private Supabase Storage is unavailable or rejected a review photo."""
+    """Private image storage is unavailable or rejected a review photo."""
 
 
 class CatalogImageStorageError(PrivateImageStorageError):
@@ -101,26 +105,87 @@ def validate_review_photo(content: bytes, declared_content_type: str | None) -> 
     )
 
 
-def _storage_headers(
-    app_settings: Settings,
-    mime_type: str | None = None,
+@lru_cache(maxsize=4)
+def _cached_client(endpoint: str, region: str | None):
+    # boto3 clients are thread-safe; reuse one per endpoint instead of building one for every call.
+    return boto3.client(
+        "s3",
+        endpoint_url=endpoint,
+        region_name=region,
+        config=Config(
+            signature_version="s3v4",
+            s3={"addressing_style": "path"},
+            connect_timeout=10,
+            read_timeout=10,
+            retries={"max_attempts": 2},
+            request_checksum_calculation="when_required",
+            response_checksum_validation="when_required",
+        ),
+    )
+
+
+def _neon_client():
+    return _cached_client(os.environ["AWS_ENDPOINT_URL_S3"].strip(), os.getenv("AWS_REGION"))
+
+
+def create_catalogue_image_url(bucket: str, path: str, *, app_settings: Settings = settings) -> str:
+    """Presign only public catalogue namespaces; payment proofs and review photos stay behind the API."""
+    if bucket not in {app_settings.product_images_bucket, app_settings.store_photos_bucket}:
+        raise ValueError("Only catalogue images can be shared publicly.")
+    if not os.getenv("AWS_ENDPOINT_URL_S3", "").strip():
+        raise CatalogImageStorageError("Neon Object Storage is not configured.")
+    try:
+        with nullcontext(_neon_client()) as client:
+            return client.generate_presigned_url(
+                "get_object", Params={"Bucket": "assets", "Key": f"{bucket}/{path.lstrip('/')}"}, ExpiresIn=3600,
+            )
+    except (BotoCoreError, ClientError) as exc:
+        raise CatalogImageStorageError("Image storage is unavailable.") from exc
+
+
+def _storage_request(
+    method: str,
+    bucket: str,
+    path: str,
     *,
-    error_type: type[PrivateImageStorageError] = PaymentProofStorageError,
-) -> dict[str, str]:
-    secret = app_settings.supabase_secret_key.strip()
-    if not secret:
-        raise error_type("Private image storage is not configured.")
-    headers = {"Authorization": f"Bearer {secret}", "apikey": secret}
-    if mime_type:
-        headers["Content-Type"] = mime_type
-    return headers
+    app_settings: Settings,
+    error_type: type[PrivateImageStorageError],
+    content: bytes = b"",
+    mime_type: str | None = None,
+) -> bytes:
+    if not os.getenv("AWS_ENDPOINT_URL_S3", "").strip():
+        raise error_type("Neon Object Storage is not configured.")
+    try:
+        with nullcontext(_neon_client()) as client:
+            object_args = {"Bucket": "assets", "Key": f"{bucket}/{path.lstrip('/')}"}
+            if method == "POST":
+                client.put_object(**object_args, Body=content, ContentType=mime_type, IfNoneMatch="*")
+            elif method == "GET":
+                with client.get_object(**object_args)["Body"] as body:
+                    return body.read()
+            else:
+                client.delete_object(**object_args)
+    except ClientError as exc:
+        if method == "GET" and exc.response.get("Error", {}).get("Code") in {"NoSuchKey", "404", "NotFound"}:
+            raise FileNotFoundError("Image object not found.") from exc
+        raise error_type("Image storage is unavailable.") from exc
+    except (BotoCoreError, OSError) as exc:
+        raise error_type("Image storage is unavailable.") from exc
+    return b""
 
 
-def _storage_object_url(storage_path: str, app_settings: Settings, bucket_name: str) -> str:
-    base_url = app_settings.supabase_url.rstrip("/")
-    bucket = quote(bucket_name, safe="")
-    object_path = quote(storage_path.lstrip("/"), safe="/")
-    return f"{base_url}/storage/v1/object/{bucket}/{object_path}"
+def _read_image(
+    bucket: str,
+    path: str,
+    *,
+    app_settings: Settings,
+    error_type: type[PrivateImageStorageError],
+) -> tuple[bytes, str]:
+    content = _storage_request("GET", bucket, path, app_settings=app_settings, error_type=error_type)
+    mime = detect_image_mime(content)
+    if mime is None:
+        raise error_type("Stored object is not a valid image.")
+    return content, mime
 
 
 def store_private_payment_proof(
@@ -138,17 +203,10 @@ def store_private_payment_proof(
     """
     ext = ALLOWED_IMAGE_MIMES.get(mime_type, ".png")
     relative_path = f"{user_id}/{order_id}/{payment_id}{ext}"
-    try:
-        response = httpx.request(
-            "POST",
-            _storage_object_url(relative_path, app_settings, app_settings.payment_proofs_bucket),
-            headers={**_storage_headers(app_settings, mime_type), "x-upsert": "false"},
-            content=content,
-            timeout=10,
-        )
-        response.raise_for_status()
-    except httpx.HTTPError as exc:
-        raise PaymentProofStorageError("Private payment proof storage is unavailable.") from exc
+    _storage_request(
+        "POST", app_settings.payment_proofs_bucket, relative_path,
+        content=content, mime_type=mime_type, app_settings=app_settings, error_type=PaymentProofStorageError,
+    )
     return relative_path
 
 
@@ -158,26 +216,10 @@ def read_private_payment_proof(
     app_settings: Settings = settings,
 ) -> tuple[bytes, str]:
     """Reads private screenshot bytes and returns `(bytes, content_type)`."""
-    try:
-        response = httpx.request(
-            "GET",
-            _storage_object_url(storage_path, app_settings, app_settings.payment_proofs_bucket),
-            headers=_storage_headers(app_settings),
-            timeout=10,
-        )
-    except httpx.HTTPError as exc:
-        raise PaymentProofStorageError("Private payment proof storage is unavailable.") from exc
-    if response.status_code == 404:
-        raise FileNotFoundError("Payment proof object not found in private storage.")
-    try:
-        response.raise_for_status()
-    except httpx.HTTPError as exc:
-        raise PaymentProofStorageError("Private payment proof storage is unavailable.") from exc
-
-    mime = detect_image_mime(response.content)
-    if mime is None:
-        raise PaymentProofStorageError("Stored payment proof is not a valid image.")
-    return response.content, mime
+    return _read_image(
+        app_settings.payment_proofs_bucket, storage_path,
+        app_settings=app_settings, error_type=PaymentProofStorageError,
+    )
 
 
 def store_private_review_photo(
@@ -189,25 +231,13 @@ def store_private_review_photo(
     mime_type: str,
     app_settings: Settings = settings,
 ) -> str:
-    """Saves a validated review photo in the private `review-photos` bucket."""
+    """Saves a validated review photo in the private `review-photos` namespace."""
     ext = ALLOWED_IMAGE_MIMES.get(mime_type, ".png")
     relative_path = f"{user_id}/{review_id}/{photo_id}{ext}"
-    try:
-        response = httpx.request(
-            "POST",
-            _storage_object_url(relative_path, app_settings, app_settings.review_photos_bucket),
-            headers={
-                **_storage_headers(app_settings, mime_type, error_type=ReviewPhotoStorageError),
-                "x-upsert": "false",
-            },
-            content=content,
-            timeout=10,
-        )
-        response.raise_for_status()
-    except PrivateImageStorageError:
-        raise
-    except httpx.HTTPError as exc:
-        raise ReviewPhotoStorageError("Private review photo storage is unavailable.") from exc
+    _storage_request(
+        "POST", app_settings.review_photos_bucket, relative_path,
+        content=content, mime_type=mime_type, app_settings=app_settings, error_type=ReviewPhotoStorageError,
+    )
     return relative_path
 
 
@@ -217,28 +247,10 @@ def read_private_review_photo(
     app_settings: Settings = settings,
 ) -> tuple[bytes, str]:
     """Reads private review-photo bytes and returns `(bytes, content_type)`."""
-    try:
-        response = httpx.request(
-            "GET",
-            _storage_object_url(storage_path, app_settings, app_settings.review_photos_bucket),
-            headers=_storage_headers(app_settings, error_type=ReviewPhotoStorageError),
-            timeout=10,
-        )
-    except PrivateImageStorageError:
-        raise
-    except httpx.HTTPError as exc:
-        raise ReviewPhotoStorageError("Private review photo storage is unavailable.") from exc
-    if response.status_code == 404:
-        raise FileNotFoundError("Review photo object not found in private storage.")
-    try:
-        response.raise_for_status()
-    except httpx.HTTPError as exc:
-        raise ReviewPhotoStorageError("Private review photo storage is unavailable.") from exc
-
-    mime = detect_image_mime(response.content)
-    if mime is None:
-        raise ReviewPhotoStorageError("Stored review photo is not a valid image.")
-    return response.content, mime
+    return _read_image(
+        app_settings.review_photos_bucket, storage_path,
+        app_settings=app_settings, error_type=ReviewPhotoStorageError,
+    )
 
 
 def delete_private_review_photos(
@@ -247,20 +259,13 @@ def delete_private_review_photos(
     app_settings: Settings = settings,
 ) -> None:
     """Best-effort cleanup for uploaded photos when the review transaction cannot commit."""
-    try:
-        headers = _storage_headers(app_settings, error_type=ReviewPhotoStorageError)
-    except ReviewPhotoStorageError:
-        return
     for storage_path in storage_paths:
         try:
-            response = httpx.request(
-                "DELETE",
-                _storage_object_url(storage_path, app_settings, app_settings.review_photos_bucket),
-                headers=headers,
-                timeout=10,
+            _storage_request(
+                "DELETE", app_settings.review_photos_bucket, storage_path,
+                app_settings=app_settings, error_type=ReviewPhotoStorageError,
             )
-            response.raise_for_status()
-        except httpx.HTTPError:
+        except ReviewPhotoStorageError:
             continue
 
 
@@ -269,7 +274,7 @@ _LOCAL_PROCESS_SIGNING_KEY = secrets.token_bytes(32)  # local development only; 
 
 def _signing_secret(app_settings: Settings = settings) -> bytes:
     """Domain-separated key for short-lived signed image URLs. Never falls back to a fixed string."""
-    base = app_settings.proof_signing_secret or app_settings.supabase_jwt_secret or app_settings.supabase_secret_key
+    base = app_settings.proof_signing_secret
     if base:
         return hmac.new(base.encode("utf-8"), b"bfp-signed-image-url-v1", hashlib.sha256).digest()
     if app_settings.is_local_env:
@@ -333,53 +338,20 @@ def put_storage_object(
     app_settings: Settings = settings,
 ) -> None:
     """Uploads a validated image with the server-side credential. Never overwrites an existing object."""
-    try:
-        response = httpx.request(
-            "POST",
-            _storage_object_url(path, app_settings, bucket),
-            headers={**_storage_headers(app_settings, mime_type, error_type=CatalogImageStorageError), "x-upsert": "false"},
-            content=content,
-            timeout=10,
-        )
-        response.raise_for_status()
-    except PrivateImageStorageError:
-        raise
-    except httpx.HTTPError as exc:
-        raise CatalogImageStorageError("Image storage is unavailable.") from exc
+    _storage_request(
+        "POST", bucket, path, content=content, mime_type=mime_type,
+        app_settings=app_settings, error_type=CatalogImageStorageError,
+    )
 
 
 def get_storage_object(bucket: str, path: str, *, app_settings: Settings = settings) -> tuple[bytes, str]:
-    try:
-        response = httpx.request(
-            "GET",
-            _storage_object_url(path, app_settings, bucket),
-            headers=_storage_headers(app_settings, error_type=CatalogImageStorageError),
-            timeout=10,
-        )
-    except PrivateImageStorageError:
-        raise
-    except httpx.HTTPError as exc:
-        raise CatalogImageStorageError("Image storage is unavailable.") from exc
-    if response.status_code == 404:
-        raise FileNotFoundError("Image object not found.")
-    try:
-        response.raise_for_status()
-    except httpx.HTTPError as exc:
-        raise CatalogImageStorageError("Image storage is unavailable.") from exc
-    mime = detect_image_mime(response.content)
-    if mime is None:
-        raise CatalogImageStorageError("Stored object is not a valid image.")
-    return response.content, mime
+    return _read_image(bucket, path, app_settings=app_settings, error_type=CatalogImageStorageError)
 
 
 def delete_storage_objects(bucket: str, paths: list[str], *, app_settings: Settings = settings) -> None:
     """Best-effort cleanup; a missing object or an unavailable service never raises."""
-    try:
-        headers = _storage_headers(app_settings, error_type=CatalogImageStorageError)
-    except CatalogImageStorageError:
-        return
     for path in paths:
         try:
-            httpx.request("DELETE", _storage_object_url(path, app_settings, bucket), headers=headers, timeout=10)
-        except httpx.HTTPError:
+            _storage_request("DELETE", bucket, path, app_settings=app_settings, error_type=CatalogImageStorageError)
+        except CatalogImageStorageError:
             continue

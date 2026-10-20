@@ -1,66 +1,12 @@
-# Balaji Faki Point — Frontend Application
+# Balaji Faki Point — Storefront
 
-React 19 + TypeScript + Vite SPA for **Balaji Faki Point** (Customer Storefront & 12-Module Owner/Admin Management Panel).
+The customer website (React 19 + TypeScript + Vite). The Owner Admin Panel is a separate, self-contained app in [`../admin-panel`](../admin-panel).
 
-## Directory Layout
+- `src/features/`: catalog (home, product details), orders (form, review, confirmation, My Orders), payments (UPI QR and screenshot upload), reviews, store, help, account.
+- `src/lib/auth.ts`: Neon Auth sign-in; `src/lib/api.ts`: API calls with the signed-in user's token; `src/lib/contracts.ts`: response validation.
+- `src/components/common/EmailSignIn.tsx`: sign-in, account creation with an emailed code, and password reset.
+- `tests/`: `npm test`.
 
-```text
-frontend/
-├── public/
-│   ├── favicon.svg
-│   ├── icons/
-│   ├── images/
-│   └── logos/
-├── src/
-│   ├── app/
-│   │   ├── providers/
-│   │   ├── router/
-│   │   ├── App.tsx
-│   │   └── router.tsx
-│   ├── components/
-│   │   ├── common/
-│   │   └── layout/
-│   ├── constants/
-│   ├── context/
-│   ├── features/
-│   │   ├── admin/          # 12 Admin modules, RBAC guard, state machine, typed API
-│   │   ├── catalog/        # Home & catalog API
-│   │   ├── help/           # Help & FAQs
-│   │   ├── orders/         # Order Form, Review Order, Confirmation, My Orders, Tracking
-│   │   ├── payments/       # Payment Flow, QR Payment, Payment Verification
-│   │   ├── reviews/        # Customer Reviews
-│   │   └── store/          # Visit Store
-│   ├── hooks/
-│   ├── lib/
-│   │   ├── api/
-│   │   ├── auth/
-│   │   └── supabase/
-│   ├── services/
-│   ├── styles/
-│   ├── types/
-│   ├── utils/
-│   └── main.tsx
-├── tests/
-│   ├── auth.test.mjs
-│   ├── checkout.test.mjs
-│   ├── secondary-pages.test.mjs
-│   └── admin.test.mjs
-├── .env.example
-├── index.html
-├── package.json
-├── tsconfig.json
-├── vercel.json
-└── vite.config.ts
-```
+Commands (inside `frontend/`): `npm install`, `npm run dev` (http://localhost:5173), `npm test`, `npm run build` (-> `frontend/dist`).
 
-## Commands
-
-Run from either the repository root or `frontend/`:
-
-```powershell
-npm run dev        # Start local Vite dev server at http://localhost:5173
-npm run typecheck  # Run TypeScript strict validation
-npm test           # Run all 4 isolated test suites
-npm run build      # Build production bundle into frontend/dist
-npm run preview    # Preview production bundle locally
-```
+Commands and environment: see the [root README](../README.md) and [../.env.example](../.env.example).

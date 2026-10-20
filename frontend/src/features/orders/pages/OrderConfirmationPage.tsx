@@ -5,7 +5,7 @@ import NoActiveOrder from '../../../components/common/NoActiveOrder';
 import Notice from '../../../components/common/Notice';
 import EmailSignIn from '../../../components/common/EmailSignIn';
 import { useOrder, useOrderDispatch } from '../../../context/OrderContext';
-import { useSession } from '../../../lib/supabase';
+import { useSession } from '../../../lib/auth';
 import { formatINR, formatPackSize, getErrorMessage } from '../../../lib/api';
 import { getOrder } from '../api/ordersApi';
 import { getPaymentStatus, isPaymentConfirmed, isConfirmedOrder } from '../../payments/api/paymentsApi';

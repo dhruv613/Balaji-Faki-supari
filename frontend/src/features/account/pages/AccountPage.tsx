@@ -4,12 +4,13 @@ import EmailSignIn from '../../../components/common/EmailSignIn';
 import MobileNumberInput from '../../../components/common/MobileNumberInput';
 import Notice from '../../../components/common/Notice';
 import { normalizeIndianMobile, readCustomerDetails, validateCustomerDetails } from '../../../lib/customer';
-import { supabase, useSession } from '../../../lib/supabase';
+import { useSession } from '../../../lib/auth';
+import { updateProfile } from '../../../lib/profile';
 
 /** Customer profile: name and mobile number. Role and other privileged fields can never be edited here. */
 export default function AccountPage() {
   const { session, loading } = useSession();
-  const saved = readCustomerDetails(session?.user.user_metadata);
+  const saved = readCustomerDetails(session?.user);
   const [fullName, setFullName] = useState(saved.fullName);
   const [phone, setPhone] = useState(saved.phone);
   const [submitted, setSubmitted] = useState(false);
@@ -26,13 +27,10 @@ export default function AccountPage() {
   async function save(event: FormEvent) {
     event.preventDefault();
     setSubmitted(true); setError(''); setMessage('');
-    if (Object.keys(validateCustomerDetails({ fullName, phone })).length || !supabase || busy) return;
+    if (Object.keys(validateCustomerDetails({ fullName, phone })).length || busy) return;
     setBusy(true);
     try {
-      const { error: updateError } = await supabase.auth.updateUser({
-        data: { fullName: fullName.trim(), phone: `+91${normalizeIndianMobile(phone)}` },
-      });
-      if (updateError) throw updateError;
+      await updateProfile({ fullName: fullName.trim(), phone: `+91${normalizeIndianMobile(phone)}` });
       setMessage('Your details were saved.');
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Unable to save your details. Please try again.');

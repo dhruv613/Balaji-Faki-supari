@@ -1,7 +1,7 @@
 import { Navigate, useSearchParams } from 'react-router-dom';
 import EmailSignIn from '../../../components/common/EmailSignIn';
 import { safeNextPath } from '../../../lib/navigation';
-import { useSession } from '../../../lib/supabase';
+import { useSession } from '../../../lib/auth';
 
 /** Explicit Sign in / Create account. A signed-in visitor continues to `?next=` (default: Home). */
 export default function LoginPage() {
