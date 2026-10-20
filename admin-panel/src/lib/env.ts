@@ -6,7 +6,7 @@
 
 export const env = {
   /** FastAPI base URL, e.g. http://localhost:8000/api. Production builds default to the same-origin `/api` (the backend service of the same Vercel project). */
-  apiBaseUrl: (import.meta.env.VITE_API_BASE_URL ?? (import.meta.env.PROD ? '/api' : '')).replace(/\/$/, ''),
+  apiBaseUrl: (import.meta.env.VITE_API_BASE_URL?.trim() || (import.meta.env.PROD ? '/api' : 'http://127.0.0.1:8000/api')).replace(/\/+$/, ''),
 
   /** Support WhatsApp number in international format, digits only. */
   supportWhatsApp: import.meta.env.VITE_SUPPORT_WHATSAPP ?? '918000961030',

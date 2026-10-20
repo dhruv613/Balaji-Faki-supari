@@ -314,6 +314,22 @@ assert.equal(
   'admin-approve-payment-pay-101',
 );
 
+await adminApi.getAdminProducts();
+assert.equal(capturedRequest.url, 'https://api.balajifaki.test/api/admin/products');
+assert.equal(capturedRequest.options.cache, 'no-store');
+assert.ok(capturedRequest.options.signal, 'catalog requests have a timeout');
+await adminApi.getAdminInventory();
+assert.equal(capturedRequest.url, 'https://api.balajifaki.test/api/admin/inventory');
+assert.equal(capturedRequest.options.cache, 'no-store');
+await adminApi.createStockAdjustment({ inventoryItemId: 'v1', productId: 'p1', packSize: '250g', adjustmentType: 'ADD', quantity: 10, reason: 'Fresh batch' });
+assert.deepEqual(JSON.parse(capturedRequest.options.body), { inventoryItemId: 'v1', adjustmentType: 'ADD', quantity: 10, reason: 'Fresh batch' });
+fakeFetch = async () => { throw new Error('network offline'); };
+await assert.rejects(adminApi.getAdminProducts(), /Cannot reach the Balaji Faki Point server/);
+fakeFetch = async () => new Response('<html>SPA fallback</html>', { status: 200 });
+await assert.rejects(adminApi.getAdminProducts(), /unreadable response/);
+fakeFetch = async () => new Response(JSON.stringify({ detail: 'Catalog database unavailable' }), { status: 503 });
+await assert.rejects(adminApi.getAdminProducts(), /Catalog database unavailable/);
+
 /* ================================================================== */
 /*  7. NEON POSTGRESQL SCHEMA VERIFICATION                            */
 /* ================================================================== */
@@ -583,6 +599,8 @@ for (const bad of [{ price: '-1' }, { price: 'abc' }, { cost: '-5' }, { price: '
 }
 const approved = { ...variant, priceConfirmed: true };
 assert.deepEqual(JSON.parse(JSON.stringify(buildVariantPatch(approved, { cost: '180', price: '500', available: false, approve: true }).patch)), { packSize: '500g' }, 'already approved: no change');
+assert.deepEqual(JSON.parse(JSON.stringify(buildVariantPatch(approved, { cost: '180', price: '500', available: false, approve: false }).patch)), { packSize: '500g', priceConfirmed: false }, 'unchecking approval persists revocation');
+assert.deepEqual(JSON.parse(JSON.stringify(buildVariantPatch(approved, { cost: '180', price: '550', available: false, approve: false }).patch)), { packSize: '500g', price: 550, priceConfirmed: false }, 'a changed approved price needs fresh approval');
 const productsSource = readFileSync(new URL('../src/features/admin/pages/AdminProductsPage.tsx', import.meta.url), 'utf8');
 assert.doesNotMatch(productsSource, /createAdminProduct|imageUrl|SAMPLE_/, 'no create flow (fixed catalogue) and no free-text image URLs');
 
@@ -594,8 +612,113 @@ for (const col of ['Product', 'Pack Size', 'Cost Price', 'Selling Price', 'Actio
   assert.match(pricesHtml, new RegExp(col), `Price Management missing column: ${col}`);
 }
 assert.match(pricesHtml, /No sample product or price records are shown/);
-assert.match(pricesHtml, /No products are available from the local catalog yet/);
+assert.match(pricesHtml, /No products were returned by the catalog API/);
 assert.doesNotMatch(pricesHtml, /Faki Premium Blend/);
+
+// Exercise page callbacks and asynchronous load states without a DOM or extra test dependencies.
+function mountPage(path, apiOverrides) {
+  const values = [], dependencies = [], effects = [];
+  let stateIndex = 0, effectIndex = 0, tree;
+  const hooks = {
+    ...React,
+    useState(initial) {
+      const index = stateIndex++;
+      if (!(index in values)) values[index] = typeof initial === 'function' ? initial() : initial;
+      return [values[index], (next) => { values[index] = typeof next === 'function' ? next(values[index]) : next; }];
+    },
+    useEffect(effect, deps) {
+      const index = effectIndex++;
+      if (!dependencies[index] || deps.some((value, i) => value !== dependencies[index][i])) effects.push(effect);
+      dependencies[index] = deps;
+    },
+  };
+  const Page = load(path, {
+    ...commonPageStubs,
+    react: hooks,
+    'react-router-dom': { ...require('react-router-dom'), useSearchParams: () => [new URLSearchParams()] },
+    '../../../lib/env': { env },
+    '../api': { ...adminApi, ...apiOverrides },
+  }).default;
+  const render = () => { stateIndex = 0; effectIndex = 0; tree = Page(); return tree; };
+  render();
+  return {
+    render,
+    async settle() { effects.splice(0).forEach((effect) => effect()); await new Promise((resolve) => setImmediate(resolve)); return render(); },
+    get nodes() {
+      const walk = (node) => Array.isArray(node) ? node.flatMap(walk) : React.isValidElement(node) ? [node, ...walk(node.props.children)] : [];
+      return walk(tree);
+    },
+    get html() { return renderToStaticMarkup(React.createElement(MemoryRouter, null, tree)); },
+  };
+}
+const liveProduct = { id: 'p1', type: 'faki', name: 'Faki', nameGu: 'ફાકી', active: true, images: [], variants: [{ ...approved, isAvailable: true, availableQuantity: 0 }] };
+let catalogLoads = 0, savedPrice;
+const pricesPage = mountPage('src/features/admin/pages/AdminProductsPage.tsx', {
+  getAdminProducts: async () => { if (++catalogLoads === 1) throw new apiModule.ApiError(503, 'FastAPI catalog unavailable'); return [liveProduct]; },
+  updateAdminProduct: async (_id, payload) => { savedPrice = payload; return { ...liveProduct, variants: [{ ...liveProduct.variants[0], ...payload.variants[0] }] }; },
+});
+await pricesPage.settle();
+assert.match(pricesPage.html, /FastAPI catalog unavailable/);
+assert.doesNotMatch(pricesPage.html, /admin-skeleton/, 'a failed request stops loading');
+pricesPage.nodes.find((node) => node.type === AdminStatesMod.ErrorState).props.onRetry();
+pricesPage.render();
+await pricesPage.settle();
+assert.equal(catalogLoads, 2, 'retry calls the API again');
+assert.match(pricesPage.html, /Out of stock/);
+pricesPage.nodes.find((node) => node.type === 'button' && node.props.children === 'Edit').props.onClick();
+pricesPage.render();
+assert.equal(pricesPage.nodes.find((node) => node.type === 'input' && node.props.type === 'checkbox').props.checked, true);
+pricesPage.nodes.find((node) => node.props['aria-label'] === 'Selling Price for Faki 500g').props.onChange({ target: { value: '550' } });
+pricesPage.render();
+assert.equal(pricesPage.nodes.find((node) => node.type === 'input' && node.props.type === 'checkbox').props.checked, false, 'changing price withdraws the old approval in the form');
+pricesPage.nodes.find((node) => node.type === 'input' && node.props.type === 'checkbox').props.onChange({ target: { checked: true } });
+pricesPage.render();
+pricesPage.nodes.find((node) => node.type === 'button' && node.props.children === 'Save').props.onClick();
+await pricesPage.settle();
+assert.deepEqual(JSON.parse(JSON.stringify(savedPrice)), { variants: [{ packSize: '500g', price: 550, priceConfirmed: true }] });
+assert.match(pricesPage.html, /₹550/);
+assert.match(pricesPage.html, /Approved/);
+
+let stockLoads = 0, stockRequest;
+const inventoryItem = { id: 'v1', productId: 'p1', productName: 'Faki', productNameGu: 'ફાકી', packSize: '500g', sku: 'FAKI-500', totalStock: 0, availableStock: 0, reservedStock: 0, lowStockThreshold: 2, isLowStock: true };
+const inventoryPage = mountPage('src/features/admin/pages/AdminInventoryPage.tsx', {
+  getAdminInventory: async () => ({ summary: { totalStockUnits: 0, availableStockUnits: 0, reservedStockUnits: 0, lowStockAlertsCount: 1, reservationExpiryMinutes: 30 }, items: [{ ...inventoryItem, availableStock: stockLoads++ ? 10 : 0 }], movements: [] }),
+  createStockAdjustment: async (payload) => { stockRequest = payload; },
+});
+await inventoryPage.settle();
+inventoryPage.nodes.find((node) => node.type === 'button' && node.props.children === 'Adjust Stock').props.onClick();
+inventoryPage.render();
+inventoryPage.nodes.find((node) => node.props.id === 'adj-reason').props.onChange({ target: { value: 'Fresh batch' } });
+inventoryPage.render();
+await inventoryPage.nodes.find((node) => node.type === 'form').props.onSubmit({ preventDefault() {} });
+inventoryPage.render();
+assert.equal(stockRequest.adjustmentType, 'ADD');
+assert.equal(stockRequest.quantity, 10);
+assert.equal(stockLoads, 2, 'stock and movement history reload after a successful adjustment');
+assert.match(inventoryPage.html, /<strong>10<\/strong>/);
+
+let inventoryReads = 0, stockWrites = 0;
+const inventoryAfterSavedError = mountPage('src/features/admin/pages/AdminInventoryPage.tsx', {
+  getAdminInventory: async () => {
+    if (++inventoryReads === 2) throw new apiModule.ApiError(503, 'Inventory read unavailable');
+    return { summary: {}, items: [inventoryItem], movements: [] };
+  },
+  createStockAdjustment: async () => { stockWrites++; },
+});
+await inventoryAfterSavedError.settle();
+inventoryAfterSavedError.nodes.find((node) => node.type === 'button' && node.props.children === 'Adjust Stock').props.onClick();
+inventoryAfterSavedError.render();
+inventoryAfterSavedError.nodes.find((node) => node.props.id === 'adj-reason').props.onChange({ target: { value: 'Fresh batch' } });
+inventoryAfterSavedError.render();
+await inventoryAfterSavedError.nodes.find((node) => node.type === 'form').props.onSubmit({ preventDefault() {} });
+inventoryAfterSavedError.render();
+assert.match(inventoryAfterSavedError.html, /Stock was saved, but updated inventory could not be loaded/);
+assert.equal(inventoryAfterSavedError.nodes.find((node) => node.type === DetailDrawerMod.default).props.open, false, 'successful mutation closes the adjustment form even if its refresh fails');
+inventoryAfterSavedError.nodes.find((node) => node.type === AdminStatesMod.ErrorState).props.onRetry();
+inventoryAfterSavedError.render();
+await inventoryAfterSavedError.settle();
+assert.equal(stockWrites, 1, 'retry after a refresh failure must not add the same stock twice');
+assert.equal(inventoryReads, 3);
 
 const ordersHtml = renderToStaticMarkup(
   React.createElement(MemoryRouter, { initialEntries: ['/admin/orders'] }, React.createElement(OrdersPage)),
@@ -647,7 +770,7 @@ const inventoryHtml = renderToStaticMarkup(
 assert.match(inventoryHtml, /Inventory data unavailable/);
 assert.match(inventoryHtml, /No sample inventory or movements are shown/);
 assert.match(inventoryHtml, /No inventory variants match the current filters/);
-assert.match(inventoryHtml, /No stock movements are available from the local inventory service/);
+assert.match(inventoryHtml, /No stock movements were returned by the inventory API/);
 
 const refundsHtml = renderToStaticMarkup(
   React.createElement(MemoryRouter, { initialEntries: ['/admin/refunds'] }, React.createElement(RefundsPage)),

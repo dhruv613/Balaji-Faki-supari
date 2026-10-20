@@ -18,7 +18,7 @@ export function PackPrices({ product, selected, onSelect }: {
     <ul className="pack-prices" aria-label={`${product.name} pack sizes and prices`} style={{ listStyle: 'none', padding: 0, margin: '12px 0' }}>
       {product.packSizes.map((size) => {
         const price = product.prices[size];
-        const unavailable = price === null || product.inStock?.[size] === false;
+        const unavailable = price == null || product.inStock?.[size] === false || product.priceConfirmed?.[size] === false;
         const development = price !== null && product.priceConfirmed?.[size] === false;
         const content = (
           <>

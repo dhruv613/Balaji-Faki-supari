@@ -37,6 +37,7 @@ from .common import (
     _get_store_settings,
     _is_weight_product,
     _iso,
+    _no_store,
     _pack_sort_key,
     _serialize_product_images,
     _serialize_product_information,
@@ -79,7 +80,7 @@ def _serialize_admin_product(p: Product) -> dict[str, Any]:
     }
 
 
-@router.get("/admin/products")
+@router.get("/admin/products", dependencies=[Depends(_no_store)])
 def list_admin_products(
     _admin: AuthenticatedPrincipal = Depends(get_owner_admin_principal),
     db: Session = Depends(get_db),
@@ -241,7 +242,7 @@ def _serialize_stock_movement(db: Session, movement: InventoryMovement) -> dict[
     }
 
 
-@router.get("/admin/inventory")
+@router.get("/admin/inventory", dependencies=[Depends(_no_store)])
 def get_admin_inventory(
     _admin: AuthenticatedPrincipal = Depends(get_owner_admin_principal),
     db: Session = Depends(get_db),

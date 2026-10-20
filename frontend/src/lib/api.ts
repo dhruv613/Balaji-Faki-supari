@@ -1,9 +1,9 @@
 /**
- * Shared API utilities and placeholder product data.
+ * Shared API utilities and product display metadata.
  *
  * All real API calls will go through FastAPI. This file provides:
  *   - A pre-configured `fetch` wrapper that reads the base URL from env
- *   - Placeholder product catalogue (display-only until backend is live)
+ *   - Product names/photos used in draft summaries before the catalog loads
  */
 
 import { env } from './env';
@@ -98,8 +98,7 @@ export function getErrorMessage(err: unknown): string {
 }
 
 /* ---------- Catalogue shell ---------- */
-/* Names and each product's first photo (static files) only. Prices always come from the database through FastAPI; while
-   they load, or if the server is unreachable, every price is `null` ("Awaiting price") instead of an invented number. */
+/* Summary metadata only. The storefront catalog renders API results or an explicit error, never this shell. */
 
 export const PRODUCT_SHELL: Product[] = [
   {

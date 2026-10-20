@@ -12,7 +12,7 @@ import type {
   UpdateAdminProductRequest,
 } from '../types';
 import { notifyAdminDataChanged } from '../lib/orderStateMachine';
-import { DetailDrawer, LoadingSkeleton, useAdminToast } from '../components';
+import { DetailDrawer, ErrorState, LoadingSkeleton, useAdminToast } from '../components';
 
 type InformationKey = keyof ProductInformation;
 
@@ -64,6 +64,8 @@ export function buildVariantPatch(
   if (edit.approve && (priceChanged || !variant.priceConfirmed)) {
     if (price === null) return { patch, error: 'Set a selling price before approving it.' };
     patch.priceConfirmed = true;
+  } else if (!edit.approve && variant.priceConfirmed) {
+    patch.priceConfirmed = false;
   }
   return { patch };
 }
@@ -84,17 +86,18 @@ export default function AdminProductsPage() {
   const [loading, setLoading] = useState(Boolean(env.apiBaseUrl));
   const [error, setError] = useState('');
   const [isLive, setIsLive] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
 
   useEffect(() => {
     let active = true;
-    if (!env.apiBaseUrl) { setLoading(false); return; }
+    if (!env.apiBaseUrl) { setError('The API URL is missing. Configure VITE_API_BASE_URL and rebuild the Admin Panel.'); setLoading(false); return; }
     setLoading(true); setError('');
     getAdminProducts()
       .then((res) => { if (active) { setProducts(res); setIsLive(true); } })
       .catch((err) => { if (active) setError(getErrorMessage(err)); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, []);
+  }, [loadAttempt]);
 
   function replaceProduct(updated: AdminProduct) {
     setProducts((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
@@ -210,7 +213,7 @@ export default function AdminProductsPage() {
         <div>
           <h1 className="page__header">Price Management</h1>
           <p className="page__subtitle">
-            Manage Faki (<span lang="gu">ફાકી</span>) and Supari (<span lang="gu">સુપારી</span>) cost prices, selling prices, availability, photos and product facts.
+            Manage product cost prices, selling prices, availability, photos and product facts.
           </p>
         </div>
         <Link to="/admin/inventory" className="btn btn--outline btn--sm">Manage stock</Link>
@@ -222,10 +225,10 @@ export default function AdminProductsPage() {
 
       {!isLive && (
         <Notice tone="info" title="Server-Authoritative Pricing Policy">
-          Connect the local FastAPI server to load and edit database prices. No sample product or price records are shown.
+          {loading ? 'Loading saved prices from the API…' : 'Prices and approvals are saved through the FastAPI backend.'} No sample product or price records are shown.
         </Notice>
       )}
-      {error && <Notice tone="error" title="Price catalog sync error">{error}</Notice>}
+      {error && <ErrorState title="Price catalog sync error" message={error} onRetry={() => setLoadAttempt((attempt) => attempt + 1)} />}
 
       {loading ? (
         <LoadingSkeleton rows={6} />
@@ -278,7 +281,7 @@ export default function AdminProductsPage() {
                           {mine ? (
                             <input type="number" min="0" step="0.01" className="input admin-price-input" aria-label={`Selling Price for ${product.name} ${variant.packSize}`}
                               placeholder="Selling price (₹)" value={mine.price} disabled={rowBusy}
-                              onChange={(e) => setRow((prev) => (prev ? { ...prev, price: e.target.value } : null))} />
+                              onChange={(e) => setRow((prev) => (prev ? { ...prev, price: e.target.value, approve: false } : null))} />
                           ) : <strong>{variant.price === null ? 'Awaiting price' : formatINR(variant.price)}</strong>}
                         </td>
                         <td>
@@ -298,7 +301,7 @@ export default function AdminProductsPage() {
                               <input type="checkbox" checked={mine.available} disabled={rowBusy}
                                 onChange={(e) => setRow((prev) => (prev ? { ...prev, available: e.target.checked } : null))} /> On sale
                             </label>
-                          ) : variant.isAvailable ? 'On sale' : <span className="text-secondary">Off sale</span>}
+                          ) : <span className="text-secondary">{!product.active || !variant.isAvailable ? 'Off sale' : variant.availableQuantity <= 0 ? 'Out of stock' : variant.price === null ? 'Awaiting price' : !variant.priceConfirmed ? 'Awaiting approval' : 'On sale'}</span>}
                         </td>
                         <td>
                           {mine ? (
@@ -356,7 +359,7 @@ export default function AdminProductsPage() {
                   })()] : []),
                 ])}
                 {products.length === 0 && (
-                  <tr><td colSpan={8} className="text-secondary">No products are available from the local catalog yet.</td></tr>
+                  <tr><td colSpan={8} className="text-secondary">{error ? 'Prices could not be loaded. Try the request again.' : 'No products were returned by the catalog API.'}</td></tr>
                 )}
               </tbody>
             </table>

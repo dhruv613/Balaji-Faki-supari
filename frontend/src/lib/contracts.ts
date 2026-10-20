@@ -90,7 +90,8 @@ export function readQuote(value: unknown): CheckoutQuote {
 }
 
 export function readProducts(value: unknown): Product[] {
-  if (!Array.isArray(value)) return invalid();
+  const invalidCatalog = (): never => { throw new Error('The server returned incomplete product or price information. Please try again or contact the store.'); };
+  if (!Array.isArray(value)) return invalidCatalog();
   for (const product of value) {
     if (
       !record(product) ||
@@ -109,7 +110,7 @@ export function readProducts(value: unknown): Product[] {
       !product.packSizes.length ||
       !record(product.prices)
     ) {
-      return invalid();
+      return invalidCatalog();
     }
     const prices = product.prices;
     if (
@@ -120,7 +121,7 @@ export function readProducts(value: unknown): Product[] {
           (prices[size] === null || money(prices[size])),
       )
     ) {
-      return invalid();
+      return invalidCatalog();
     }
   }
   return value as Product[];

@@ -7,6 +7,7 @@ import sys
 import tempfile
 import time
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -25,7 +26,7 @@ os.environ["BFP_ENV"] = "local"
 from auth_support import mint_token, start_auth  # noqa: E402
 
 import app.db.session as db_session  # noqa: E402
-from app.db.models import Customer, Order, OrderItem, ProductVariant, Review, UserProfile  # noqa: E402
+from app.db.models import Customer, Order, OrderItem, ProductVariant, Review, StoreSettings, UserProfile, utcnow  # noqa: E402
 from app.db.seed import seed_development_data  # noqa: E402
 from app.main import app  # noqa: E402
 from sqlalchemy import select  # noqa: E402
@@ -97,6 +98,78 @@ class AdminHttpContractTests(unittest.TestCase):
         self.assertEqual(response.json()["information"]["shelfLife"], "6 months")
         unknown = self.client.patch("/api/admin/products/faki", headers=self.headers, json={"imageUrl": "/x.png"})
         self.assertEqual(unknown.status_code, 422)  # free-text image URLs are no longer accepted
+
+    def test_saved_price_approval_stock_and_order_snapshots_survive_restart(self) -> None:
+        import app.routes.common as common
+
+        with db_session.SessionLocal() as db:
+            variant = db.get(ProductVariant, self.variant_id)
+            variant.total_stock, variant.reserved_stock = 0, 0
+            store = db.get(StoreSettings, 1)
+            store.business_settings_confirmed_at = utcnow()
+            buyer = db.scalar(select(UserProfile).where(UserProfile.email == "buyer-contract@example.test"))
+            buyer.auth_subject = buyer.id
+            buyer_id = buyer.id
+            old_item = db.scalar(select(OrderItem).where(OrderItem.variant_id == self.variant_id))
+            old_item_id, old_order_id = old_item.id, old_item.order_id
+            old_unit_price, old_total = old_item.unit_price_paise, db.get(Order, old_item.order_id).total_paise
+            db.commit()
+
+        buyer_headers = {"Authorization": f"Bearer {mint_token(buyer_id, 'buyer-contract@example.test')}"}
+        change = {"variants": [{"packSize": "1kg", "price": 1125}]}
+        self.assertEqual(self.client.patch("/api/admin/products/faki", json=change).status_code, 401)
+        self.assertEqual(self.client.patch("/api/admin/products/faki", headers=buyer_headers, json=change).status_code, 403)
+        quote = {"product": "faki", "packSize": "1kg", "quantity": 1, "pinCode": "360005"}
+
+        with patch.object(common, "settings", replace(common.settings, app_env="production")):
+            saved = self.client.patch("/api/admin/products/faki", headers=self.headers, json=change)
+            self.assertEqual(saved.status_code, 200, saved.text)
+            pack = next(v for v in saved.json()["variants"] if v["packSize"] == "1kg")
+            self.assertEqual((pack["price"], pack["priceConfirmed"]), (1125, False))
+            self.assertEqual(self.client.post("/api/checkout/quote", json=quote).status_code, 503)
+
+            approved = self.client.patch("/api/admin/products/faki", headers=self.headers,
+                                         json={"variants": [{"packSize": "1kg", "priceConfirmed": True}]})
+            self.assertEqual(approved.status_code, 200, approved.text)
+            self.assertEqual(self.client.post("/api/checkout/quote", json=quote).status_code, 409)
+            public = self.client.get("/api/products/faki")
+            self.assertEqual((public.json()["prices"]["1kg"], public.json()["inStock"]["1kg"]), (1125, False))
+
+            adjustment = {"inventoryItemId": self.variant_id, "adjustmentType": "ADD", "quantity": 5,
+                          "reason": "Fresh batch received"}
+            self.assertEqual(self.client.post("/api/admin/inventory/adjustments", headers=buyer_headers, json=adjustment).status_code, 403)
+            added = self.client.post("/api/admin/inventory/adjustments", headers=self.headers, json=adjustment)
+            self.assertEqual(added.status_code, 201, added.text)
+            self.assertEqual(self.client.get("/api/products/faki").json()["inStock"]["1kg"], True)
+            self.assertEqual(self.client.post("/api/checkout/quote", json=quote).json()["subtotal"], 1125)
+
+            order = self.client.post("/api/orders", headers=buyer_headers, json={**quote, "fullName": "Buyer Name",
+                                     "phone": "9876543210", "address": "12 Test Society, University Road, Rajkot"})
+            self.assertEqual(order.status_code, 200, order.text)
+            self.assertEqual(order.json()["subtotal"], 1125)
+
+            db_session.configure_database(DB_URL)  # reopen the same file, as a fresh backend process would
+            for path in ("/api/products", "/products"):
+                listing = self.client.get(path)
+                self.assertEqual(listing.status_code, 200, listing.text)
+                self.assertIn("no-store", listing.headers.get("cache-control", ""))
+                faki = next(p for p in listing.json() if p["type"] == "faki")
+                self.assertEqual((faki["prices"]["1kg"], faki["priceConfirmed"]["1kg"], faki["inStock"]["1kg"]), (1125, True, True))
+            self.assertIn("no-store", self.client.get("/api/products/faki").headers.get("cache-control", ""))
+            inventory = self.client.get("/api/admin/inventory", headers=self.headers).json()
+            stock = next(i for i in inventory["items"] if i["id"] == self.variant_id)
+            self.assertEqual((stock["totalStock"], stock["availableStock"], stock["reservedStock"]), (5, 4, 1))
+            with db_session.SessionLocal() as db:
+                self.assertEqual(db.get(OrderItem, old_item_id).unit_price_paise, old_unit_price)
+                self.assertEqual(db.get(Order, old_order_id).total_paise, old_total)
+                new_item = db.scalar(select(OrderItem).where(OrderItem.order_id == order.json()["id"]))
+                self.assertEqual(new_item.unit_price_paise, 112500)
+
+            revoked = self.client.patch("/api/admin/products/faki", headers=self.headers,
+                                        json={"variants": [{"packSize": "1kg", "priceConfirmed": False}]})
+            self.assertEqual(revoked.status_code, 200, revoked.text)
+            self.assertFalse(self.client.get("/api/products/faki").json()["priceConfirmed"]["1kg"])
+            self.assertEqual(self.client.post("/api/checkout/quote", json=quote).status_code, 503)
 
     def test_settings_payloads_and_qr_upload(self) -> None:
         patch_body = {"shopIntro": "Owner written", "deliveryCharges": 30, "freeDeliveryThreshold": 1500,

@@ -236,7 +236,7 @@ export async function rejectAdminPayment(
 
 /** GET /api/admin/products */
 export async function getAdminProducts(): Promise<AdminProduct[]> {
-  return apiFetch<AdminProduct[]>(resolveApiPath('/api/admin/products'));
+  return apiFetch<AdminProduct[]>(resolveApiPath('/api/admin/products'), { cache: 'no-store' });
 }
 
 /** POST /api/admin/products/{id}/images - upload one product photo (public catalogue bucket) */
@@ -278,7 +278,7 @@ export async function updateAdminProduct(
 
 /** GET /api/admin/inventory */
 export async function getAdminInventory(): Promise<AdminInventoryResponse> {
-  return apiFetch<AdminInventoryResponse>(resolveApiPath('/api/admin/inventory'));
+  return apiFetch<AdminInventoryResponse>(resolveApiPath('/api/admin/inventory'), { cache: 'no-store' });
 }
 
 /** POST /api/admin/inventory/adjustments */

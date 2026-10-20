@@ -190,6 +190,10 @@ def _resolve_order_by_id_or_number(db: Session, order_identifier: str) -> Order 
     )
 
 
+def _no_store(response: Response) -> None:
+    response.headers["Cache-Control"] = "no-store"
+
+
 def _get_store_settings(db: Session) -> StoreSettings:
     """Read-only. Store settings come from the database migration or the explicit development seed, never from a request."""
     s = db.get(StoreSettings, 1)

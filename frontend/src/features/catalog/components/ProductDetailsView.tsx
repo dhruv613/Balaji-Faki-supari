@@ -26,7 +26,7 @@ export default function ProductDetailsView({ product, headingTag: Heading = 'h1'
 
   useEffect(() => {
     let active = true;
-    setSelected(product.packSizes.find((size) => product.prices[size] !== null && product.inStock?.[size] !== false) ?? product.packSizes[0] ?? null);
+    setSelected(product.packSizes.find((size) => product.prices[size] != null && product.inStock?.[size] !== false && product.priceConfirmed?.[size] !== false) ?? product.packSizes[0] ?? null);
     setImageIndex(0); setReviews(null);
     getPublishedReviews(product.type, 'newest')
       .then((list) => { if (active) setReviews(list); })
@@ -39,9 +39,10 @@ export default function ProductDetailsView({ product, headingTag: Heading = 'h1'
     : product.imageUrl ? [{ id: 'bundled', url: product.imageUrl, alt: product.name, position: 0 }] : [];
   const current = gallery[Math.min(imageIndex, Math.max(0, gallery.length - 1))];
   const price = selected ? product.prices[selected] : null;
+  const canOrder = Boolean(selected && price != null && product.inStock?.[selected] !== false && product.priceConfirmed?.[selected] !== false);
 
   function orderNow() {
-    if (!selected || price === null) return;
+    if (!selected || !canOrder) return;
     if (draftProduct !== product.type) dispatch({ type: 'SET_PRODUCT', payload: product.type });
     dispatch({ type: 'SET_PACK_SIZE', payload: selected });
     navigate('/order');
@@ -73,8 +74,8 @@ export default function ProductDetailsView({ product, headingTag: Heading = 'h1'
           {product.description?.trim() && <p style={{ marginTop: 12, whiteSpace: 'pre-line' }}>{product.description.trim()}</p>}
           <h2 style={{ fontSize: 18, marginTop: 16 }}>Pack size &amp; price</h2>
           <PackPrices product={product} selected={selected ?? undefined} onSelect={setSelected} />
-          <button type="button" className="btn btn--primary btn--full" disabled={!selected || price === null} onClick={orderNow} id="product-order-btn">
-            {selected && price !== null ? `Order ${product.name} · ${formatPackSize(selected)}` : 'Not available to order yet'}
+          <button type="button" className="btn btn--primary btn--full" disabled={!canOrder} onClick={orderNow} id="product-order-btn">
+            {canOrder && selected ? `Order ${product.name} · ${formatPackSize(selected)}` : 'Not available to order yet'}
           </button>
         </aside>
       </div>
