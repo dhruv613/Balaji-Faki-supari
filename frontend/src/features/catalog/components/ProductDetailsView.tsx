@@ -26,7 +26,7 @@ export default function ProductDetailsView({ product, headingTag: Heading = 'h1'
 
   useEffect(() => {
     let active = true;
-    setSelected(product.packSizes.find((size) => product.prices[size] !== null) ?? product.packSizes[0] ?? null);
+    setSelected(product.packSizes.find((size) => product.prices[size] !== null && product.inStock?.[size] !== false) ?? product.packSizes[0] ?? null);
     setImageIndex(0); setReviews(null);
     getPublishedReviews(product.type, 'newest')
       .then((list) => { if (active) setReviews(list); })

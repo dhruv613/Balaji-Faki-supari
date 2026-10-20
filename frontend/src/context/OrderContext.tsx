@@ -59,10 +59,11 @@ export type Action =
 
 export const MAX_QUANTITY = 20;
 
-/** First pack size that currently has a price, else the first one (never a hard-coded size). */
+/** First pack size that has a price and stock, else the first one (never a hard-coded size). */
 function defaultPackSize(products: Product[], type: ProductType): PackSize {
   const product = products.find((item) => item.type === type);
-  return product?.packSizes.find((size) => product.prices[size] != null) ?? product?.packSizes[0] ?? '250g';
+  return product?.packSizes.find((size) => product.prices[size] != null && product.inStock?.[size] !== false)
+    ?? product?.packSizes[0] ?? '250g';
 }
 
 export function reducer(state: OrderState, action: Action): OrderState {

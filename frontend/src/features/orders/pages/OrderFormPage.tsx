@@ -189,7 +189,9 @@ export default function OrderFormPage() {
                     }
                   >
                     {(currentProduct?.packSizes ?? []).map((sz) => (
-                      <option key={sz} value={sz}>{formatPackSize(sz)}</option>
+                      <option key={sz} value={sz} disabled={currentProduct?.inStock?.[sz] === false}>
+                        {formatPackSize(sz)}{currentProduct?.inStock?.[sz] === false ? ' (out of stock)' : ''}
+                      </option>
                     ))}
                     {currentProduct?.pricePerKg != null && <option value={TYPED_OPTION}>Other amount (type your own)</option>}
                   </select>

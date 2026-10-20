@@ -38,7 +38,8 @@ def _serialize_public_product(db: Session, product: Product) -> dict[str, Any]:
     in_stock: dict[str, bool] = {v.pack_size: False for v in variants}
     for variant in variants:
         sellable = variant.is_available and variant.available_stock > 0
-        prices[variant.pack_size] = paise_to_inr(variant.price_paise) if sellable else None
+        # The owner's price is always shown for packs on sale; sold-out packs say so via inStock (orders check stock again).
+        prices[variant.pack_size] = paise_to_inr(variant.price_paise) if variant.is_available else None
         price_confirmed[variant.pack_size] = bool(variant.price_confirmed)
         in_stock[variant.pack_size] = sellable
     summary = _review_summary(db, product.id)

@@ -24,7 +24,8 @@ export function PackPrices({ product, selected, onSelect }: {
           <>
             <span>{formatPackSize(size)}</span>
             <span>
-              <strong>{price === null ? (product.inStock?.[size] === false ? 'Out of stock' : 'Awaiting price') : formatINR(price)}</strong>
+              <strong>{price === null ? 'Awaiting price' : formatINR(price)}</strong>
+              {price !== null && product.inStock?.[size] === false && <span className="text-small text-secondary" style={{ marginLeft: 8 }}>Out of stock</span>}
               {development && <span className="badge badge--dev" title="Development price - not yet approved by the owner" style={{ marginLeft: 8 }}>Development price</span>}
             </span>
           </>
