@@ -23,7 +23,7 @@ Vercel → Project → Settings → Environment Variables (tick Production and P
 | `VITE_SUPABASE_URL` | frontend build **and** backend | `https://<project-ref>.supabase.co` |
 | `VITE_SUPABASE_PUBLISHABLE_KEY` | frontend build **and** backend | the publishable (anon) key |
 | `SUPABASE_SECRET_KEY` | backend only | the secret / service-role key. Never give it a `VITE_` prefix. Mark as Sensitive |
-| `DATABASE_URL` | backend only | the **transaction pooler** string: `postgresql+psycopg://postgres.<project-ref>:<db-password>@aws-<n>-<region>.pooler.supabase.com:6543/postgres` (Supabase "Connect" dialog, Transaction pooler). Mark as Sensitive |
+| `DATABASE_URL` | backend only | the **transaction pooler** string: `postgresql+psycopg://postgres.<project-ref>:<db-password>@aws-<n>-<region>.pooler.supabase.com:6543/postgres` (Supabase "Connect" dialog, Transaction pooler). Mark as Sensitive. If unset, the backend uses `POSTGRES_URL` supplied by the Supabase Vercel integration |
 | `PROOF_SIGNING_SECRET` | backend only | a long random string (32+ characters), e.g. `openssl rand -hex 32`. Signs the short-lived admin links to payment screenshots |
 | `VITE_SUPPORT_WHATSAPP` | frontend (optional) | digits only, e.g. `918000961030` |
 | `SUPABASE_JWT_SECRET` | backend (only if the Supabase project signs tokens with HS256) | the JWT secret from the dashboard; newer projects use signing keys and do not need it |

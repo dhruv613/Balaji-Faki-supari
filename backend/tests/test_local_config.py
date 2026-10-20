@@ -20,6 +20,14 @@ from app.core.config import LOCAL_CORS_ORIGINS, LOCAL_SUPABASE_URL, Settings  # 
 
 
 class LocalConfigTests(unittest.TestCase):
+    def test_database_url_accepts_vercel_integration_and_prefers_explicit_setting(self) -> None:
+        postgres_url = "postgresql://postgres.example:password@pooler.example:6543/postgres"
+        for database_url in ("", "   ", "sqlite:///:memory:"):
+            with self.subTest(database_url=database_url), patch.dict(
+                os.environ, {"DATABASE_URL": database_url, "POSTGRES_URL": postgres_url}
+            ):
+                self.assertEqual(Settings().database_url, database_url.strip() or postgres_url)
+
     def test_blank_supabase_environment_uses_local_urls_only(self) -> None:
         with patch.dict(
             os.environ,

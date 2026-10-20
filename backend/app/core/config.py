@@ -79,7 +79,7 @@ class Settings:
         default_factory=_default_supabase_jwks_url
     )
     database_url: str = field(
-        default_factory=lambda: os.getenv("DATABASE_URL", "")
+        default_factory=lambda: _configured_value("DATABASE_URL", "POSTGRES_URL")
     )
     cors_origins: tuple[str, ...] = field(
         default_factory=_default_cors_origins
