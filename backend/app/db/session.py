@@ -26,8 +26,10 @@ def resolve_database_url(explicit_url: str | None = None) -> str:
             # A silent local SQLite file would lose every order on a serverless host (read-only, per-instance filesystem).
             raise RuntimeError("DATABASE_URL is not set. Outside local development the backend needs the Supabase database URL.")
         return f"sqlite:///{_DEFAULT_SQLITE_PATH.as_posix()}"
-    if url.startswith("postgres://"):
-        return "postgresql+psycopg://" + url[len("postgres://") :]
+    # Supabase's "Connect" dialog gives postgres:// or postgresql://; both mean psycopg 3 here (psycopg2 is not installed).
+    for prefix in ("postgres://", "postgresql://"):
+        if url.startswith(prefix):
+            return "postgresql+psycopg://" + url[len(prefix) :]
     return url
 
 

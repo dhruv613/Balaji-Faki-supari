@@ -43,6 +43,11 @@ class ServerlessEngineTests(unittest.TestCase):
         with patch.object(session, "settings", replace(session.settings, database_url="", app_env="local")):
             self.assertTrue(session.resolve_database_url().startswith("sqlite:///"))
 
+    def test_supabase_dialog_urls_use_psycopg3(self) -> None:
+        for raw in ("postgres://u:pw@h:6543/postgres", "postgresql://u:pw@h:6543/postgres"):
+            self.assertEqual(session.resolve_database_url(raw), "postgresql+psycopg://u:pw@h:6543/postgres")
+        self.assertEqual(session.resolve_database_url(POOLER), POOLER)
+
     def test_sqlite_is_untouched(self) -> None:
         self.assertFalse(session.build_engine("sqlite:///:memory:").dialect.name == "postgresql")
 
