@@ -1,4 +1,5 @@
 import { Link, NavLink } from 'react-router-dom';
+import { env } from '../../lib/env';
 import { supabase, useSession } from '../../lib/supabase';
 
 const NAV_ITEMS = [
@@ -12,7 +13,7 @@ const NAV_ITEMS = [
 
 export default function Header() {
   const { session } = useSession();
-  const isOwnerAdmin = session?.user?.app_metadata?.role === 'OWNER_ADMIN';
+  const isOwnerAdmin = session?.user?.app_metadata?.role === 'OWNER_ADMIN' && env.appMode !== 'customer';
   const displayName =
     (session?.user?.user_metadata?.fullName as string | undefined)?.trim() ||
     session?.user?.email?.split('@')[0] ||

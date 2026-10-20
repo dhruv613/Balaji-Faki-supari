@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import vm from 'node:vm';
 import ts from 'typescript';
@@ -80,6 +80,7 @@ assert.equal(context.loadState(userOne).address, valid.address);
 // No fabricated prices: the shell shows names only until the database answers.
 assert.ok(Object.values(initialState.products[0].prices).every(price => price === null));
 assert.equal(api.PRODUCT_SHELL.map(p => p.type).join(), "faki,supari,mitho-mavo,water,chuno,tamaku");
+for (const product of api.PRODUCT_SHELL) assert.ok(existsSync(new URL(`../public${product.imageUrl}`, import.meta.url)), `${product.type}: the offline fallback photo exists`);
 assert.equal(api.PRODUCTS, undefined, 'hard-coded price list must not exist');
 // Payment retries are idempotent per attempt; a new attempt (new proof or after a rejection) gets a new key.
 const keyStore = new Map();

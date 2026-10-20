@@ -1,4 +1,5 @@
 import { Link, NavLink } from 'react-router-dom';
+import StoreLink from '../../../components/common/StoreLink';
 import { supabase, useSession } from '../../../lib/supabase';
 
 export interface AdminNavItem {
@@ -94,9 +95,9 @@ export default function AdminSidebar({ open, onClose }: AdminSidebarProps) {
             {phone && <div className="admin-sidebar__user-meta">{phone}</div>}
           </div>
 
-          <Link to="/" className="btn btn--outline btn--sm" style={{ width: '100%' }}>
+          <StoreLink className="btn btn--outline btn--sm" style={{ width: '100%' }}>
             ← Customer Store
-          </Link>
+          </StoreLink>
 
           {supabase && session && (
             <button

@@ -1,4 +1,5 @@
 import { Routes, Route, Navigate, useParams } from 'react-router-dom';
+import { env } from '../lib/env';
 
 /* --- Layouts --- */
 import StoreLayout from '../components/layout/StoreLayout';
@@ -40,10 +41,13 @@ import AdminRefundsPage from '../features/admin/pages/AdminRefundsPage';
 import AdminSettingsPage from '../features/admin/pages/AdminSettingsPage';
 
 export function AppRouter() {
+  // Same code, two Vercel projects: VITE_APP_MODE=admin serves only the Admin Panel, =customer only the storefront.
+  const showStore = env.appMode !== 'admin';
+  const showAdmin = env.appMode !== 'customer';
   return (
     <Routes>
       {/* ========== Customer-facing routes ========== */}
-      <Route element={<StoreLayout />}>
+      {showStore && <Route element={<StoreLayout />}>
         <Route index element={<HomePage />} />
 
         <Route path="products/:slug" element={<ProductDetailsPage />} />
@@ -70,10 +74,10 @@ export function AppRouter() {
         <Route path="store" element={<VisitStorePage />} />
         <Route path="help" element={<HelpFAQsPage />} />
         <Route path="payment-flow" element={<PaymentFlowPage />} />
-      </Route>
+      </Route>}
 
       {/* ========== Admin routes (primary 4 pages + preserved modules) ========== */}
-      <Route path="admin" element={<AdminLayout />}>
+      {showAdmin && <Route path="admin" element={<AdminLayout />}>
         <Route index element={<Navigate to="dashboard" replace />} />
         <Route path="dashboard" element={<AdminDashboardPage />} />
         <Route path="prices" element={<AdminProductsPage />} />
@@ -91,12 +95,14 @@ export function AppRouter() {
         {/* Reports and Notifications are hidden until built; their page files and database history are kept. */}
         <Route path="reports" element={<Navigate to="/admin/dashboard" replace />} />
         <Route path="notifications" element={<Navigate to="/admin/dashboard" replace />} />
-      </Route>
+      </Route>}
 
-      {/* ========== 404 fallback ========== */}
-      <Route element={<StoreLayout />}>
-        <Route path="*" element={<NotFoundPage />} />
-      </Route>
+      {/* ========== Fallback: the Admin Panel in an admin-only build, the 404 page otherwise ========== */}
+      {env.appMode === 'admin'
+        ? <Route path="*" element={<Navigate to="/admin/dashboard" replace />} />
+        : <Route element={<StoreLayout />}>
+            <Route path="*" element={<NotFoundPage />} />
+          </Route>}
     </Routes>
   );
 }

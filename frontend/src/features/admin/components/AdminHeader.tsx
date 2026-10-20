@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import StoreLink from '../../../components/common/StoreLink';
 import { supabase, useSession } from '../../../lib/supabase';
 import { normalizeIndianMobile, validateCustomerDetails } from '../../../lib/customer';
 
@@ -145,9 +146,9 @@ export default function AdminHeader({ onOpenSidebar }: AdminHeaderProps) {
             </span>
           </button>
 
-          <Link to="/" className="btn btn--outline btn--sm">
+          <StoreLink className="btn btn--outline btn--sm">
             Store
-          </Link>
+          </StoreLink>
 
           <button
             type="button"
@@ -276,13 +277,9 @@ export default function AdminHeader({ onOpenSidebar }: AdminHeaderProps) {
             <hr style={{ border: 0, borderTop: '1px solid var(--color-border)', margin: '16px 0' }} />
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Link
-                to="/"
-                className="text-button"
-                onClick={() => setProfileOpen(false)}
-              >
+              <StoreLink className="text-button" onClick={() => setProfileOpen(false)}>
                 ← Go to Customer Store
-              </Link>
+              </StoreLink>
               <button
                 type="button"
                 className="btn btn--dark btn--sm"
