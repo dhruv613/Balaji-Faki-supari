@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from sqlalchemy import create_engine, event
-from sqlalchemy.engine import Engine
+from sqlalchemy.engine import Engine, make_url
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import NullPool, StaticPool
 
@@ -29,7 +29,11 @@ def resolve_database_url(explicit_url: str | None = None) -> str:
     # Supabase's "Connect" dialog gives postgres:// or postgresql://; both mean psycopg 3 here (psycopg2 is not installed).
     for prefix in ("postgres://", "postgresql://"):
         if url.startswith(prefix):
-            return "postgresql+psycopg://" + url[len(prefix) :]
+            url = "postgresql+psycopg://" + url[len(prefix) :]
+            break
+    if url.startswith("postgresql+psycopg://"):
+        # Supabase's Vercel integration adds a marker that psycopg/libpq does not accept.
+        return make_url(url).difference_update_query(["supa"]).render_as_string(hide_password=False)
     return url
 
 

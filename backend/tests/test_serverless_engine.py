@@ -9,6 +9,7 @@ from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
+from sqlalchemy.engine import make_url
 from sqlalchemy.pool import NullPool, QueuePool
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
@@ -47,6 +48,14 @@ class ServerlessEngineTests(unittest.TestCase):
         for raw in ("postgres://u:pw@h:6543/postgres", "postgresql://u:pw@h:6543/postgres"):
             self.assertEqual(session.resolve_database_url(raw), "postgresql+psycopg://u:pw@h:6543/postgres")
         self.assertEqual(session.resolve_database_url(POOLER), POOLER)
+
+    def test_integration_marker_is_removed_without_changing_credentials_or_ssl(self) -> None:
+        raw = "postgres://postgres.example:p%40ss%2Fword%3F@pooler.example:6543/postgres?supa=base-pooler.x&sslmode=require&application_name=balaji"
+        url = make_url(session.resolve_database_url(raw))
+        self.assertEqual(url.drivername, "postgresql+psycopg")
+        self.assertEqual(url.username, "postgres.example")
+        self.assertEqual(url.password, "p@ss/word?")
+        self.assertEqual(url.query, {"sslmode": "require", "application_name": "balaji"})
 
     def test_sqlite_is_untouched(self) -> None:
         self.assertFalse(session.build_engine("sqlite:///:memory:").dialect.name == "postgresql")
