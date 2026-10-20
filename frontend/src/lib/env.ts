@@ -1,5 +1,3 @@
-import { parseAppMode } from './appMode';
-
 /**
  * Environment helpers.
  * All env access is centralised here so the rest of the app never
@@ -25,9 +23,9 @@ export const env = {
   /** True when running `vite build` */
   isProd: import.meta.env.PROD,
 
-  /** `admin` = Admin Panel only, `customer` = storefront only, anything else = both (local development). */
-  appMode: parseAppMode(import.meta.env.VITE_APP_MODE),
+  /** The storefront's address, for the Admin Panel's "Store" links (hidden when empty). */
+  storeUrl: import.meta.env.VITE_STORE_URL ?? (import.meta.env.DEV ? 'http://localhost:5173' : ''),
 
-  /** Where the storefront lives when this build is admin-only; the admin "Store" links point there (hidden when empty). */
-  storeUrl: import.meta.env.VITE_STORE_URL ?? '',
+  /** The Admin Panel's address (a separate site), for the storefront's "Admin Panel" link shown to the Owner Admin. */
+  adminUrl: import.meta.env.VITE_ADMIN_URL ?? (import.meta.env.DEV ? 'http://localhost:5174' : ''),
 } as const;

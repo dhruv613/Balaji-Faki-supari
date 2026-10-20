@@ -1,9 +1,7 @@
 import { Routes, Route, Navigate, useParams } from 'react-router-dom';
-import { env } from '../lib/env';
 
 /* --- Layouts --- */
 import StoreLayout from '../components/layout/StoreLayout';
-import AdminLayout from '../components/layout/AdminLayout';
 
 /* --- Customer pages --- */
 import HomePage from '../features/catalog/pages/HomePage';
@@ -28,26 +26,11 @@ function LegacyTrackRedirect() {
   return <Navigate to={orderId ? `/my-orders/${encodeURIComponent(orderId)}` : '/my-orders'} replace />;
 }
 
-/* --- Admin pages (12 modules) --- */
-import AdminDashboardPage from '../features/admin/pages/AdminDashboardPage';
-import AdminOrdersPage from '../features/admin/pages/AdminOrdersPage';
-import AdminPaymentsPage from '../features/admin/pages/AdminPaymentsPage';
-import AdminProductsPage from '../features/admin/pages/AdminProductsPage';
-import AdminInventoryPage from '../features/admin/pages/AdminInventoryPage';
-import AdminDeliveryPage from '../features/admin/pages/AdminDeliveryPage';
-import AdminCustomersPage from '../features/admin/pages/AdminCustomersPage';
-import AdminReviewsPage from '../features/admin/pages/AdminReviewsPage';
-import AdminRefundsPage from '../features/admin/pages/AdminRefundsPage';
-import AdminSettingsPage from '../features/admin/pages/AdminSettingsPage';
-
+/** Customer storefront only. The Admin Panel is a separate app in `admin-panel/frontend` (its own Vercel project). */
 export function AppRouter() {
-  // Same code, two Vercel projects: VITE_APP_MODE=admin serves only the Admin Panel, =customer only the storefront.
-  const showStore = env.appMode !== 'admin';
-  const showAdmin = env.appMode !== 'customer';
   return (
     <Routes>
-      {/* ========== Customer-facing routes ========== */}
-      {showStore && <Route element={<StoreLayout />}>
+      <Route element={<StoreLayout />}>
         <Route index element={<HomePage />} />
 
         <Route path="products/:slug" element={<ProductDetailsPage />} />
@@ -74,35 +57,9 @@ export function AppRouter() {
         <Route path="store" element={<VisitStorePage />} />
         <Route path="help" element={<HelpFAQsPage />} />
         <Route path="payment-flow" element={<PaymentFlowPage />} />
-      </Route>}
 
-      {/* ========== Admin routes (primary 4 pages + preserved modules) ========== */}
-      {showAdmin && <Route path="admin" element={<AdminLayout />}>
-        <Route index element={<Navigate to="dashboard" replace />} />
-        <Route path="dashboard" element={<AdminDashboardPage />} />
-        <Route path="prices" element={<AdminProductsPage />} />
-        <Route path="orders" element={<AdminOrdersPage />} />
-        <Route path="feedback" element={<AdminReviewsPage />} />
-        {/* Preserved additional admin routes */}
-        <Route path="payments" element={<AdminPaymentsPage />} />
-        <Route path="products" element={<AdminProductsPage />} />
-        <Route path="inventory" element={<AdminInventoryPage />} />
-        <Route path="delivery" element={<AdminDeliveryPage />} />
-        <Route path="customers" element={<AdminCustomersPage />} />
-        <Route path="reviews" element={<AdminReviewsPage />} />
-        <Route path="refunds" element={<AdminRefundsPage />} />
-        <Route path="settings" element={<AdminSettingsPage />} />
-        {/* Reports and Notifications are hidden until built; their page files and database history are kept. */}
-        <Route path="reports" element={<Navigate to="/admin/dashboard" replace />} />
-        <Route path="notifications" element={<Navigate to="/admin/dashboard" replace />} />
-      </Route>}
-
-      {/* ========== Fallback: the Admin Panel in an admin-only build, the 404 page otherwise ========== */}
-      {env.appMode === 'admin'
-        ? <Route path="*" element={<Navigate to="/admin/dashboard" replace />} />
-        : <Route element={<StoreLayout />}>
-            <Route path="*" element={<NotFoundPage />} />
-          </Route>}
+        <Route path="*" element={<NotFoundPage />} />
+      </Route>
     </Routes>
   );
 }

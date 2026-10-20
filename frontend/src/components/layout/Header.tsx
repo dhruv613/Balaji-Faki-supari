@@ -13,7 +13,7 @@ const NAV_ITEMS = [
 
 export default function Header() {
   const { session } = useSession();
-  const isOwnerAdmin = session?.user?.app_metadata?.role === 'OWNER_ADMIN' && env.appMode !== 'customer';
+  const isOwnerAdmin = session?.user?.app_metadata?.role === 'OWNER_ADMIN' && Boolean(env.adminUrl);
   const displayName =
     (session?.user?.user_metadata?.fullName as string | undefined)?.trim() ||
     session?.user?.email?.split('@')[0] ||
@@ -42,15 +42,13 @@ export default function Header() {
             </NavLink>
           ))}
           {isOwnerAdmin && (
-            <NavLink
-              to="/admin/dashboard"
-              className={({ isActive }) =>
-                `nav__link${isActive ? ' nav__link--active' : ''}`
-              }
+            <a
+              href={`${env.adminUrl.replace(/\/$/, '')}/admin/dashboard`}
+              className="nav__link"
               style={{ color: 'var(--orange-dark)', fontWeight: 700 }}
             >
               Admin Panel
-            </NavLink>
+            </a>
           )}
         </nav>
 

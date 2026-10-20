@@ -27,7 +27,7 @@ _load_dotenv_file(_BACKEND_DIR / ".env")
 _load_dotenv_file(_ROOT_DIR / ".env")
 
 LOCAL_SUPABASE_URL = "http://127.0.0.1:55321"
-LOCAL_CORS_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173"
+LOCAL_CORS_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174"
 
 
 def _configured_value(*keys: str, default: str = "") -> str:

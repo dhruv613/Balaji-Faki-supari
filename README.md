@@ -105,8 +105,9 @@ All commands work from either the **repository root** (`d:\D&D Projects\Balaji F
 # 1. Install dependencies
 npm install
 
-# 2. Start local development server (Customer Store + /admin/* Panel)
+# 2. Start local development servers: customer store (5173) and, in a second terminal, the Admin Panel (5174)
 npm run dev
+npm run dev:admin   # http://localhost:5174/admin
 
 # 3. Run TypeScript validation
 npm run typecheck
