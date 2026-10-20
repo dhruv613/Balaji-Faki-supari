@@ -98,12 +98,13 @@ export function getErrorMessage(err: unknown): string {
 }
 
 /* ---------- Catalogue shell ---------- */
-/* Names only. Prices always come from the database through FastAPI; while they load, or if the server is
-   unreachable, every price is `null` ("Awaiting price") instead of an invented number. */
+/* Names and each product's first photo (static files) only. Prices always come from the database through FastAPI; while
+   they load, or if the server is unreachable, every price is `null` ("Awaiting price") instead of an invented number. */
 
 export const PRODUCT_SHELL: Product[] = [
   {
     type: 'faki',
+    imageUrl: '/images/products/balaji-faki-box.webp',
     name: 'Faki',
     nameGu: 'ફાકી',
     packSizes: ['250g', '500g', '1kg'],
@@ -111,6 +112,7 @@ export const PRODUCT_SHELL: Product[] = [
   },
   {
     type: 'supari',
+    imageUrl: '/images/supari-reference.png',
     name: 'Supari',
     nameGu: 'સુપારી',
     packSizes: ['250g', '500g', '1kg'],
@@ -118,6 +120,7 @@ export const PRODUCT_SHELL: Product[] = [
   },
   {
     type: 'mitho-mavo',
+    imageUrl: '/images/products/balaji-mitho-mavo-sachet.webp',
     name: 'Mitho Mavo',
     nameGu: 'મીઠો માવો',
     packSizes: ['250g', '500g', '1kg'],
@@ -125,6 +128,7 @@ export const PRODUCT_SHELL: Product[] = [
   },
   {
     type: 'water',
+    imageUrl: '/images/products/balaji-water-bottle.webp',
     name: 'Water Bottle',
     nameGu: 'પાણીની બોટલ',
     packSizes: ['1l'],
@@ -132,6 +136,7 @@ export const PRODUCT_SHELL: Product[] = [
   },
   {
     type: 'chuno',
+    imageUrl: '/images/products/balaji-chuno-sachets.webp',
     name: 'Chuno',
     nameGu: 'ચુનો',
     packSizes: ['250g', '500g', '1kg'],
@@ -139,6 +144,7 @@ export const PRODUCT_SHELL: Product[] = [
   },
   {
     type: 'tamaku',
+    imageUrl: '/images/products/balaji-tamaku-sachets.webp',
     name: 'Tamaku',
     nameGu: 'તમાકુ',
     packSizes: ['250g', '500g', '1kg'],

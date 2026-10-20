@@ -75,6 +75,21 @@ Create the admin project (Vercel dashboard, once):
 Each project runs its own copy of the API function against the same Supabase database, so the admin panel needs no CORS setup either. Admin access is enforced by the server on every request (`/api/me` must return `OWNER_ADMIN`), not by the hidden routes; keeping the admin on its own address just removes it from the public site.
 Optional: protect the admin project with Vercel Deployment Protection / a custom domain such as `admin.<your domain>`.
 
-## 6. Rollback
+## 6. Troubleshooting
+
+**The storefront shows only names, "Awaiting price" and the notice that prices are unavailable:** the API is not reachable. Open `https://<your site>/api/health`:
+
+| You see | Meaning | Fix |
+|---|---|---|
+| `503` `The API could not start: DATABASE_URL is not set...` | the backend has no database URL | add `DATABASE_URL` (Supabase transaction pooler string) |
+| `503` `"status":"misconfigured"` with a `missingConfig` list | those settings are not configured (names only) | add the variables listed |
+| `500` `FUNCTION_INVOCATION_FAILED` | the function crashed with something unexpected | Vercel → the deployment → Logs: the traceback is printed there |
+| `404` | the `api/index.py` function was not deployed | check the build log and that Root Directory is the repo root |
+| `200` ok, but `/api/products` fails | the database cannot be reached or is not migrated | check the pooler URL and section 2 |
+
+Environment variables only apply to **new** deployments: after adding or changing one, redeploy (Deployments → ⋯ → Redeploy). Production and Preview have separate variable scopes, so set both.
+While the API is down the storefront still shows each product's photo and name (a fallback); ordering stays disabled because no price can be shown.
+
+## 7. Rollback
 
 Vercel → Deployments → pick an earlier deployment → Promote to Production (or Instant Rollback). Database migrations are forward-only and are not undone by a rollback.

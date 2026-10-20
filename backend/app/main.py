@@ -14,7 +14,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from .core.config import settings
+from .core.config import LOCAL_SUPABASE_URL, settings
 from .core.domain import (
     ALLOWED_DELIVERY_TRANSITIONS,
     CANONICAL_DELIVERY_STATUSES,
@@ -823,8 +823,25 @@ def _serialize_admin_delivery(db: Session, shipment: Shipment) -> dict[str, Any]
 router = APIRouter()
 
 
+def _missing_config() -> list[str]:
+    """Names of required settings that are not configured. Only checked outside local development."""
+    if settings.is_local_env:
+        return []
+    missing = []
+    if settings.supabase_url == LOCAL_SUPABASE_URL:
+        missing.append("VITE_SUPABASE_URL (or SUPABASE_URL)")
+    if not settings.supabase_secret_key:
+        missing.append("SUPABASE_SECRET_KEY")
+    if not (settings.proof_signing_secret or settings.supabase_jwt_secret or settings.supabase_secret_key):
+        missing.append("PROOF_SIGNING_SECRET")
+    return missing
+
+
 @router.get("/health")
-def get_health() -> dict[str, Any]:
+def get_health() -> Any:
+    missing = _missing_config()
+    if missing:  # names only, never values: lets the owner see what the deployment still needs
+        return JSONResponse(status_code=503, content={"status": "misconfigured", "service": "balaji-faki-point-api", "missingConfig": missing})
     return {"status": "ok", "service": "balaji-faki-point-api"}
 
 
