@@ -76,8 +76,8 @@ class FastApiWorkflowIntegrationTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         start_auth(cls)
         db_session.configure_database(TEST_DB_URL)
-        cls._store_proof_patch = patch("app.main.store_private_payment_proof", side_effect=_store_test_payment_proof)
-        cls._read_proof_patch = patch("app.main.read_private_payment_proof", side_effect=_read_test_payment_proof)
+        cls._store_proof_patch = patch("app.routes.payments.store_private_payment_proof", side_effect=_store_test_payment_proof)
+        cls._read_proof_patch = patch("app.routes.admin_payments.read_private_payment_proof", side_effect=_read_test_payment_proof)
         cls._store_proof_patch.start()
         cls._read_proof_patch.start()
         cls.client = TestClient(app)

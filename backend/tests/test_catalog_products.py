@@ -19,7 +19,8 @@ os.environ["BFP_ENV"] = "local"
 
 import app.db.session as db_session
 from app.db.seed import seed_development_data
-from app.main import _pack_sort_key, create_checkout_quote, get_public_product, list_public_products
+from app.routes.common import _pack_sort_key
+from app.routes.public import create_checkout_quote, get_public_product, list_public_products
 from app.schemas import CheckoutQuoteRequestSchema
 
 

@@ -19,7 +19,7 @@ os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 os.environ["BFP_ENV"] = "local"
 
 import app.db.session as db_session
-import app.main as main_module
+import app.routes.admin_orders as admin_orders_module
 from app.core.security import AuthenticatedPrincipal
 from app.db.models import Customer, Order, OrderItem, ProductVariant, UserProfile
 from app.db.seed import seed_development_data
@@ -61,7 +61,7 @@ class AdminOrdersListTests(unittest.TestCase):
     def listing(self, db, **kwargs):
         args = dict(status=None, payment_status=None, search=None, date_from=None, date_to=None, page=1, page_size=50)
         args.update(kwargs)
-        return main_module.list_admin_orders(_admin=self.admin, db=db, **args)
+        return admin_orders_module.list_admin_orders(_admin=self.admin, db=db, **args)
 
     def test_each_row_carries_items_payment_and_timeline_in_one_response(self) -> None:
         with db_session.SessionLocal() as db:

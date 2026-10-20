@@ -19,7 +19,7 @@ os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 import app.db.session as db_session  # noqa: E402
 from app.core.security import AuthenticatedPrincipal  # noqa: E402
 from app.db.models import Customer, DeliveryEvent, Order, OrderStatusHistory, Shipment, UserProfile  # noqa: E402
-from app.main import update_admin_order_status  # noqa: E402
+from app.routes.admin_orders import update_admin_order_status  # noqa: E402
 from app.schemas import UpdateOrderStatusRequestSchema  # noqa: E402
 
 

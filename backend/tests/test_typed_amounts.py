@@ -22,10 +22,11 @@ import app.db.session as db_session  # noqa: E402
 from app.core.security import AuthenticatedPrincipal  # noqa: E402
 from app.db.models import Order, OrderItem, Product, ProductVariant, UserProfile  # noqa: E402
 from app.db.seed import seed_development_data  # noqa: E402
-from app.main import (  # noqa: E402
-    _per_kg_price_paise, cancel_customer_order, confirm_admin_order, create_checkout_quote, create_customer_order,
-    get_public_product, update_admin_product,
-)
+from app.routes.admin_catalog import update_admin_product  # noqa: E402
+from app.routes.admin_orders import confirm_admin_order  # noqa: E402
+from app.routes.common import _per_kg_price_paise  # noqa: E402
+from app.routes.orders import cancel_customer_order, create_customer_order  # noqa: E402
+from app.routes.public import create_checkout_quote, get_public_product  # noqa: E402
 from app.schemas import (  # noqa: E402
     CancelOrderRequestSchema, CheckoutQuoteRequestSchema, ConfirmOrderRequestSchema, CreateOrderRequestSchema,
     UpdateAdminProductRequestSchema,

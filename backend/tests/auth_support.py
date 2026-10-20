@@ -23,10 +23,14 @@ def mint_token(subject, email, name="Test User", **extra):
 
 def start_auth(test_class):
     client = SimpleNamespace(get_jwk_set=lambda refresh=False: SimpleNamespace(keys=[SimpleNamespace(key_id="test-key", key=KEY.public_key())]))
+    verify = lambda token: security.verify_access_token(token, app_settings=SETTINGS)  # noqa: E731
     for replacement in (
         patch("app.core.security._jwk_client", return_value=client),
-        patch("app.main.verify_access_token", side_effect=lambda token: security.verify_access_token(token, app_settings=SETTINGS)),
-        patch("app.main._lookup_auth_identity", side_effect=lambda db, subject: IDENTITIES.get(subject)),
+        # Every route module that verifies a Bearer token itself (not via get_current_principal) looks it up locally.
+        patch("app.routes.common.verify_access_token", side_effect=verify),
+        patch("app.routes.admin.verify_access_token", side_effect=verify),
+        patch("app.routes.admin_payments.verify_access_token", side_effect=verify),
+        patch("app.routes.common._lookup_auth_identity", side_effect=lambda db, subject: IDENTITIES.get(subject)),
     ):
         replacement.start()
         test_class.addClassCleanup(replacement.stop)

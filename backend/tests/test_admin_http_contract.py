@@ -113,7 +113,7 @@ class AdminHttpContractTests(unittest.TestCase):
         def put(bucket, path, content, mime, **_):
             self.storage[(bucket, path)] = content
 
-        with patch("app.main.put_storage_object", side_effect=put):
+        with patch("app.routes.admin.put_storage_object", side_effect=put):
             qr = self.client.post("/api/admin/settings/qr", headers=self.headers, files={"qr": ("qr.png", PNG, "image/png")})
         self.assertEqual(qr.status_code, 200, qr.text)
         self.assertTrue(qr.json()["officialUpiQrImageUrl"].startswith("/api/admin/settings/qr?sig="))

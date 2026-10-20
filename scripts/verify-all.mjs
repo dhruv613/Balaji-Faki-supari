@@ -10,20 +10,24 @@ function step(label, command, cwd = rootDir) {
 }
 
 step('0. Neon runtime and credential check', 'node scripts/check-neon-config.mjs');
-step('1. Frontend TypeScript Validation', 'npm run typecheck');
-step('2. Automated Test Suites (Checkout, Secondary Pages, Auth, Admin & DB Schema)', 'npm test');
-step('3. Backend FastAPI Security & JWT Verification Tests', 'python -m unittest discover -s backend/tests -v');
-step('4. Local Vite Build', 'npm run build');
-step('5. Admin Panel Build', 'npm run build:admin');
+// Like D&D: the store (frontend/) and the Admin Panel (admin-panel/) are separate apps, each with its own install.
+step('1. Store: TypeScript', 'npm run typecheck', resolve(rootDir, 'frontend'));
+step('2. Store: tests (checkout, secondary pages, auth, orders)', 'npm test', resolve(rootDir, 'frontend'));
+step('3. Admin Panel: TypeScript', 'npm run typecheck', resolve(rootDir, 'admin-panel'));
+step('4. Admin Panel: tests (route guard, modules, DB schema, self-contained)', 'npm test', resolve(rootDir, 'admin-panel'));
+step('5. Backend tests', 'python -m unittest discover -s backend/tests');
+step('6. Store build', 'npm run build', resolve(rootDir, 'frontend'));
+step('7. Admin Panel build', 'npm run build', resolve(rootDir, 'admin-panel'));
 
 const requiredPaths = [
   'frontend/src/app/App.tsx',
   'frontend/src/app/router.tsx',
   'frontend/dist/index.html',
-  'admin-panel/frontend/src/app/App.tsx',
-  'admin-panel/frontend/dist/index.html',
+  'admin-panel/src/app/App.tsx',
+  'admin-panel/package-lock.json',
+  'frontend/package-lock.json',
+  'admin-panel/dist/index.html',
   'admin-panel/vercel.json',
-  'admin-panel/backend/README.md',
   'vercel.json',
   'api/index.py',
   'requirements.txt',

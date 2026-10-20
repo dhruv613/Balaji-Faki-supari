@@ -23,7 +23,8 @@ import app.db.session as db_session
 from app.core.security import AuthenticatedPrincipal
 from app.db.models import AdminAuditLog, Product, ProductImage, ProductVariant, UserProfile
 from app.db.seed import seed_development_data
-from app.main import get_public_product, list_admin_products, list_public_products, update_admin_product
+from app.routes.admin_catalog import list_admin_products, update_admin_product
+from app.routes.public import get_public_product, list_public_products
 from app.schemas import UpdateAdminProductRequestSchema
 
 ADMIN: AuthenticatedPrincipal

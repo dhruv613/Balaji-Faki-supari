@@ -29,7 +29,7 @@ from app.db.models import (  # noqa: E402
     Refund,
     UserProfile,
 )
-from app.main import _cancel_order  # noqa: E402
+from app.routes.common import _cancel_order  # noqa: E402
 
 
 class CancellationServiceTests(unittest.TestCase):

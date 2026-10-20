@@ -32,14 +32,8 @@ from app.db.models import (  # noqa: E402
     Review,
     UserProfile,
 )
-from app.main import (  # noqa: E402
-    get_admin_review_photo,
-    get_public_review_photo,
-    list_admin_reviews,
-    list_published_reviews,
-    submit_customer_review,
-    update_admin_review,
-)
+from app.routes.admin import get_admin_review_photo, list_admin_reviews, update_admin_review  # noqa: E402
+from app.routes.reviews import get_public_review_photo, list_published_reviews, submit_customer_review  # noqa: E402
 from app.schemas import UpdateAdminReviewRequestSchema  # noqa: E402
 
 PNG = (
@@ -82,9 +76,9 @@ class ReviewTests(unittest.TestCase):
         Base.metadata.drop_all(bind=db_session.engine)
         Base.metadata.create_all(bind=db_session.engine)
         patches = [
-            patch("app.main.store_private_review_photo", side_effect=_store),
-            patch("app.main.read_private_review_photo", side_effect=_read),
-            patch("app.main.delete_private_review_photos", side_effect=_delete),
+            patch("app.routes.reviews.store_private_review_photo", side_effect=_store),
+            patch("app.routes.common.read_private_review_photo", side_effect=_read),
+            patch("app.routes.reviews.delete_private_review_photos", side_effect=_delete),
         ]
         for p in patches:
             p.start()

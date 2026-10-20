@@ -18,7 +18,7 @@ os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 os.environ["BFP_ENV"] = "local"
 
 import app.db.session as db_session
-import app.main as main_module
+import app.routes.admin as admin_module
 from app.core.security import AuthenticatedPrincipal
 from app.db.models import Customer, Order, OrderItem, PaymentAttempt, ProductVariant, Refund, UserProfile
 from app.db.seed import seed_development_data
@@ -84,7 +84,7 @@ class DashboardTests(unittest.TestCase):
             pending_refund = self._refund(db, first, 20000, "PENDING")
             db.commit()
 
-            data = main_module.get_admin_dashboard(self.admin, db)
+            data = admin_module.get_admin_dashboard(self.admin, db)
             self.assertEqual(data["productsSold"], 2)
             self.assertEqual(data["netProfit"]["status"], "OK")
             self.assertEqual(data["netProfit"]["amount"], 1300)  # cancelled-order refund must not reduce profit
@@ -94,11 +94,11 @@ class DashboardTests(unittest.TestCase):
             pending_refund.status = "COMPLETED"
             pending_refund.verified_refund_amount_paise = 20000
             db.commit()
-            self.assertEqual(main_module.get_admin_dashboard(self.admin, db)["netProfit"]["amount"], 1100)
+            self.assertEqual(admin_module.get_admin_dashboard(self.admin, db)["netProfit"]["amount"], 1100)
 
             self._order(db, "#BFP-4", "BFP-FAKI-500G", 1, cost=18000)  # unapproved development price
             db.commit()
-            net = main_module.get_admin_dashboard(self.admin, db)["netProfit"]
+            net = admin_module.get_admin_dashboard(self.admin, db)["netProfit"]
             self.assertEqual(net["amount"], 1100 + 500 - 180)
             self.assertIn("development data", net["note"])
 
@@ -107,13 +107,13 @@ class DashboardTests(unittest.TestCase):
             self._order(db, "#BFP-1", "BFP-FAKI-1KG", 1)
             self._order(db, "#BFP-2", "BFP-FAKI-500G", 1, cost=None)
             db.commit()
-            net = main_module.get_admin_dashboard(self.admin, db)["netProfit"]
+            net = admin_module.get_admin_dashboard(self.admin, db)["netProfit"]
             self.assertEqual((net["status"], net["amount"]), ("NOT_CONFIGURED", None))
             self.assertIn("Faki 500g", net["reason"])
 
     def test_no_sales_is_zero_not_a_fiction(self) -> None:
         with db_session.SessionLocal() as db:
-            data = main_module.get_admin_dashboard(self.admin, db)
+            data = admin_module.get_admin_dashboard(self.admin, db)
             self.assertEqual((data["productsSold"], data["netProfit"]["amount"], data["pendingPaymentConfirmations"]), (0, 0, []))
 
     def test_pending_confirmations_list_only_submitted_or_under_review_oldest_first(self) -> None:
@@ -128,7 +128,7 @@ class DashboardTests(unittest.TestCase):
                 ))
             db.add_all(rows)
             db.commit()
-            pending = main_module.get_admin_dashboard(self.admin, db)["pendingPaymentConfirmations"]
+            pending = admin_module.get_admin_dashboard(self.admin, db)["pendingPaymentConfirmations"]
             self.assertEqual([row["status"] for row in pending], ["UNDER_REVIEW", "SUBMITTED"])  # oldest first
             self.assertEqual(pending[0]["orderNumber"], "#BFP-1")
             self.assertEqual(pending[0]["amount"], 1040)

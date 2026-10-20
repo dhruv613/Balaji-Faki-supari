@@ -26,7 +26,7 @@ function inspect(directory) {
     }
   }
 }
-for (const directory of ['frontend/src', 'admin-panel/frontend/src', 'backend/app']) inspect(directory);
+for (const directory of ['frontend/src', 'admin-panel/src', 'backend/app']) inspect(directory);
 const config = readFileSync(resolve(root, 'neon.ts'), 'utf8');
 if (!/auth:\s*true/.test(config) || !/access:\s*["']private["']/.test(config)) problems.push('neon.ts: Auth and private storage must be declared');
 if (problems.length) {

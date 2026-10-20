@@ -96,9 +96,9 @@ neon branches delete dev
 
 ## 6. Admin Panel project
 
-`admin-panel/` holds the admin UI (`admin-panel/frontend/`, which reuses the storefront's shared code from `frontend/src` through the `@shared` alias) and its Vercel settings. Root Directory of the Vercel project is `admin-panel`; keep "Include files outside the root directory in the Build Step" enabled. Its `vercel.json` forwards `/api/*` to `https://balaji-faki-point.vercel.app/api/*`; change that one URL if the store moves to a custom domain. Admin access is enforced by the API on every request, not by the separate address.
+`admin-panel/` is a self-contained app like D&D's `Admin/` (own `package.json` and lockfile; `vercel.json` runs `npm ci` and `npm run build` and serves `dist`). Root Directory of the Vercel project is `admin-panel`. Its `vercel.json` forwards `/api/*` and `/images/*` (product photos live in the store's public folder) to `https://balaji-faki-point.vercel.app`; change that URL if the store moves to a custom domain. Admin access is enforced by the API on every request, not by the separate address.
 
-Local development: `npm run dev` (store, port 5173) and `npm run dev:admin` (admin, `http://localhost:5174/admin`). Both read the root `.env`/`frontend/.env`; see `.env.example`.
+Local development: `npm run dev` inside `frontend/` (store, port 5173) and inside `admin-panel/` (admin, `http://localhost:5174/admin`). The store reads `frontend/.env*`, the admin `admin-panel/.env*` (see each `.env.example`).
 
 ## 7. Troubleshooting
 

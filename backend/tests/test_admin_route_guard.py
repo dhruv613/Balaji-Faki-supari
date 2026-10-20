@@ -26,7 +26,8 @@ from auth_support import mint_token, start_auth  # noqa: E402
 
 import app.db.session as db_session  # noqa: E402
 from app.db.seed import seed_development_data  # noqa: E402
-from app.main import app, get_owner_admin_principal  # noqa: E402
+from app.main import app  # noqa: E402
+from app.routes.common import get_owner_admin_principal  # noqa: E402
 
 CUSTOMER_ID = "44444444-4444-4444-8444-444444444444"
 # Image routes accept either a short-lived HMAC signature or an Owner Admin Bearer token; both are exercised below.

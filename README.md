@@ -5,15 +5,15 @@ Online ordering for **Balaji Faki Point** (Faki, Supari, Mitho Mavo, Water, Chun
 ## 1. Technology stack
 
 - **Storefront** (`frontend/`): React 19, TypeScript, Vite 6, React Router 7, custom CSS (orange/cream Balaji branding, `Gloock` headings, `Hind Vadodara` body, Gujarati names).
-- **Admin Panel** (`admin-panel/frontend/`): its own Vite app; reuses the storefront's shared code from `frontend/src` via the `@shared` alias.
-- **Backend** (`backend/app/`): Python FastAPI + SQLAlchemy 2 + Pydantic 2, served on Vercel by `api/index.py`.
+- **Admin Panel** (`admin-panel/`): a separate, self-contained Vite app (own `package.json`, sources and tests), like D&D's `Admin/`.
+- **Backend** (`backend/app/`): Python FastAPI + SQLAlchemy 2 + Pydantic 2, served on Vercel by `api/index.py`. One API for both apps; routes are split by area in `backend/app/routes/`.
 - **Neon**: Postgres (schema in `backend/migrations/neon/`), Neon Auth (email + password, emailed verification and reset codes), Object Storage (private `assets` bucket). Project settings: `neon.ts`, link: `.neon`.
 
 ## 2. Project structure
 
 ```text
 Balaji Faki Website/
-├── frontend/                 # customer storefront (Vite + React)
+├── frontend/                 # customer storefront (Vite + React), own package.json, builds to frontend/dist
 │   ├── public/images/        # product, hero and brand images
 │   ├── src/
 │   │   ├── app/              # App shell and routes
@@ -23,12 +23,16 @@ Balaji Faki Website/
 │   │   ├── lib/              # api.ts (fetch + bearer token), auth.ts (Neon Auth), profile.ts, contracts.ts, env.ts
 │   │   └── styles/globals.css
 │   └── tests/                # checkout, secondary pages, auth, orders
-├── admin-panel/
-│   ├── frontend/             # Owner Admin Panel (pages under /admin), tests/admin.test.mjs
-│   ├── backend/README.md     # the admin API is the shared backend
+├── admin-panel/              # Owner Admin Panel, self-contained (own package.json, src/, public/, tests/)
+│   ├── src/                  # app/ (routes under /admin), features/admin/, lib/, components/common/, styles/
+│   ├── tests/admin.test.mjs
 │   └── vercel.json           # admin Vercel project (Root Directory: admin-panel)
 ├── backend/
-│   ├── app/                  # FastAPI app: main.py, core/ (config, security, storage), db/ (models, session, seed)
+│   ├── app/
+│   │   ├── main.py           # creates the FastAPI app and mounts the routes
+│   │   ├── routes/           # public, account, orders, payments, reviews, admin, admin_orders, admin_payments, admin_catalog, common
+│   │   ├── core/             # config, security (Neon Auth JWTs), storage (Neon Object Storage)
+│   │   └── db/               # models, session, seed
 │   ├── migrations/neon/      # numbered SQL migrations (applied by scripts/setup-neon-db.py)
 │   └── tests/                # unittest suite (SQLite)
 ├── api/index.py              # Vercel entrypoint for the FastAPI app
@@ -40,16 +44,16 @@ Balaji Faki Website/
 
 ## 3. Commands
 
+Each app installs and runs on its own (like D&D):
+
 ```powershell
-npm install
-npm run dev            # storefront  http://localhost:5173
-npm run dev:admin      # admin panel http://localhost:5174/admin
-npm run typecheck
-npm test               # 5 frontend suites (storefront + admin)
-python -m unittest discover -s backend/tests
-npm run build; npm run build:admin
-npm run verify         # Neon config check + typecheck + tests + backend tests + both builds
+cd frontend;    npm install; npm run dev     # store        http://localhost:5173
+cd admin-panel; npm install; npm run dev     # admin panel  http://localhost:5174/admin
+python -m uvicorn app.main:app --app-dir backend --port 8000   # API, from the repo root
 ```
+
+Checks: `npm run typecheck`, `npm test`, `npm run build` inside `frontend/` and inside `admin-panel/`;
+`python -m unittest discover -s backend/tests` from the root; `node scripts/verify-all.mjs` runs all of them.
 
 ## 4. Local development with Neon
 

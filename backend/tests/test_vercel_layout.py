@@ -33,7 +33,13 @@ class VercelLayoutTests(unittest.TestCase):
     def test_vercel_json_routes_api_to_the_function_before_the_spa_fallback(self) -> None:
         config = json.loads((REPO_ROOT / "vercel.json").read_text(encoding="utf-8"))
         self.assertIsNone(config["framework"])  # explicit "Other": no auto-detected preset takes over the project
-        self.assertEqual(config["outputDirectory"], "dist")
+        # Like D&D: the store builds itself (no root package.json) and Vercel serves frontend/dist.
+        self.assertEqual(config["outputDirectory"], "frontend/dist")
+        self.assertIn("npm --prefix frontend ci", config["buildCommand"])
+        self.assertFalse((REPO_ROOT / "package.json").exists(), "no root npm workspace")
+        admin = json.loads((REPO_ROOT / "admin-panel" / "vercel.json").read_text(encoding="utf-8"))
+        self.assertEqual((admin["installCommand"], admin["outputDirectory"]), ("npm ci", "dist"))
+        self.assertTrue((REPO_ROOT / "admin-panel" / "package-lock.json").is_file(), "npm ci needs the admin lockfile")
         self.assertEqual(
             [(r["source"], r["destination"]) for r in config["rewrites"]],
             [("/api/(.*)", "/api/index"), ("/(.*)", "/index.html")],
@@ -82,16 +88,16 @@ class VercelLayoutTests(unittest.TestCase):
         self.assertNotIn("secret", other["detail"])  # unexpected errors are named by type only, never echoed
 
     def test_health_names_the_missing_settings_outside_local_development(self) -> None:
-        import app.main as main_module
-        bare = replace(main_module.settings, app_env="production", neon_auth_base_url="", neon_auth_jwks_url="", proof_signing_secret="")
-        with patch.object(main_module, "settings", bare), patch.dict(os.environ, {key: "" for key in ("AWS_ENDPOINT_URL_S3", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_REGION")}):
-            response = main_module.get_health()
+        import app.routes.public as public_module
+        bare = replace(public_module.settings, app_env="production", neon_auth_base_url="", neon_auth_jwks_url="", proof_signing_secret="")
+        with patch.object(public_module, "settings", bare), patch.dict(os.environ, {key: "" for key in ("AWS_ENDPOINT_URL_S3", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_REGION")}):
+            response = public_module.get_health()
             self.assertEqual(response.status_code, 503)
             missing = json.loads(response.body)["missingConfig"]
             self.assertEqual(len(missing), 7)
             self.assertTrue(all("=" not in name for name in missing), "names only, never values")
-            with patch.object(main_module, "settings", replace(bare, app_env="local")):
-                self.assertEqual(main_module.get_health()["status"], "ok")
+            with patch.object(public_module, "settings", replace(bare, app_env="local")):
+                self.assertEqual(public_module.get_health()["status"], "ok")
 
 
 if __name__ == "__main__":
