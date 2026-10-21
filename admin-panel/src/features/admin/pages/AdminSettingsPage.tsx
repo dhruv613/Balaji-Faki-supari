@@ -175,7 +175,7 @@ export default function AdminSettingsPage() {
             <input id="set-delivery" className="input" inputMode="decimal" value={form.deliveryCharges} onChange={set('deliveryCharges')} disabled={busy} />
             <label htmlFor="set-free">Free delivery above (₹, blank = none)</label>
             <input id="set-free" className="input" inputMode="decimal" value={form.freeDeliveryThreshold} onChange={set('freeDeliveryThreshold')} disabled={busy} />
-            <label htmlFor="set-pins">Serviceable PIN codes</label>
+            <label htmlFor="set-pins">Serviceable PIN codes (blank = deliver across India)</label>
             <textarea id="set-pins" className="input" value={form.serviceablePinCodes} onChange={set('serviceablePinCodes')} disabled={busy} />
             <label htmlFor="set-low">Low-stock alert at (units)</label>
             <input id="set-low" className="input" inputMode="numeric" value={form.lowStockThreshold} onChange={set('lowStockThreshold')} disabled={busy} />

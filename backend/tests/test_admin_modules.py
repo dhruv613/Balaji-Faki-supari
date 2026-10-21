@@ -226,11 +226,13 @@ class AdminModuleTests(unittest.TestCase):
             self.assertIsNone(withdrawn["businessSettingsConfirmedAt"])
             self.assertEqual(withdrawn["deliveryCharges"], 50)
             admin_module.confirm_business_settings(ConfirmBusinessSettingsRequestSchema(confirm=True), self.admin, db)
-            replaced = admin_module.update_admin_settings(settings_patch(serviceablePinCodes=["360005"]), self.admin, db)
+            replaced = admin_module.update_admin_settings(settings_patch(serviceablePinCodes=[]), self.admin, db)
             self.assertIsNone(replaced["businessSettingsConfirmedAt"])
+            self.assertEqual(replaced["serviceablePinCodes"], [])
 
+            # An empty PIN list (deliver across India) can be confirmed.
             # Replacing the QR removes the old object and withdraws confirmation.
-            admin_module.confirm_business_settings(ConfirmBusinessSettingsRequestSchema(confirm=True), self.admin, db)
+            self.assertIsNotNone(admin_module.confirm_business_settings(ConfirmBusinessSettingsRequestSchema(confirm=True), self.admin, db)["businessSettingsConfirmedAt"])
             admin_module.upload_payment_qr(upload("second.png"), self.admin, db)
             self.assertEqual(len(OBJECTS), 1)
             self.assertIsNone(admin_module.get_admin_settings(self.admin, db)["businessSettingsConfirmedAt"])

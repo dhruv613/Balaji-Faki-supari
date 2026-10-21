@@ -586,8 +586,7 @@ def confirm_business_settings(
         problems.append("Enter the real payee name.")
     if not store.qr_code_storage_path:
         problems.append("Upload the real payment QR image.")
-    if not _serviceable_pins(store):
-        problems.append("Add at least one serviceable PIN code.")
+    # An empty PIN list is valid: it means the store delivers across India.
     if store.delivery_charge_paise is None:
         problems.append("Set the delivery charge (0 for free delivery).")
     if problems:

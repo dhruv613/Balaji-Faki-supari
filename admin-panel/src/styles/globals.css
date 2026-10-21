@@ -7,6 +7,7 @@
 
 /* ----- 1. Custom Properties (Design Tokens) ----- */
 :root {
+  color-scheme: light dark;
   --color-primary: #FF7420;
   --color-primary-dark: #B93C06;
   --color-text: #141210;
@@ -1705,3 +1706,79 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 
 .data-table .badge { margin-bottom: 0; }
 .customer-table-scroll .data-table th:nth-child(6) { min-width: 110px; }
+
+/* Follow the device appearance automatically; no saved preference or toggle. */
+@media screen and (prefers-color-scheme: dark) {
+  :root {
+    --color-primary-dark: #FFAD78;
+    --color-text: #F7EEE7;
+    --color-text-secondary: #CBB9AB;
+    --color-bg-cream: #29201B;
+    --color-border: #534239;
+    --color-brown: #E7B394;
+    --color-green: #8CDBAD;
+    --color-green-light: #193429;
+    --color-input-border: #A48B7A;
+    --color-white: #181512;
+    --color-surface: var(--color-white);
+    --color-text-muted: var(--color-text-secondary);
+    --color-danger: #FFAAA0;
+    --color-error-bg: #3C201E;
+    --color-error-border: #A45650;
+    --color-warning-bg: #352B18;
+    --color-warning-border: #A97B3E;
+  }
+
+  .btn--primary,
+  .step-card__number,
+  .stepper__item--current .stepper__circle,
+  .timeline__item--done .stepper__circle,
+  .circle-icon--pending { color: #141210; }
+  .btn--dark:hover { background: #E4D6CB; }
+  .quantity-control__value,
+  .rating-btn { color: var(--color-text); }
+  .rating-btn--selected { color: var(--color-white); }
+
+  select.input {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23CBB9AB' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  }
+  .auth-tabs { background: var(--color-bg-cream); }
+  .auth-tab--active { background: var(--color-white); }
+
+  .badge--dev { background: var(--color-warning-bg); color: #F8CB6D; }
+  .notice--warning {
+    background: var(--color-warning-bg);
+    border-color: var(--color-warning-border);
+  }
+  .notice--error {
+    background: var(--color-error-bg);
+    border-color: var(--color-error-border);
+  }
+  .notice--error .notice__icon,
+  .field-error { color: var(--color-danger); }
+  .input--error,
+  .upload-area--error { border-color: var(--color-danger); }
+  .notice--success { border-color: #43865E; }
+  .payment-timer--expired,
+  .badge--failed,
+  .circle-icon--failed {
+    background: var(--color-error-bg);
+    color: var(--color-danger);
+    border-color: var(--color-danger);
+  }
+
+  /* Photos and QR codes keep their original colors and a scannable white backing. */
+  .hero__photo img { mix-blend-mode: normal; }
+  .qr-box img,
+  .product-card__image,
+  .product-gallery__main,
+  .product-gallery__thumb img,
+  .product-thumb,
+  .order-detail__product-image,
+  .review-selected-photo img { background: #fff; }
+  .header__logo img,
+  .auth-logo { background: #fff; border-radius: 4px; }
+  .qr-unavailable {
+    background: repeating-linear-gradient(45deg, var(--color-bg-cream) 0 10px, var(--color-border) 10px 20px);
+  }
+}

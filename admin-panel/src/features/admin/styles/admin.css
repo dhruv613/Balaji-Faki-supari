@@ -790,3 +790,24 @@
     padding: 0;
   }
 }
+
+@media screen and (prefers-color-scheme: dark) {
+  .admin-sidebar__link-badge,
+  .admin-profile-pill__avatar { color: #141210; }
+  .admin-sidebar__logo-link img { background: #fff; border-radius: 4px; }
+  .badge--warning {
+    background: var(--color-warning-bg);
+    border-color: var(--color-warning-border);
+  }
+  .badge--danger {
+    background: var(--color-error-bg);
+    color: var(--color-danger);
+    border-color: var(--color-error-border);
+  }
+  .btn--danger { color: #fff; }
+  .btn--danger-outline { color: var(--color-danger); border-color: var(--color-danger); }
+  .admin-toast--error { border-left-color: var(--color-danger); }
+  .admin-skeleton {
+    background-image: linear-gradient(90deg, var(--color-bg-cream) 25%, var(--color-border) 50%, var(--color-bg-cream) 75%);
+  }
+}

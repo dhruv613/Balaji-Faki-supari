@@ -102,7 +102,7 @@ export default function AdminRouteGuard({ children }: { children: ReactNode }) {
           <AdminSignIn />
         ) : (
           <>
-            <div className="card" style={{ padding: 12, margin: '12px 0', background: '#fff', border: '1px solid var(--border)' }}>
+            <div className="card" style={{ padding: 12, margin: '12px 0' }}>
               <div className="text-small text-secondary">Currently signed in as</div>
               <div style={{ fontWeight: 700 }}>{session.user.email}</div>
             </div>

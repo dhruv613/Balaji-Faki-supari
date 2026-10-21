@@ -422,7 +422,7 @@ export default function AdminDeliveryPage() {
                     }`}
                     style={
                       nextStatus === 'DELIVERY_FAILED'
-                        ? { borderColor: '#B42318', color: '#B42318' }
+                        ? { borderColor: 'var(--color-danger, #B42318)', color: 'var(--color-danger, #B42318)' }
                         : undefined
                     }
                     disabled={busy}

@@ -322,7 +322,7 @@ export default function AdminInventoryPage() {
                         <strong
                           style={{
                             color:
-                              mov.quantityDelta >= 0 ? 'var(--color-green)' : '#B42318',
+                              mov.quantityDelta >= 0 ? 'var(--color-green)' : 'var(--color-danger, #B42318)',
                           }}
                         >
                           {mov.quantityDelta >= 0 ? `+${mov.quantityDelta}` : mov.quantityDelta}
