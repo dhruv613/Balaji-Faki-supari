@@ -115,6 +115,23 @@ Open `https://balaji-faki-point.vercel.app/api/health`:
 | `200`, but `/api/me` answers 403 "Verify your email" | the account's email is not verified | finish the emailed code step |
 | Admin says "could not verify your role" | the API is down or the account is not `OWNER_ADMIN` | check `/api/health`, then section 3 step 6 |
 
+### Payment QR upload and nationwide delivery
+
+Open **Settings** from the admin sidebar (or `/admin/settings`). A successful API health check does not verify storage credentials or upload permission.
+
+If QR upload fails, check the **storefront/API project's** environment variables in Vercel, then redeploy it:
+
+| Variable | Check in Neon Object Storage |
+|---|---|
+| `AWS_ENDPOINT_URL_S3` | The S3 endpoint of the branch used by the running API |
+| `AWS_REGION` | That endpoint's region |
+| `AWS_ACCESS_KEY_ID` | The storage credential's `token_id` |
+| `AWS_SECRET_ACCESS_KEY` | The credential's `s3_secret_access_key`, not its `api_token` |
+
+The credential must permit storage reads/writes on that branch, with the private `assets` bucket available. Verify the deployed `DATABASE_URL` and Neon project/branch before copying values: a local `.neon` link or an older project ID in these instructions does not establish which branch production currently uses. Do not switch the database or authentication project to repair an upload. See [Neon storage authentication](https://neon.com/docs/storage/authentication) and [storage troubleshooting](https://neon.com/docs/storage/troubleshooting).
+
+After storage works, set the real UPI ID/payee and delivery charge, clear **Serviceable PIN codes** for delivery across India, and click **Save changes**. Upload the correct QR image, verify the displayed payment details, then click **Confirm payment, delivery & PIN settings**. Payment/delivery changes withdraw confirmation, so confirm last. Empty coverage permits valid Indian PIN codes; product restrictions and all checkout checks still apply.
+
 ## 8. Rollback
 
 Vercel → Deployments → pick an earlier deployment → Promote to Production. Database changes are forward-only; the Supabase project and the backup in `.migration-backups/` remain the source of the old data.

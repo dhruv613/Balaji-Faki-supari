@@ -25,6 +25,7 @@ export default function ReviewOrderPage() {
   const dispatch = useOrderDispatch();
   const navigate = useNavigate();
   const summary = buildSummary(state);
+  const pendingAmount = state.quoteError || state.catalogError ? 'Unavailable' : 'Pending quote';
   const reviewProduct = state.products.find((item) => item.type === state.product);
   const reviewImage = reviewProduct ? primaryImage(reviewProduct) : null;
   const { session } = useSession();
@@ -135,7 +136,6 @@ export default function ReviewOrderPage() {
               <EmailSignIn />
             </>
           )}
-          {state.quoteStatus && <p className="text-small text-secondary catalog-status" role="status">{state.quoteStatus}</p>}
           {!state.serverOrder && state.catalogError && <Notice tone="error" title="Cannot load products and prices">
             {state.catalogError} <button type="button" className="btn btn--sm" onClick={() => dispatch({ type: 'RETRY_CATALOG' })}>Try again</button>
           </Notice>}
@@ -192,16 +192,20 @@ export default function ReviewOrderPage() {
             </div>
             <div className="summary-row">
               <span>Delivery</span>
-              <strong>{formatINR(summary.deliveryFee)}</strong>
+              <strong>{summary.deliveryFee === null ? pendingAmount : formatINR(summary.deliveryFee)}</strong>
             </div>
             <div className="summary-row" >
               <span>Total</span>
-              <strong>{formatINR(summary.total)}</strong>
+              <strong>{summary.total === null ? pendingAmount : formatINR(summary.total)}</strong>
             </div>
 
-            {!hasServerTotals && !state.quote && !state.catalogError && (
-              <p className="text-secondary text-small" style={{ margin: '8px 0 0' }}>
-                Online ordering is not connected yet. Prices and delivery charges must be confirmed by the store before payment.
+            {!hasServerTotals && state.quoteError && <Notice tone="error" title="Cannot calculate checkout total">
+              {state.quoteError} <button type="button" className="btn btn--sm" onClick={() => dispatch({ type: 'RETRY_CATALOG' })}>Try again</button>
+            </Notice>}
+            {!hasServerTotals && state.quoteStatus && <p className="text-small text-secondary catalog-status" role="status">{state.quoteStatus}</p>}
+            {!hasServerTotals && !state.quote && !state.catalogError && !state.quoteError && !state.quoteStatus && (
+              <p className="text-secondary text-small" style={{ margin: '8px 0 0' }} role="status">
+                Waiting for the server to calculate delivery and total.
               </p>
             )}
 

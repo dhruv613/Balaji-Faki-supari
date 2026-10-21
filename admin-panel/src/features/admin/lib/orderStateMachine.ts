@@ -68,6 +68,7 @@ export const ORDER_ACTION_LABELS: Partial<Record<AdminOrderStatus, string>> = {
   SHIPPED: 'Mark Shipped',
   OUT_FOR_DELIVERY: 'Mark Out for Delivery',
   DELIVERED: 'Mark Delivered',
+  DELIVERY_FAILED: 'Record Delivery Failure',
   CANCELLED: 'Cancel Order',
 };
 
@@ -197,7 +198,7 @@ export function getAllowedOrderActions(
       nextStatus,
       label,
       tone:
-        nextStatus === 'CANCELLED'
+        nextStatus === 'CANCELLED' || nextStatus === 'DELIVERY_FAILED'
           ? 'danger'
           : nextStatus === 'CONFIRMED' || nextStatus === 'DELIVERED'
           ? 'primary'

@@ -4,6 +4,7 @@ import Notice from '../../../components/common/Notice';
 import { formatINR, getErrorMessage } from '../../../lib/api';
 import { env } from '../../../lib/env';
 import { getAdminCustomerById, getAdminCustomers } from '../api';
+import { formatDate } from '../lib/formatDateTime';
 import { DetailDrawer, EmptyState, ErrorState, LoadingSkeleton } from '../components';
 import type { AdminCustomer } from '../../../types/orders';
 import type { AdminCustomerDetailRecord, AdminCustomersQueryParams } from '../types';
@@ -94,7 +95,7 @@ export default function AdminCustomersPage() {
                     <td>{customer.location || '—'}</td>
                     <td>{customer.orders}</td>
                     <td>{formatINR(customer.totalSpent)}</td>
-                    <td>{customer.lastOrder ? new Date(customer.lastOrder).toLocaleDateString('en-IN') : '—'}</td>
+                    <td>{formatDate(customer.lastOrder)}</td>
                     <td>{customer.review === null ? '—' : customer.review.toFixed(1)}</td>
                     <td><span className={`badge ${STATUS_STYLE[customer.status] ?? ''}`}>{customer.status}</span></td>
                     <td><button type="button" className="btn btn--sm" onClick={() => openCustomer(customer)}>View</button></td>
@@ -120,7 +121,7 @@ export default function AdminCustomersPage() {
             <dl className="admin-kv-grid">
               <div className="admin-kv-item"><dt>E-mail</dt><dd>{detail.email || '—'}</dd></div>
               <div className="admin-kv-item"><dt>Address</dt><dd>{detail.fullAddress || '—'}{detail.pinCode ? ` – ${detail.pinCode}` : ''}</dd></div>
-              <div className="admin-kv-item"><dt>Joined</dt><dd>{detail.joinedDate ? new Date(detail.joinedDate).toLocaleDateString('en-IN') : '—'}</dd></div>
+              <div className="admin-kv-item"><dt>Joined</dt><dd>{formatDate(detail.joinedDate)}</dd></div>
             </dl>
             <h3 style={{ marginTop: 16 }}>Orders</h3>
             {detail.orderHistory.length === 0 ? <p className="text-secondary">No orders yet.</p> : (

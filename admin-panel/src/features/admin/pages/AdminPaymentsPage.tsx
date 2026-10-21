@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import Notice from '../../../components/common/Notice';
 import { env } from '../../../lib/env';
 import { formatINR, getErrorMessage, resolveApiUrl } from '../../../lib/api';
+import { formatDateTime } from '../lib/formatDateTime';
 import {
   getAdminPayments,
   getAdminPaymentProof,
@@ -299,7 +300,7 @@ export default function AdminPaymentsPage() {
                     <td>
                       <span className="badge badge--outline">Private Bucket</span>
                     </td>
-                    <td className="text-small">{payment.submissionDate}</td>
+                    <td className="text-small">{formatDateTime(payment.submissionDate)}</td>
                     <td><StatusBadge status={payment.paymentStatus} kind="payment" /></td>
                     <td>
                       <button
@@ -367,7 +368,7 @@ export default function AdminPaymentsPage() {
               </div>
               <div className="admin-kv-item">
                 <dt>Submitted At</dt>
-                <dd>{selectedPayment.submissionDate}</dd>
+                <dd>{formatDateTime(selectedPayment.submissionDate)}</dd>
               </div>
             </dl>
 
@@ -413,7 +414,7 @@ export default function AdminPaymentsPage() {
                 </>
               ) : selectedPayment.paymentStatus === 'VERIFIED' ? (
                 <Notice tone="success" title="Payment approved">
-                  The screenshot was approved on {selectedPayment.verificationHistory.find((item) => item.action === 'APPROVED')?.timestamp ?? 'record'}.
+                  The screenshot was approved on {formatDateTime(selectedPayment.verificationHistory.find((item) => item.action === 'APPROVED')?.timestamp)}.
                 </Notice>
               ) : (
                 <Notice tone="warning" title="Payment action unavailable">

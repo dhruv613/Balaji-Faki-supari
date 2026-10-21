@@ -130,6 +130,16 @@
   color: var(--color-text);
 }
 
+.admin-sidebar__group--compact {
+  margin-top: 8px;
+  border-top: 1px solid var(--color-border);
+}
+
+.admin-sidebar__group--compact .admin-sidebar__link {
+  padding: 8px 12px;
+  font-size: 14px;
+}
+
 .admin-sidebar__footer {
   padding: 16px 20px;
   border-top: 1px solid var(--color-border);
@@ -779,6 +789,101 @@
   }
 }
 
+/* ----- 13. Touch targets and stacked cards on small screens (T-A3) ----- */
+@media (max-width: 1024px), (pointer: coarse) {
+  .admin-topbar__menu-btn {
+    width: 44px;
+    height: 44px;
+  }
+
+  .admin-shell .btn--sm,
+  .admin-profile-pill,
+  .admin-topbar__search .input,
+  .admin-sidebar__link {
+    min-height: 44px;
+  }
+
+  .admin-shell .text-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+@media (max-width: 768px) {
+  /* A table marked data-table--cards becomes one card per row; every action stays on screen. */
+  .admin-shell .data-table.data-table--cards {
+    display: block;
+    min-width: 0;
+    margin-top: 0;
+  }
+
+  .data-table--cards thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  .data-table--cards tbody {
+    display: block;
+  }
+
+  .data-table--cards tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px 16px;
+    margin: 0 0 12px;
+    padding: 12px 14px;
+    background: var(--color-white);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+  }
+
+  .admin-shell .data-table--cards td {
+    display: block;
+    min-width: 0;
+    padding: 4px 0;
+    border: 0;
+  }
+
+  .data-table--cards td.cell-wide,
+  .data-table--cards td[colspan] {
+    grid-column: 1 / -1;
+  }
+
+  .data-table--cards td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 2px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--color-text-secondary);
+  }
+
+  .data-table--cards td:first-child strong {
+    font-size: 18px;
+  }
+
+  .data-table--cards td.data-table__actions {
+    margin-top: 6px;
+    padding-top: 12px;
+    border-top: 1px solid var(--color-border);
+  }
+
+  .data-table--cards td.data-table__actions::before {
+    display: none;
+  }
+
+  .data-table--cards .admin-action-group .btn {
+    flex: 1 1 auto;
+  }
+}
+
 @media print {
   .admin-sidebar,
   .admin-topbar,
@@ -788,26 +893,5 @@
 
   .admin-workspace {
     padding: 0;
-  }
-}
-
-@media screen and (prefers-color-scheme: dark) {
-  .admin-sidebar__link-badge,
-  .admin-profile-pill__avatar { color: #141210; }
-  .admin-sidebar__logo-link img { background: #fff; border-radius: 4px; }
-  .badge--warning {
-    background: var(--color-warning-bg);
-    border-color: var(--color-warning-border);
-  }
-  .badge--danger {
-    background: var(--color-error-bg);
-    color: var(--color-danger);
-    border-color: var(--color-error-border);
-  }
-  .btn--danger { color: #fff; }
-  .btn--danger-outline { color: var(--color-danger); border-color: var(--color-danger); }
-  .admin-toast--error { border-left-color: var(--color-danger); }
-  .admin-skeleton {
-    background-image: linear-gradient(90deg, var(--color-bg-cream) 25%, var(--color-border) 50%, var(--color-bg-cream) 75%);
   }
 }

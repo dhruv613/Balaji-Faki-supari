@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import useModalDialog from '../lib/useModalDialog';
 import { Link, useNavigate } from 'react-router-dom';
 import StoreLink from './StoreLink';
 import { signOut, useSession } from '../../../lib/auth';
@@ -26,6 +27,7 @@ export default function AdminHeader({ onOpenSidebar }: AdminHeaderProps) {
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileMsg, setProfileMsg] = useState('');
   const [profileErr, setProfileErr] = useState('');
+  const profileDialogRef = useModalDialog<HTMLDivElement>(profileOpen, () => setProfileOpen(false));
 
   const userEmail = session?.user?.email ?? 'Not signed in';
   const displayName =
@@ -51,7 +53,7 @@ export default function AdminHeader({ onOpenSidebar }: AdminHeaderProps) {
     e.preventDefault();
     const trimmed = searchQuery.trim();
     if (!trimmed) return;
-    navigate(`/admin/orders?q=${encodeURIComponent(trimmed)}`);
+    navigate(`/admin/orders?q=${encodeURIComponent(trimmed)}`, { state: { headerSearch: true } });
   }
 
   async function handleSaveProfile(e: FormEvent) {
@@ -163,6 +165,8 @@ export default function AdminHeader({ onOpenSidebar }: AdminHeaderProps) {
 
       {profileOpen && (
         <div
+          ref={profileDialogRef}
+          tabIndex={-1}
           className="admin-overlay"
           role="dialog"
           aria-modal="true"
@@ -232,6 +236,7 @@ export default function AdminHeader({ onOpenSidebar }: AdminHeaderProps) {
               <label htmlFor="admin-profile-name">Full Name</label>
               <input
                 id="admin-profile-name"
+                data-autofocus
                 className="input"
                 type="text"
                 maxLength={100}

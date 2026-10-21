@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import useModalDialog from '../lib/useModalDialog';
 
 export interface ImagePreviewProps {
   src?: string;
@@ -19,6 +20,7 @@ export default function ImagePreview({
   caption,
 }: ImagePreviewProps) {
   const [expanded, setExpanded] = useState(false);
+  const dialogRef = useModalDialog<HTMLDivElement>(expanded, () => setExpanded(false));
 
   if (!src) {
     return (
@@ -61,6 +63,8 @@ export default function ImagePreview({
 
       {expanded && (
         <div
+          ref={dialogRef}
+          tabIndex={-1}
           className="admin-overlay"
           role="dialog"
           aria-modal="true"

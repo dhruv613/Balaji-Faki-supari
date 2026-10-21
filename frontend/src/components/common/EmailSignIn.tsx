@@ -13,6 +13,9 @@ export const MIN_PASSWORD_LENGTH = 8;
 export function describeAuthFailure(error: unknown, mode: Mode): { message: string; suggest?: Mode } {
   const raw = error as { message?: string; status?: number; code?: string } | null;
   const text = `${raw?.message ?? ''} ${raw?.code ?? ''}`.toLowerCase();
+  if (text.includes('invalid origin') || text.includes('invalid_origin') || text.includes('origin_not_allowed')) {
+    return { message: "Sign-in is unavailable at this website address. Please use the store's main website or contact the store." };
+  }
   if (mode === 'signin') {
     if (text.includes('invalid login credentials') || text.includes('invalid_credentials') || text.includes('invalid_email_or_password')) {
       return { message: 'The email or password is incorrect. Check them and try again.', suggest: 'register' };
@@ -34,7 +37,7 @@ export function describeAuthFailure(error: unknown, mode: Mode): { message: stri
   if (text.includes('failed to fetch') || text.includes('network')) {
     return { message: 'We could not reach the sign-in service. Check your connection and try again.' };
   }
-  return { message: error instanceof Error && error.message ? error.message : 'Unable to continue. Please try again.' };
+  return { message: typeof raw?.message === 'string' && raw.message ? raw.message : 'Unable to continue. Please try again.' };
 }
 
 export interface EmailSignInProps {

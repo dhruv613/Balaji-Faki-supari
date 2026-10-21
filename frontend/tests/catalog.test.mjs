@@ -28,10 +28,11 @@ let reply;
 const requests = [];
 const api = load('../src/lib/api.ts', {
   './env': { env: { apiBaseUrl: '/api' } }, './auth': { getAccessToken: async () => null },
-}, { fetch: async (url, options) => { requests.push({ url, options }); return reply(); } });
+}, { fetch: async (url, options) => { requests.push({ url, options }); return reply(url, options); } });
 const store = load('../src/constants/store.ts');
 const contracts = load('../src/lib/contracts.ts', { '../constants/store': store });
 const catalog = load('../src/features/catalog/api/catalogApi.ts', { '../../../lib/api': api, '../../../lib/contracts': contracts });
+const ordersApi = load('../src/features/orders/api/ordersApi.ts', { '../../../lib/api': api, '../../../lib/contracts': contracts });
 assert.throws(() => contracts.readProducts({}), /product or price information/);
 assert.throws(() => contracts.readProducts([{ type: 'faki' }]), /product or price information/);
 const product = { type: 'faki', name: 'Faki', nameGu: 'ફાકી', packSizes: ['250g'], prices: { '250g': 275 }, priceConfirmed: { '250g': true }, inStock: { '250g': true } };
@@ -59,7 +60,7 @@ const context = load('../src/context/OrderContext.tsx', {
   react: { ...React, useEffect: (effect, deps) => effects.push({ effect, deps }), useReducer: () => [state, action => { actions.push(action); state = context.reducer(state, action); }] },
   'react-router-dom': { useLocation: () => ({ pathname }) },
   '../lib/api': api, '../constants/store': store, '../features/catalog/api/catalogApi': catalog,
-  '../features/orders/api/ordersApi': {}, '../lib/customer': load('../src/lib/customer.ts'), '../lib/amount': load('../src/lib/amount.ts'),
+  '../features/orders/api/ordersApi': ordersApi, '../lib/customer': load('../src/lib/customer.ts'), '../lib/amount': load('../src/lib/amount.ts'),
 }, { window: browser, document, sessionStorage: { removeItem() {}, setItem() {} } });
 state = { ...context.initialState };
 const flush = () => new Promise(resolve => setImmediate(resolve));
@@ -168,4 +169,84 @@ assert.match(errorMarkup, /role="alert"/);
 assert.match(errorMarkup, /Cannot load products and prices/);
 assert.match(errorMarkup, /Try again/);
 assert.doesNotMatch(errorMarkup, /Awaiting price|product-card__name/);
+
+// Quote failures are distinct from loading and product prices; incomplete typed weights never start a request.
+function quoteEffect() {
+  effects = [];
+  context.OrderProvider({ children: null, user: null });
+  return effects.find(item => item.deps?.[0] === state.product && item.deps[1] === state.packSize).effect();
+}
+state = { ...context.initialState, catalogStatus: '', products: [product], pinCode: '384002', fullName: 'Test Customer', phone: '9876543210', address: 'Example delivery address' };
+const quoteFailure = 'PIN code 384002 is outside our current delivery area.';
+reply = () => new Response(JSON.stringify({ detail: quoteFailure }), { status: 422 });
+let quoteCleanup = quoteEffect();
+assert.match(state.quoteStatus, /Checking current totals/);
+await flush();
+assert.equal(requests.at(-1).url, '/api/checkout/quote');
+assert.equal(JSON.parse(requests.at(-1).options.body).pinCode, '384002');
+assert.equal(state.quote, null);
+assert.equal(state.quoteStatus, '');
+assert.equal(state.quoteError, quoteFailure);
+
+const orderStubs = {
+  '../../../context/OrderContext': { ...context, useOrder: () => state, useOrderDispatch: () => action => { selection = action; } },
+  '../../../lib/api': api, '../../../lib/env': { env: { supportWhatsApp: '918000961030' } },
+  '../../../lib/auth': { useSession: () => ({ session: { user: { id: 'quote-test-customer' } } }) },
+  '../../../components/common/OrderStepper': { default: () => null }, '../../../components/common/Notice': { default: Notice },
+  '../../../components/common/EmailSignIn': { default: () => null },
+  '../../../components/common/ProductName': { default: ({ name }) => name },
+  '../../catalog/components/ProductParts': { primaryImage: () => null }, '../api/ordersApi': ordersApi,
+};
+const Review = load('../src/features/orders/pages/ReviewOrderPage.tsx', orderStubs).default;
+const { MemoryRouter } = require('react-router-dom');
+const reviewMarkup = () => renderToStaticMarkup(React.createElement(MemoryRouter, null, React.createElement(Review)));
+let markup = reviewMarkup();
+assert.match(markup, /Cannot calculate checkout total/);
+assert.match(markup, /PIN code 384002 is outside our current delivery area/);
+assert.match(markup, /Unavailable/);
+assert.doesNotMatch(markup, /Awaiting price|Online ordering is not connected yet/);
+assert.match(markup, /id="continue-payment-btn"[^>]*disabled/, 'failed quotes never enable checkout');
+assert.ok(markup.indexOf('Cannot calculate checkout total') > markup.indexOf('id="amount-to-pay"'), 'the error is beside the payable totals');
+const FormView = load('../src/features/orders/pages/OrderFormPage.tsx', {
+  ...orderStubs, '../../../components/common/MobileNumberInput': { default: () => null }, '../../../lib/amount': load('../src/lib/amount.ts'),
+}).default;
+const formMarkup = renderToStaticMarkup(React.createElement(MemoryRouter, null, React.createElement(FormView)));
+assert.match(formMarkup, /PIN code 384002 is outside our current delivery area/);
+assert.match(formMarkup, /Unavailable/);
+assert.doesNotMatch(formMarkup, /Awaiting price/);
+
+// The existing catalog retry updates products and re-runs the quote with current server data.
+quoteCleanup();
+state = context.reducer(state, { type: 'RETRY_CATALOG' });
+reply = url => new Response(JSON.stringify(url.endsWith('/products') ? [product] : { subtotal: 275, deliveryFee: 20, total: 295, currency: 'INR' }), { status: 200 });
+effects = [];
+context.OrderProvider({ children: null, user: null });
+const retryCleanup = effects.find(item => item.deps?.[0] === pathname && item.deps[1] === state.catalogLoadAttempt).effect();
+await flush();
+quoteCleanup = quoteEffect();
+await flush();
+assert.equal(state.quoteError, '');
+assert.equal(state.quote.total, 295);
+assert.match(reviewMarkup(), /₹295/);
+quoteCleanup();
+retryCleanup();
+
+const beforeIncompleteAmount = requests.length;
+state = { ...state, customAmount: true, packSize: '0g', quoteError: '', quoteStatus: '' };
+quoteEffect();
+await flush();
+assert.equal(requests.length, beforeIncompleteAmount);
+assert.equal(state.quote, null, 'an invalid amount clears the previously quoted total');
+assert.equal(state.quoteStatus, '', 'an incomplete typed weight cannot leave an infinite checking state');
+assert.match(state.quoteError, /100 g|10 kg/);
+state = { ...state, customAmount: false, packSize: '250g', pinCode: '36000' };
+quoteEffect();
+assert.equal(state.quoteError, '');
+assert.equal(state.quoteStatus, '');
+assert.equal(state.quote, null);
+state = { ...state, pinCode: '360005', quoteStatus: 'Checking current totals…' };
+markup = reviewMarkup();
+assert.match(markup, /Pending quote/);
+assert.match(markup, /Checking current totals/);
+assert.doesNotMatch(markup, /Awaiting price|Online ordering is not connected yet/);
 console.log('Catalog: shared dev/production API config, no-cache reads, focus/visibility/pageshow/route/retry refresh, failures, concurrency, stock/approval selection and historical order prices passed.');

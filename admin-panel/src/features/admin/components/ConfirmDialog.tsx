@@ -1,4 +1,5 @@
-import { useEffect, type ReactNode } from 'react';
+import { useId, type ReactNode } from 'react';
+import useModalDialog from '../lib/useModalDialog';
 
 export interface ConfirmDialogProps {
   open: boolean;
@@ -25,29 +26,25 @@ export default function ConfirmDialog({
   onCancel,
   children,
 }: ConfirmDialogProps) {
-  useEffect(() => {
-    if (!open) return;
-    function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape' && !busy) onCancel();
-    }
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [open, busy, onCancel]);
+  const titleId = useId();
+  const dialogRef = useModalDialog<HTMLDivElement>(open, onCancel, !busy);
 
   if (!open) return null;
 
   return (
     <div
+      ref={dialogRef}
+      tabIndex={-1}
       className="admin-overlay"
       role="dialog"
       aria-modal="true"
-      aria-labelledby="confirm-dialog-title"
+      aria-labelledby={titleId}
       onClick={(e) => {
         if (e.target === e.currentTarget && !busy) onCancel();
       }}
     >
       <div className="admin-modal">
-        <h2 id="confirm-dialog-title">{title}</h2>
+        <h2 id={titleId}>{title}</h2>
         <div className="text-secondary" style={{ marginBottom: children ? 16 : 0 }}>
           {description}
         </div>

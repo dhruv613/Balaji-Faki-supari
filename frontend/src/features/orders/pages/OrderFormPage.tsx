@@ -94,6 +94,7 @@ export default function OrderFormPage() {
   }, [searchParams, dispatch, setSearchParams, state.products, state.product]);
 
   const summary = buildSummary(state);
+  const pendingAmount = state.quoteError || state.catalogError ? 'Unavailable' : 'Pending quote';
   const currentProduct = state.products.find((p) => p.type === state.product);
   const canReview = Boolean(currentProduct && (state.customAmount
     ? currentProduct.pricePerKg != null && !typedAmountError(state.packSize)
@@ -334,11 +335,11 @@ export default function OrderFormPage() {
             </div>
             <div className="summary-row">
               <span>Delivery</span>
-              <strong>{formatINR(summary.deliveryFee)}</strong>
+              <strong>{summary.deliveryFee === null ? pendingAmount : formatINR(summary.deliveryFee)}</strong>
             </div>
             <div className="summary-row" >
               <span>Total</span>
-              <strong>{formatINR(summary.total)}</strong>
+              <strong>{summary.total === null ? pendingAmount : formatINR(summary.total)}</strong>
             </div>
 
             {state.catalogStatus && <p className="text-small text-secondary catalog-status" role="status">{state.catalogStatus}</p>}
@@ -346,6 +347,9 @@ export default function OrderFormPage() {
               {state.catalogError} <button type="button" className="btn btn--sm" onClick={() => dispatch({ type: 'RETRY_CATALOG' })}>Try again</button>
             </Notice>}
             {state.quoteStatus && <p className="text-small text-secondary catalog-status" role="status">{state.quoteStatus}</p>}
+            {state.quoteError && <Notice tone="error" title="Cannot calculate checkout total">
+              {state.quoteError} <button type="button" className="btn btn--sm" onClick={() => dispatch({ type: 'RETRY_CATALOG' })}>Try again</button>
+            </Notice>}
             <button
               type="button"
               disabled={!canReview}

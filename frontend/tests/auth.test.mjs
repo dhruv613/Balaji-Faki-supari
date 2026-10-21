@@ -80,6 +80,18 @@ assert.match(html(), /Create your account/);
 assert.equal(field(render(), 'login-email').props.value, 'typo@example.test', 'typed email is kept when switching');
 assert.deepEqual(history.map(h => h.method), ['signIn.email']);
 
+// A deployment-origin rejection is a site configuration failure, never an invitation to create another account.
+for (const cause of [{ message: 'Invalid origin', code: 'INVALID_ORIGIN', status: 403 }, new Error('Invalid origin')]) {
+  reset();
+  failure = cause;
+  change('login-email', 'a@example.test'); change('login-password', 'password1');
+  await submit();
+  assert.match(html(), /Sign-in is unavailable at this website address/);
+  assert.match(html(), /main website or contact the store/);
+  assert.doesNotMatch(html(), /Create an account with this email/);
+  assert.deepEqual(history.map(h => h.method), ['signIn.email']);
+}
+
 // Network and rate-limit failures are explained, not treated as "new customer".
 reset();
 failure = new Error('Failed to fetch');
@@ -171,6 +183,8 @@ assert.equal(describeAuthFailure({ message: 'Invalid email or password', code: '
 assert.equal(describeAuthFailure({ message: 'User already exists', code: 'USER_ALREADY_EXISTS' }, 'register').suggest, 'signin');
 assert.match(describeAuthFailure({ message: 'Email not verified', code: 'EMAIL_NOT_VERIFIED' }, 'signin').message, /Verify your email/);
 assert.match(describeAuthFailure({ status: 429, message: '' }, 'signin').message, /Too many attempts/);
+assert.equal(describeAuthFailure({ code: 'ORIGIN_NOT_ALLOWED' }, 'register').suggest, undefined);
+assert.match(describeAuthFailure({ message: 'Unable to send email. Try again later.' }, 'signin').message, /Unable to send email/);
 
 // Post-login destinations must be same-site paths.
 const { safeNextPath } = load('src/lib/navigation.ts');

@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import Notice from '../../../components/common/Notice';
 import { env } from '../../../lib/env';
 import { formatINR, getErrorMessage } from '../../../lib/api';
+import { formatDateTime } from '../lib/formatDateTime';
 import {
   getAdminRefunds,
   approveAdminRefund,
@@ -298,7 +299,7 @@ export default function AdminRefundsPage() {
                   <tr key={item.id}>
                     <td>
                       <strong>{item.orderNumber}</strong>
-                      <p className="text-small text-secondary">{item.cancelledAt}</p>
+                      <p className="text-small text-secondary">{formatDateTime(item.cancelledAt)}</p>
                     </td>
                     <td>
                       <strong>{item.customerName}</strong>
@@ -313,7 +314,7 @@ export default function AdminRefundsPage() {
                         <span className="text-secondary text-small">Not transferred</span>
                       )}
                     </td>
-                    <td className="text-small">{item.refundDate ?? '—'}</td>
+                    <td className="text-small">{formatDateTime(item.refundDate)}</td>
                     <td><StatusBadge status={item.refundStatus} kind="refund" /></td>
                     <td>
                       <button
@@ -349,7 +350,7 @@ export default function AdminRefundsPage() {
         }
         subtitle={
           selectedRefund
-            ? `${selectedRefund.customerName} · Cancelled ${selectedRefund.cancelledAt}`
+            ? `${selectedRefund.customerName} · Cancelled ${formatDateTime(selectedRefund.cancelledAt)}`
             : undefined
         }
         onClose={() => setSelectedRefund(null)}
@@ -507,7 +508,7 @@ export default function AdminRefundsPage() {
               ) : (
                 <Notice tone="success" title="Refund Completed & Verified">
                   Bank Reference: <code>{selectedRefund.refundTransactionReference}</code> · Date:{' '}
-                  {selectedRefund.refundDate} · Completed by {selectedRefund.completedBy}.
+                  {formatDateTime(selectedRefund.refundDate)} · Completed by {selectedRefund.completedBy}.
                 </Notice>
               )}
             </form>

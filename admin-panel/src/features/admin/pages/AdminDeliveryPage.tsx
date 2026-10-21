@@ -286,8 +286,8 @@ export default function AdminDeliveryPage() {
         <LoadingSkeleton rows={5} />
       ) : (
         <div className="card">
-          <div className="customer-table-scroll" role="region" aria-label="Fulfillment queue" tabIndex={0}>
-            <table className="data-table">
+          <div className="admin-table-wrap" role="region" aria-label="Fulfillment queue" tabIndex={0}>
+            <table className="data-table data-table--cards">
               <thead>
                 <tr>
                   <th scope="col">Order ID</th>
@@ -306,16 +306,16 @@ export default function AdminDeliveryPage() {
                   const primaryNext = allowedNext[0];
                   return (
                     <tr key={item.id}>
-                      <td><strong>{item.orderNumber}</strong></td>
-                      <td>
+                      <td className="cell-wide" data-label="Order ID"><strong>{item.orderNumber}</strong></td>
+                      <td className="cell-wide" data-label="Customer &amp; Contact">
                         <strong>{item.customerName}</strong>
                         <p className="text-small text-secondary">{item.contactNumber}</p>
                       </td>
-                      <td className="text-small">
+                      <td className="text-small cell-wide" data-label="Shipping Address">
                         {item.shippingAddress} – <strong>{item.pinCode}</strong>
                       </td>
-                      <td className="text-small">{item.itemsSummary}</td>
-                      <td className="text-small">
+                      <td className="text-small cell-wide" data-label="Items">{item.itemsSummary}</td>
+                      <td className="text-small" data-label="Assigned Delivery Staff">
                         {item.assignedDeliveryPerson ? (
                           <>
                             <strong>{item.assignedDeliveryPerson}</strong>
@@ -325,15 +325,15 @@ export default function AdminDeliveryPage() {
                           <span className="text-secondary">Unassigned</span>
                         )}
                       </td>
-                      <td className="text-small">
+                      <td className="text-small" data-label="Tracking Ref">
                         {item.courierTrackingReference ? (
                           <code>{item.courierTrackingReference}</code>
                         ) : (
                           '—'
                         )}
                       </td>
-                      <td><StatusBadge status={item.status} kind="order" /></td>
-                      <td>
+                      <td className="cell-wide" data-label="Fulfillment Status"><StatusBadge status={item.status} kind="order" /></td>
+                      <td className="cell-wide data-table__actions" data-label="Action">
                         <div className="admin-action-group">
                           <button
                             type="button"

@@ -4,6 +4,7 @@ import Notice from '../../../components/common/Notice';
 import { formatINR, getErrorMessage } from '../../../lib/api';
 import { env } from '../../../lib/env';
 import { getAdminDashboard } from '../api';
+import { formatDateTime } from '../lib/formatDateTime';
 import { EmptyState, ErrorState, LoadingSkeleton, StatCard, StatusBadge } from '../components';
 import type { AdminDashboardResponse } from '../types';
 
@@ -84,7 +85,7 @@ export function DashboardView({ data }: { data: AdminDashboardResponse }) {
                         <td><strong>{row.orderNumber}</strong></td>
                         <td>{row.customerName}</td>
                         <td>{formatINR(row.amount)}</td>
-                        <td>{new Date(row.submittedAt).toLocaleString('en-IN')}</td>
+                        <td>{formatDateTime(row.submittedAt)}</td>
                         <td><StatusBadge status={row.status} /></td>
                         <td><Link className="btn btn--sm btn--primary" to={`/admin/payments?payment=${encodeURIComponent(row.paymentId)}`}>Review</Link></td>
                       </tr>

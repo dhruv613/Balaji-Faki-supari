@@ -1,4 +1,5 @@
-import { useEffect, type ReactNode } from 'react';
+import { useId, type ReactNode } from 'react';
+import useModalDialog from '../lib/useModalDialog';
 
 export interface DetailDrawerProps {
   open: boolean;
@@ -17,23 +18,19 @@ export default function DetailDrawer({
   footer,
   children,
 }: DetailDrawerProps) {
-  useEffect(() => {
-    if (!open) return;
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose();
-    }
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [open, onClose]);
+  const titleId = useId();
+  const dialogRef = useModalDialog<HTMLDivElement>(open, onClose);
 
   if (!open) return null;
 
   return (
     <div
+      ref={dialogRef}
+      tabIndex={-1}
       className="admin-drawer-overlay"
       role="dialog"
       aria-modal="true"
-      aria-labelledby="drawer-title"
+      aria-labelledby={titleId}
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -41,7 +38,7 @@ export default function DetailDrawer({
       <aside className="admin-drawer">
         <header className="admin-drawer__header">
           <div>
-            <h2 id="drawer-title">{title}</h2>
+            <h2 id={titleId}>{title}</h2>
             {subtitle && <p className="text-small text-secondary">{subtitle}</p>}
           </div>
           <button type="button" className="btn btn--outline btn--sm" onClick={onClose}>

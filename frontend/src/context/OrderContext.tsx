@@ -25,6 +25,7 @@ export interface OrderState extends OrderFormData {
   catalogLoadAttempt: number;
   quote: CheckoutQuote | null;
   quoteStatus: string;
+  quoteError: string;
 }
 
 export const initialState: OrderState = {
@@ -33,7 +34,7 @@ export const initialState: OrderState = {
   checkoutKey: '', orderLoadStatus: '', orderLoadAttempt: 0,
   orderId: '', orderNumber: '', serverOrder: null,
   screenshotFile: null, screenshotPreview: '', paymentStatus: null,
-  products: [], catalogStatus: 'Loading current prices…', catalogError: '', catalogLoadAttempt: 0, quote: null, quoteStatus: '',
+  products: [], catalogStatus: 'Loading current prices…', catalogError: '', catalogLoadAttempt: 0, quote: null, quoteStatus: '', quoteError: '',
 };
 
 const orderReset = {
@@ -54,7 +55,7 @@ export type Action =
   | { type: 'SET_SCREENSHOT'; payload: { file: File | null; preview: string } }
   | { type: 'SET_CATALOG'; payload: { products: Product[]; status: string; error?: string } }
   | { type: 'RETRY_CATALOG' }
-  | { type: 'SET_QUOTE'; payload: { quote: CheckoutQuote | null; status: string } }
+  | { type: 'SET_QUOTE'; payload: { quote: CheckoutQuote | null; status: string; error?: string } }
   | { type: 'SET_CHECKOUT_KEY'; payload: string }
   | { type: 'SET_ORDER_LOAD_STATUS'; payload: string }
   | { type: 'RETRY_ORDER' }
@@ -101,7 +102,7 @@ export function reducer(state: OrderState, action: Action): OrderState {
     case 'RETRY_CATALOG':
       return { ...state, catalogLoadAttempt: state.catalogLoadAttempt + 1, catalogError: '', catalogStatus: 'Loading current prices…' };
     case 'SET_QUOTE':
-      return { ...state, quote: action.payload.quote, quoteStatus: action.payload.status };
+      return { ...state, quote: action.payload.quote, quoteStatus: action.payload.status, quoteError: action.payload.error ?? '' };
     case 'SET_CHECKOUT_KEY':
       return { ...state, checkoutKey: action.payload };
     case 'SET_ORDER_LOAD_STATUS':
@@ -259,12 +260,16 @@ export function OrderProvider({ children, user }: { children: ReactNode; user: U
     let active = true;
     dispatch({ type: 'SET_QUOTE', payload: { quote: null, status: '' } });
     if (!state.products.some(product => product.type === state.product)) return;
+    const amountError = state.customAmount ? typedAmountError(state.packSize) : null;
+    if (amountError) {
+      dispatch({ type: 'SET_QUOTE', payload: { quote: null, status: '', error: amountError } });
+      return;
+    }
     if (!/^[1-9]\d{5}$/.test(state.pinCode)) return;
     dispatch({ type: 'SET_QUOTE', payload: { quote: null, status: 'Checking current totals…' } });
-    if (state.customAmount && typedAmountError(state.packSize)) return;
     getCheckoutQuote({ product: state.product, packSize: state.packSize, customAmount: state.customAmount, quantity: state.quantity, pinCode: state.pinCode })
       .then(quote => { if (active) dispatch({ type: 'SET_QUOTE', payload: { quote, status: '' } }); })
-      .catch(error => { if (active) dispatch({ type: 'SET_QUOTE', payload: { quote: null, status: getErrorMessage(error) } }); });
+      .catch(error => { if (active) dispatch({ type: 'SET_QUOTE', payload: { quote: null, status: '', error: getErrorMessage(error) } }); });
     return () => { active = false; };
   }, [state.product, state.packSize, state.customAmount, state.quantity, state.pinCode, state.products]);
   useEffect(() => {

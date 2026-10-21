@@ -11,6 +11,8 @@ export interface AdminNavItem {
 export interface AdminNavGroup {
   section: string;
   items: AdminNavItem[];
+  /** Smaller secondary group shown under the primary links. */
+  compact?: boolean;
 }
 
 export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
@@ -21,9 +23,26 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
       { to: '/admin/prices', label: 'Price Management' },
       { to: '/admin/orders', label: 'Order Management' },
       { to: '/admin/feedback', label: 'Feedback Management' },
+      { to: '/admin/settings', label: 'Settings' },
     ],
   },
 ];
+
+/** Existing working pages that are not primary links. Shown as a separate group; the five primary links above stay as they are. */
+export const ADMIN_OPERATIONS_GROUP: AdminNavGroup = {
+  section: 'Operations',
+  compact: true,
+  items: [
+    { to: '/admin/payments', label: 'Payments' },
+    { to: '/admin/inventory', label: 'Inventory' },
+    { to: '/admin/delivery', label: 'Delivery' },
+    { to: '/admin/customers', label: 'Customers' },
+    { to: '/admin/refunds', label: 'Refunds' },
+  ],
+};
+
+const SIDEBAR_GROUPS: AdminNavGroup[] = [...ADMIN_NAV_GROUPS, ADMIN_OPERATIONS_GROUP];
+const groupId = (section: string) => `admin-nav-${section.toLowerCase().replace(/\s+/g, '-')}`;
 
 export interface AdminSidebarProps {
   open: boolean;
@@ -66,9 +85,19 @@ export default function AdminSidebar({ open, onClose }: AdminSidebarProps) {
         </div>
 
         <nav className="admin-sidebar__nav">
-          {ADMIN_NAV_GROUPS.map((group) => (
-            <div key={group.section}>
-              <div className="admin-sidebar__section-label">{group.section}</div>
+          {SIDEBAR_GROUPS.map((group) => (
+            <div
+              key={group.section}
+              role="group"
+              aria-labelledby={groupId(group.section)}
+              className={`admin-sidebar__group${group.compact ? ' admin-sidebar__group--compact' : ''}`}
+            >
+              <div
+                id={groupId(group.section)}
+                className="admin-sidebar__section-label"
+              >
+                {group.section}
+              </div>
               {group.items.map((item) => (
                 <NavLink
                   key={item.to}

@@ -85,6 +85,20 @@ export default function AdminSettingsPage() {
   }, [apply]);
   useEffect(load, [load]);
 
+  function applyMediaUpdate(next: AdminStoreSettings) {
+    const previous = settings && toForm(settings);
+    setSettings(next);
+    setForm((current) => {
+      const updated = toForm(next);
+      if (current && previous) {
+        for (const key of Object.keys(current) as (keyof SettingsForm)[]) {
+          if (current[key] !== previous[key]) updated[key] = current[key];
+        }
+      }
+      return updated;
+    });
+  }
+
   async function run<T>(action: () => Promise<T>, success: string): Promise<T | undefined> {
     if (busy) return undefined;
     setBusy(true); setFormError('');
@@ -103,8 +117,17 @@ export default function AdminSettingsPage() {
     if (!settings || !form) return; // Save is only possible after a successful load: placeholders can never be saved.
     const patch = changedSettings(settings, form);
     if ('error' in patch) { setFormError(patch.error); return; }
-    if (Object.keys(patch).length === 0) { setFormError('Nothing has changed.'); return; }
+    if (Object.keys(patch).length === 0) { setFormError(''); showToast('No changes to save. Your settings are already saved.', 'info'); return; }
     const next = await run(() => updateAdminSettings(patch), 'Settings saved.');
+    if (next) apply(next);
+  }
+
+  async function confirm() {
+    if (!settings || !form || busy) return;
+    const patch = changedSettings(settings, form);
+    if ('error' in patch) { setFormError(patch.error); return; }
+    if (Object.keys(patch).length > 0) { setFormError('Save your changes before confirming payment and delivery settings.'); return; }
+    const next = await run(() => confirmBusinessSettings(), 'Settings confirmed.');
     if (next) apply(next);
   }
 
@@ -114,7 +137,7 @@ export default function AdminSettingsPage() {
     if (!file) return;
     if (!IMAGE_TYPES.includes(file.type)) { setFormError('Choose a JPG, PNG or WEBP image.'); return; }
     const next = await run(() => handler(file), success);
-    if (next) apply(next);
+    if (next) applyMediaUpdate(next);
   }
 
   const set = (key: keyof SettingsForm) => (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
@@ -135,7 +158,7 @@ export default function AdminSettingsPage() {
 
       {settings && form && (
         <form onSubmit={save} noValidate>
-          {formError && <Notice tone="error" title="Not saved">{formError}</Notice>}
+          {formError && <Notice tone="error" title="Could not complete action">{formError}</Notice>}
 
           <section className="card" style={{ marginBottom: 24 }} aria-labelledby="settings-payment-heading">
             <h2 id="settings-payment-heading">Payment &amp; go-live confirmation</h2>
@@ -159,11 +182,12 @@ export default function AdminSettingsPage() {
             {settings.officialUpiQrImageUrl
               ? <img src={resolveApiUrl(settings.officialUpiQrImageUrl)} alt="Current payment QR" width={180} height={180} style={{ background: '#fff' }} />
               : <p className="text-secondary text-small">No QR uploaded yet.</p>}
+            {settings.officialUpiQrImageUrl && <p className="text-secondary text-small">QR image saved. Save any edited payment details, then confirm the settings below.</p>}
             <label htmlFor="set-qr">Upload a new QR image</label>
             <input id="set-qr" className="input" type="file" accept="image/jpeg,image/png,image/webp" disabled={busy}
               onChange={(event) => void pickImage(event, uploadPaymentQr, 'Payment QR replaced. Confirm the settings again.')} />
             <button type="button" className="btn btn--primary" style={{ marginTop: 16 }} disabled={busy || Boolean(settings.businessSettingsConfirmedAt) || settings.paymentIsLocalTest}
-              onClick={() => void run(() => confirmBusinessSettings(), 'Settings confirmed.').then((next) => next && apply(next))}>
+              onClick={() => void confirm()}>
               Confirm payment, delivery &amp; PIN settings
             </button>
             {settings.paymentIsLocalTest && <p className="text-small text-secondary">Replace the LOCAL TEST UPI ID first.</p>}
@@ -222,7 +246,7 @@ export default function AdminSettingsPage() {
                   <img src={photo.url} alt={photo.caption || 'Shop photo'} style={{ width: '100%', height: 'auto' }} />
                   <figcaption className="text-small">{photo.caption}</figcaption>
                   <button type="button" className="btn btn--sm" disabled={busy}
-                    onClick={() => void run(() => deleteStorePhoto(photo.id), 'Photo removed.').then((next) => next && apply(next))}>Remove</button>
+                    onClick={() => void run(() => deleteStorePhoto(photo.id), 'Photo removed.').then((next) => next && applyMediaUpdate(next))}>Remove</button>
                 </figure>
               ))}
             </div>

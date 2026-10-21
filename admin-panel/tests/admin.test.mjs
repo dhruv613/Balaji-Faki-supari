@@ -439,7 +439,7 @@ assert.equal(getAllowedOrderActions('DELIVERED', 'VERIFIED').length, 0);
 assert.equal(getAllowedOrderActions('CANCELLED', 'VERIFIED').length, 0);
 
 /* ================================================================== */
-/*  9. PRIMARY ADMIN NAVIGATION & 4-PAGE SSR RENDERING VERIFICATION   */
+/*  9. PRIMARY ADMIN NAVIGATION & SSR RENDERING VERIFICATION          */
 /* ================================================================== */
 
 const React = require('react');
@@ -451,10 +451,14 @@ const StatCardMod = load('src/features/admin/components/StatCard.tsx');
 const StatusBadgeMod = load('src/features/admin/components/StatusBadge.tsx', {
   '../lib/orderStateMachine': stateMachine,
 });
-const DetailDrawerMod = load('src/features/admin/components/DetailDrawer.tsx');
-const ConfirmDialogMod = load('src/features/admin/components/ConfirmDialog.tsx');
-const ImagePreviewMod = load('src/features/admin/components/ImagePreview.tsx');
-const AdminTimelineMod = load('src/features/admin/components/AdminTimeline.tsx');
+const modalMod = load('src/features/admin/lib/useModalDialog.ts');
+const DetailDrawerMod = load('src/features/admin/components/DetailDrawer.tsx', { '../lib/useModalDialog': modalMod });
+const ConfirmDialogMod = load('src/features/admin/components/ConfirmDialog.tsx', { '../lib/useModalDialog': modalMod });
+const ImagePreviewMod = load('src/features/admin/components/ImagePreview.tsx', { '../lib/useModalDialog': modalMod });
+const formatMod = load('src/features/admin/lib/formatDateTime.ts');
+const AdminTimelineMod = load('src/features/admin/components/AdminTimeline.tsx', {
+  '../lib/formatDateTime': formatMod,
+});
 const AdminStatesMod = load('src/features/admin/components/AdminStates.tsx', {
   '../../../components/common/Notice': NoticeMod,
 });
@@ -464,7 +468,7 @@ const AdminSidebarMod = load('src/features/admin/components/AdminSidebar.tsx', {
   './StoreLink': { default: () => null },
 });
 
-// Verify primary navigation contains strictly the 4 simplified pages
+// Settings must be reachable alongside the core management pages.
 const navItems = AdminSidebarMod.ADMIN_NAV_GROUPS.flatMap((g) => g.items);
 assert.deepEqual(
   JSON.parse(JSON.stringify(navItems.map((i) => ({ label: i.label, to: i.to })))),
@@ -473,8 +477,47 @@ assert.deepEqual(
     { label: 'Price Management', to: '/admin/prices' },
     { label: 'Order Management', to: '/admin/orders' },
     { label: 'Feedback Management', to: '/admin/feedback' },
+    { label: 'Settings', to: '/admin/settings' },
   ],
 );
+for (const open of [false, true]) {
+  const sidebarHtml = renderToStaticMarkup(React.createElement(MemoryRouter, { initialEntries: ['/admin/settings'] },
+    React.createElement(AdminSidebarMod.default, { open, onClose: () => {} })));
+  assert.match(sidebarHtml, /<a\b(?=[^>]*href="\/admin\/settings")(?=[^>]*aria-current="page")[^>]*>[\s\S]*?Settings<\/span>/,
+    'Settings is reachable and active in both desktop and expanded mobile navigation');
+}
+
+/* T-A10 (D-03): five primary links unchanged + a separate Operations group of existing pages. */
+{
+  const clean = (items) => JSON.parse(JSON.stringify(items.map((i) => ({ label: i.label, to: i.to }))));
+  assert.equal(AdminSidebarMod.ADMIN_NAV_GROUPS.length, 1, 'the primary group is untouched');
+  const ops = AdminSidebarMod.ADMIN_OPERATIONS_GROUP;
+  assert.equal(ops.section, 'Operations');
+  assert.deepEqual(clean(ops.items), [
+    { label: 'Payments', to: '/admin/payments' },
+    { label: 'Inventory', to: '/admin/inventory' },
+    { label: 'Delivery', to: '/admin/delivery' },
+    { label: 'Customers', to: '/admin/customers' },
+    { label: 'Refunds', to: '/admin/refunds' },
+  ]);
+  for (const item of ops.items) assert.ok(!navItems.some((p) => p.to === item.to), `${item.to} is not duplicated in the primary links`);
+  for (const route of ops.items.map((i) => i.to)) assert.match(appSource, new RegExp(`path="${route.replace('/admin/', '')}"`), `${route} is a real route`);
+  for (const open of [false, true]) {
+    const html = renderToStaticMarkup(React.createElement(MemoryRouter, { initialEntries: ['/admin/refunds'] },
+      React.createElement(AdminSidebarMod.default, { open, onClose: () => {} })));
+    const hrefs = [...html.matchAll(/<a\b[^>]*>/g)].map((m) => m[0]).filter((tag) => /class=\"admin-sidebar__link/.test(tag)).map((tag) => /href=\"([^\"]+)\"/.exec(tag)[1]);
+    assert.deepEqual(hrefs, ['/admin/dashboard', '/admin/prices', '/admin/orders', '/admin/feedback', '/admin/settings', '/admin/payments', '/admin/inventory', '/admin/delivery', '/admin/customers', '/admin/refunds'], `open=${open}: primary links first, then Operations`);
+    assert.doesNotMatch(html, /\/admin\/(reports|notifications)/, 'unfinished pages are not linked');
+    const groups = [...html.matchAll(/role="group" aria-labelledby="([^"]+)"/g)].map((m) => m[1]);
+    assert.equal(groups.length, 2);
+    assert.equal(new Set(groups).size, 2, 'each group has its own label id');
+    for (const id of groups) assert.match(html, new RegExp(`id="${id}"[^>]*>`), 'group label exists');
+    assert.match(html, /id="admin-nav-operations"[^>]*>Operations</);
+    assert.match(html, /<a\b(?=[^>]*href="\/admin\/refunds")(?=[^>]*aria-current="page")/, 'the active Operations page is highlighted');
+    assert.doesNotMatch(html, /<a\b(?=[^>]*href="\/admin\/payments")(?=[^>]*aria-current="page")/);
+    assert.match(html, /admin-sidebar__group admin-sidebar__group--compact/);
+  }
+}
 
 const adminComponentsBarrel = {
   StatCard: StatCardMod.default,
@@ -498,6 +541,7 @@ const commonPageStubs = {
   '../api': adminApi,
   '../lib/referenceData': refData,
   '../lib/orderStateMachine': stateMachine,
+  '../lib/formatDateTime': formatMod,
   '../components': adminComponentsBarrel,
 };
 
@@ -616,7 +660,7 @@ assert.match(pricesHtml, /No products were returned by the catalog API/);
 assert.doesNotMatch(pricesHtml, /Faki Premium Blend/);
 
 // Exercise page callbacks and asynchronous load states without a DOM or extra test dependencies.
-function mountPage(path, apiOverrides) {
+function mountPage(path, apiOverrides, route = {}) {
   const values = [], dependencies = [], effects = [];
   let stateIndex = 0, effectIndex = 0, tree;
   const hooks = {
@@ -625,6 +669,11 @@ function mountPage(path, apiOverrides) {
       const index = stateIndex++;
       if (!(index in values)) values[index] = typeof initial === 'function' ? initial() : initial;
       return [values[index], (next) => { values[index] = typeof next === 'function' ? next(values[index]) : next; }];
+    },
+    useCallback(callback, deps) {
+      const index = stateIndex++;
+      if (!values[index] || deps.some((value, i) => value !== values[index].deps[i])) values[index] = { callback, deps };
+      return values[index].callback;
     },
     useEffect(effect, deps) {
       const index = effectIndex++;
@@ -635,7 +684,12 @@ function mountPage(path, apiOverrides) {
   const Page = load(path, {
     ...commonPageStubs,
     react: hooks,
-    'react-router-dom': { ...require('react-router-dom'), useSearchParams: () => [new URLSearchParams()] },
+    'react-router-dom': {
+      ...require('react-router-dom'),
+      useSearchParams: () => [new URLSearchParams(route.search ?? '')],
+      useLocation: () => ({ key: route.key ?? 'initial', state: route.state ?? null }),
+      useNavigationType: () => route.navType ?? 'POP',
+    },
     '../../../lib/env': { env },
     '../api': { ...adminApi, ...apiOverrides },
   }).default;
@@ -651,6 +705,58 @@ function mountPage(path, apiOverrides) {
     get html() { return renderToStaticMarkup(React.createElement(MemoryRouter, null, tree)); },
   };
 }
+
+// QR uploads save immediately without discarding unsaved payment/delivery fields.
+let settingsWrites = 0, settingsConfirmations = 0;
+let storedSettings = { ...baseSettings, officialUpiId: '', officialPayeeName: '', paymentIsLocalTest: false };
+const settingsPage = mountPage('src/features/admin/pages/AdminSettingsPage.tsx', {
+  getAdminSettings: async () => storedSettings,
+  uploadPaymentQr: async () => (storedSettings = { ...storedSettings, officialUpiQrImageUrl: '/api/admin/settings/qr?signed=test' }),
+  updateAdminSettings: async (patch) => { settingsWrites++; return (storedSettings = { ...storedSettings, ...patch }); },
+  confirmBusinessSettings: async () => {
+    settingsConfirmations++;
+    if (!storedSettings.officialUpiId || !storedSettings.officialPayeeName) throw new apiModule.ApiError(422, 'Enter the real UPI ID and payee name.');
+    return (storedSettings = { ...storedSettings, businessSettingsConfirmedAt: '2026-10-21T07:00:00Z' });
+  },
+});
+await settingsPage.settle();
+const settingsField = (id) => settingsPage.nodes.find((node) => node.props.id === id);
+const confirmSettingsButton = () => settingsPage.nodes.find((node) => node.type === 'button' && node.props.children === 'Confirm payment, delivery & PIN settings');
+await confirmSettingsButton().props.onClick();
+await settingsPage.settle();
+assert.match(settingsPage.html, /Enter the real UPI ID and payee name/, 'confirmation shows the server validation reason');
+await settingsPage.nodes.find((node) => node.type === 'form').props.onSubmit({ preventDefault() {} });
+settingsPage.render();
+assert.doesNotMatch(settingsPage.html, /Not saved|Nothing has changed|Enter the real UPI ID and payee name/, 'an unchanged Save clears stale errors without reporting failure');
+assert.equal(settingsWrites, 0);
+for (const [id, value] of [['set-upi', 'shop@examplebank'], ['set-payee', 'Shop Name'], ['set-pins', '']]) {
+  settingsField(id).props.onChange({ target: { value } });
+  settingsPage.render();
+}
+await settingsField('set-qr').props.onChange({ target: { files: [{ type: 'image/png' }], value: 'qr.png' } });
+await settingsPage.settle();
+assert.match(settingsPage.html, /Current payment QR/);
+assert.equal(settingsField('set-upi').props.value, 'shop@examplebank', 'upload retains unsaved UPI ID');
+assert.equal(settingsField('set-payee').props.value, 'Shop Name', 'upload retains unsaved payee');
+assert.equal(settingsField('set-pins').props.value, '', 'upload retains nationwide delivery selection');
+await confirmSettingsButton().props.onClick();
+await settingsPage.settle();
+assert.equal(settingsConfirmations, 1, 'unsaved changes must not confirm older database values');
+assert.match(settingsPage.html, /Save your changes before confirming/);
+await settingsPage.nodes.find((node) => node.type === 'form').props.onSubmit({ preventDefault() {} });
+settingsPage.render();
+assert.equal(settingsWrites, 1);
+assert.equal(storedSettings.officialUpiId, 'shop@examplebank');
+assert.deepEqual(JSON.parse(JSON.stringify(storedSettings.serviceablePinCodes)), []);
+await confirmSettingsButton().props.onClick();
+await settingsPage.settle();
+assert.equal(settingsConfirmations, 2);
+assert.match(settingsPage.html, /You confirmed these payment/);
+await settingsPage.nodes.find((node) => node.type === 'form').props.onSubmit({ preventDefault() {} });
+settingsPage.render();
+assert.doesNotMatch(settingsPage.html, /Not saved|Nothing has changed/);
+assert.equal(settingsWrites, 1, 'repeated Save does not resend saved settings');
+
 const liveProduct = { id: 'p1', type: 'faki', name: 'Faki', nameGu: 'ફાકી', active: true, images: [], variants: [{ ...approved, isAvailable: true, availableQuantity: 0 }] };
 let catalogLoads = 0, savedPrice;
 const pricesPage = mountPage('src/features/admin/pages/AdminProductsPage.tsx', {
@@ -779,8 +885,350 @@ assert.match(refundsHtml, /Refund data unavailable/);
 assert.match(refundsHtml, /No sample refund records are shown/);
 assert.match(refundsHtml, /No cancellation or refund records match these filters/);
 
+/* Orders page regression tests. Every scenario mounts its own page, so none depends on another. */
+const baseOrder = {
+  id: 'o1', orderNumber: '#BFP-1001', customerName: 'Test Customer', phone: '9800000001', area: 'Rajkot', pinCode: '360001',
+  items: [], itemsSummary: 'Faki 500g', totalAmount: 100, orderStatus: 'OUT_FOR_DELIVERY', paymentStatus: 'VERIFIED',
+  createdAt: '2026-10-21T10:00:00Z', paymentDetails: { status: 'VERIFIED' }, timeline: [],
+};
+const cancelledOrder = { ...baseOrder, id: 'o2', orderNumber: '#BFP-2002', orderStatus: 'CANCELLED' };
+
+function mountOrders(route = {}, { orders = [baseOrder, cancelledOrder], api = {} } = {}) {
+  const calls = [];
+  const writes = [];
+  const r = { search: '', key: 'k0', navType: 'POP', state: null, ...route };
+  const page = mountPage('src/features/admin/pages/AdminOrdersPage.tsx', {
+    getAdminOrders: async (params) => { calls.push(params); return { items: orders }; },
+    updateAdminOrderStatus: async (_id, body) => { writes.push(body); return { ...baseOrder, orderStatus: 'DELIVERY_FAILED' }; },
+    ...api,
+  }, r);
+  const flush = async () => { for (let i = 0; i < 4; i += 1) await page.settle(); };
+  const node = (id) => page.nodes.find((n) => n.props.id === id);
+  return {
+    page, calls, writes, flush, node,
+    val: (id) => node(id).props.value,
+    html: () => page.html,
+    go: async (next) => { Object.assign(r, { state: null }, next); page.render(); await flush(); },
+    set: async (id, value) => { node(id).props.onChange({ target: { value } }); page.render(); await flush(); },
+    confirm: () => page.nodes.find((n) => n.type === ConfirmDialogMod.default),
+    button: (label) => page.nodes.find((n) => n.type === 'button' && n.props.children === label),
+  };
+}
+// A search submitted from the global header (AdminHeader passes state.headerSearch) is a PUSH navigation.
+const headerNav = (q, key) => ({ search: `q=${encodeURIComponent(q)}`, key, navType: 'PUSH', state: { headerSearch: true } });
+const dirtyFilters = async (t) => {
+  await t.set('order-status-filter', 'CANCELLED');
+  await t.set('payment-status-filter', 'VERIFIED');
+  await t.set('order-date-from', '2026-10-01');
+  await t.set('order-date-to', '2026-10-31');
+};
+
+{ /* F-1 (1): header search with Order Status = Cancelled shows the match instead of an empty table */
+  const t = mountOrders(); await t.flush();
+  assert.equal(t.calls.length, 1, 'initial load = one request');
+  await t.set('order-status-filter', 'CANCELLED');
+  assert.doesNotMatch(t.html(), /#BFP-1001/, 'precondition: the Cancelled filter hides the out-for-delivery order');
+  const before = t.calls.length;
+  await t.go(headerNav('BFP-1001', 'k1'));
+  assert.equal(t.val('order-search'), 'BFP-1001');
+  assert.equal(t.val('order-status-filter'), 'ALL');
+  assert.equal(t.calls.length, before + 1, 'exactly one refresh request');
+  assert.equal(t.calls.at(-1).status, 'ALL');
+  assert.equal(t.calls.at(-1).search, 'BFP-1001');
+  assert.match(t.html(), /#BFP-1001/);
+}
+
+{ /* F-1 (2): payment and date filters are reset as well */
+  const t = mountOrders(); await t.flush();
+  await dirtyFilters(t);
+  assert.equal(t.val('order-date-from'), '2026-10-01');
+  const before = t.calls.length;
+  await t.go(headerNav('BFP-1001', 'k1'));
+  for (const id of ['order-date-from', 'order-date-to']) assert.equal(t.val(id), '', `${id} cleared`);
+  assert.equal(t.val('order-status-filter'), 'ALL');
+  assert.equal(t.val('payment-status-filter'), 'ALL');
+  assert.equal(t.calls.length, before + 1, 'four filter resets + new query = one request');
+  const last = t.calls.at(-1);
+  assert.deepEqual([last.status, last.paymentStatus, last.dateFrom, last.dateTo, last.search], ['ALL', 'ALL', undefined, undefined, 'BFP-1001']);
+}
+
+for (const navType of ['PUSH', 'REPLACE']) { /* F-2 (3): clicking the active Order Management link keeps the working state */
+  const t = mountOrders(); await t.flush();
+  await t.go(headerNav('BFP-1001', 'k1'));
+  await dirtyFilters(t);
+  await t.set('order-search', 'typed by hand');
+  const before = t.calls.length;
+  await t.go({ search: '', key: 'k2', navType });
+  assert.equal(t.val('order-search'), 'typed by hand', `${navType}: search kept`);
+  assert.equal(t.val('order-status-filter'), 'CANCELLED');
+  assert.equal(t.val('payment-status-filter'), 'VERIFIED');
+  assert.equal(t.val('order-date-from'), '2026-10-01');
+  assert.equal(t.val('order-date-to'), '2026-10-31');
+  assert.equal(t.calls.length, before, `${navType}: no request, no reload`);
+}
+
+{ /* F-2 (3b): a plain link with ?q= (no header flag) applies the query but does not touch the filters */
+  const t = mountOrders(); await t.flush();
+  await t.set('order-status-filter', 'CANCELLED');
+  await t.go({ search: 'q=BFP-2002', key: 'k1', navType: 'PUSH' });
+  assert.equal(t.val('order-search'), 'BFP-2002');
+  assert.equal(t.val('order-status-filter'), 'CANCELLED');
+}
+
+{ /* (4) arriving from another page: normal unfiltered list, or the link's own query; header from another page = one request */
+  const plain = mountOrders({ navType: 'PUSH' }); await plain.flush();
+  assert.equal(plain.val('order-search'), '');
+  for (const id of ['order-status-filter', 'payment-status-filter']) assert.equal(plain.val(id), 'ALL');
+  assert.equal(plain.calls.length, 1);
+  assert.equal(plain.calls[0].search, undefined);
+  assert.match(plain.html(), /#BFP-1001/);
+  assert.match(plain.html(), /#BFP-2002/);
+
+  const fromCustomers = mountOrders({ search: 'q=%23BFP-1001', navType: 'PUSH' }); await fromCustomers.flush();
+  assert.equal(fromCustomers.val('order-search'), '#BFP-1001');
+  assert.equal(fromCustomers.val('order-status-filter'), 'ALL');
+  assert.equal(fromCustomers.calls.length, 1);
+
+  const fromHeader = mountOrders(headerNav('BFP-1001', 'k0')); await fromHeader.flush();
+  assert.equal(fromHeader.val('order-search'), 'BFP-1001');
+  assert.equal(fromHeader.calls.length, 1, 'header search from another page does not issue a duplicate request');
+}
+
+{ /* (5) Back / Forward restore the query; history entries keep the header flag but POP must not reset filters */
+  const t = mountOrders(); await t.flush();
+  await t.go(headerNav('BFP-1001', 'k1'));
+  await t.go(headerNav('BFP-2002', 'k2'));
+  await t.set('order-status-filter', 'CANCELLED');
+  const before = t.calls.length;
+  await t.go({ search: 'q=BFP-1001', key: 'k1', navType: 'POP', state: { headerSearch: true } });
+  assert.equal(t.val('order-search'), 'BFP-1001', 'Back restores the earlier query');
+  assert.equal(t.val('order-status-filter'), 'CANCELLED', 'Back does not reset filters');
+  assert.equal(t.calls.length, before + 1);
+  await t.go({ search: 'q=BFP-2002', key: 'k2', navType: 'POP', state: { headerSearch: true } });
+  assert.equal(t.val('order-search'), 'BFP-2002', 'Forward restores the later query');
+  assert.equal(t.val('order-status-filter'), 'CANCELLED');
+  await t.go({ search: '', key: 'k0', navType: 'POP' });
+  assert.equal(t.val('order-search'), '', 'Back to an entry without a query clears the search text');
+  const settled = t.calls.length;
+  await t.go({ search: '', key: 'k0b', navType: 'POP' });
+  assert.equal(t.calls.length, settled, 'no request when the restored query is unchanged');
+}
+
+{ /* (6) empty ?q= and ?orderId= fallback (current precedence: q, then orderId; an empty q still wins) */
+  for (const [search, expected] of [['q=', ''], ['orderId=BFP-1001', 'BFP-1001'], ['q=BFP-2002&orderId=BFP-1001', 'BFP-2002'], ['q=&orderId=BFP-1001', '']]) {
+    const t = mountOrders({ search }); await t.flush();
+    assert.equal(t.val('order-search'), expected, search);
+    assert.equal(t.calls[0].search, expected || undefined, search);
+  }
+  const t = mountOrders({ search: 'q=' }); await t.flush();
+  assert.match(t.html(), /#BFP-1001/);
+  assert.match(t.html(), /#BFP-2002/);
+}
+
+{ /* (7) repeated identical header searches: one request and a full filter reset every time */
+  const t = mountOrders(); await t.flush();
+  await t.go(headerNav('BFP-1001', 'k1'));
+  for (let i = 2; i <= 4; i += 1) {
+    if (i < 4) await t.set('order-status-filter', 'CANCELLED');
+    const before = t.calls.length;
+    await t.go(headerNav('BFP-1001', `k${i}`));
+    assert.equal(t.calls.length, before + 1, `repeat ${i}: exactly one request`);
+    assert.equal(t.val('order-status-filter'), 'ALL', `repeat ${i}: filters reset`);
+    assert.equal(t.val('order-search'), 'BFP-1001');
+  }
+}
+
+{ /* (8) typing in the Orders box never resets filters; one request per change, as before */
+  const t = mountOrders(); await t.flush();
+  await dirtyFilters(t);
+  const before = t.calls.length;
+  await t.set('order-search', 'abc');
+  await t.set('order-search', 'abcd');
+  assert.equal(t.val('order-status-filter'), 'CANCELLED');
+  assert.equal(t.val('payment-status-filter'), 'VERIFIED');
+  assert.equal(t.val('order-date-from'), '2026-10-01');
+  assert.equal(t.calls.length, before + 2);
+}
+
+/* T-A7 (independent): Record Delivery Failure on Orders */
+for (const status of ['PICKED_UP', 'SHIPPED', 'OUT_FOR_DELIVERY']) {
+  const failure = getAllowedOrderActions(status, 'VERIFIED').find((a) => a.nextStatus === 'DELIVERY_FAILED');
+  assert.equal(failure?.label, 'Record Delivery Failure');
+  assert.equal(failure.tone, 'danger');
+}
+for (const status of ['PENDING_PAYMENT', 'AWAITING_CONFIRMATION', 'CONFIRMED', 'PACKING', 'PACKED', 'DELIVERED', 'CANCELLED', 'DELIVERY_FAILED']) {
+  assert.ok(!getAllowedOrderActions(status, 'VERIFIED').some((a) => a.nextStatus === 'DELIVERY_FAILED'), `${status} must not offer delivery failure`);
+}
+assert.deepEqual(JSON.parse(JSON.stringify(getAllowedOrderActions('DELIVERY_FAILED', 'VERIFIED').map((a) => a.nextStatus))), ['OUT_FOR_DELIVERY', 'CANCELLED']);
+
+{ /* valid and invalid reasons, danger confirmation */
+  const t = mountOrders({ search: 'q=BFP-1001' }); await t.flush();
+  t.button('Record Delivery Failure').props.onClick(); t.page.render();
+  assert.equal(t.confirm().props.open, true);
+  assert.equal(t.confirm().props.tone, 'danger', 'delivery failure confirmation uses the danger style');
+  assert.match(t.html(), /Delivery Failure Reason \(Required\)/);
+  await t.set('order-action-notes', 'abc');
+  await t.confirm().props.onConfirm();
+  assert.equal(t.writes.length, 0, 'a reason shorter than 5 characters is not sent');
+  assert.equal(t.confirm().props.open, true);
+  await t.set('order-action-notes', 'Customer unreachable');
+  await t.confirm().props.onConfirm(); t.page.render();
+  assert.equal(t.writes.length, 1);
+  assert.equal(t.writes[0].status, 'DELIVERY_FAILED');
+  assert.equal(t.writes[0].failureReason, 'Customer unreachable');
+  assert.equal(t.writes[0].cancellationReason, undefined);
+  assert.equal(t.confirm().props.open, false, 'dialog closes after success');
+}
+
+{ /* other actions keep the primary style; a server rejection keeps the dialog open */
+  const t = mountOrders({ search: 'q=BFP-1001' }, { api: { updateAdminOrderStatus: async () => { throw new Error('Invalid transition'); } } }); await t.flush();
+  t.button('Mark Delivered').props.onClick(); t.page.render();
+  assert.equal(t.confirm().props.tone, 'primary');
+  t.confirm().props.onCancel(); t.page.render();
+  t.button('Record Delivery Failure').props.onClick(); t.page.render();
+  await t.set('order-action-notes', 'Customer unreachable');
+  await t.confirm().props.onConfirm(); t.page.render();
+  assert.equal(t.confirm().props.open, true, 'a rejected request keeps the dialog open for retry');
+}
+
+{ /* the drawer footer offers the same action */
+  const t = mountOrders({ search: 'q=BFP-1001' }); await t.flush();
+  t.button('View Order').props.onClick(); t.page.render();
+  const drawer = t.page.nodes.find((n) => n.type === DetailDrawerMod.default);
+  assert.equal(drawer.props.open, true);
+  assert.match(renderToStaticMarkup(React.createElement(MemoryRouter, null, drawer.props.footer)), /Record Delivery Failure/);
+}
+
+/* T-A2: one readable timestamp convention ("21 Oct 2026, 6:34 pm IST", Asia/Kolkata); API values unchanged. */
+{
+  const { formatDateTime, formatDate } = formatMod;
+  const cases = [
+    ['2026-10-21T13:04:00+00:00', '21 Oct 2026, 6:34 pm IST'], // backend _iso() output
+    ['2026-10-21T13:04:00Z', '21 Oct 2026, 6:34 pm IST'],
+    ['2026-10-21T18:34:00+05:30', '21 Oct 2026, 6:34 pm IST'], // explicit offset
+    ['2026-10-21T13:04:00.123456+00:00', '21 Oct 2026, 6:34 pm IST'], // microseconds
+    ['2026-10-21T13:04:00', '21 Oct 2026, 6:34 pm IST'], // no zone = UTC
+    ['2026-10-21 13:04:00', '21 Oct 2026, 6:34 pm IST'],
+    ['2026-10-21T18:30:00Z', '22 Oct 2026, 12:00 am IST'], // IST midnight crosses the UTC date
+    ['2026-10-21T18:29:00Z', '21 Oct 2026, 11:59 pm IST'],
+    ['2026-10-21T06:30:00Z', '21 Oct 2026, 12:00 pm IST'],
+    ['2026-10-05T03:35:00Z', '5 Oct 2026, 9:05 am IST'], // no zero-padding on day or hour
+    ['2026-12-31T20:00:00Z', '1 Jan 2027, 1:30 am IST'], // year rollover
+    ['2026-10-19', '19 Oct 2026'], // bare date: shown as that calendar date, never shifted
+  ];
+  for (const [input, expected] of cases) assert.equal(formatDateTime(input), expected, input);
+  assert.equal(formatDateTime(new Date('2026-10-21T13:04:00Z')), '21 Oct 2026, 6:34 pm IST');
+  for (const bad of [null, undefined, '', '   ', 'not a date', '2026-13-45', '2026-02-31x']) {
+    assert.equal(formatDateTime(bad), '—', `formatDateTime(${JSON.stringify(bad)})`);
+    assert.equal(formatDate(bad), '—');
+  }
+  assert.equal(formatDateTime('2026-13-45'), '—');
+  assert.equal(formatDate('2026-10-21T20:00:00Z'), '22 Oct 2026', 'formatDate uses the IST calendar day');
+  assert.equal(formatDate('2026-10-19'), '19 Oct 2026');
+  assert.equal(formatDate('2026-10-21T13:04:00+00:00'), '21 Oct 2026');
+
+  const timelineHtml = renderToStaticMarkup(React.createElement(AdminTimelineMod.default, {
+    items: [{ id: 't1', label: 'Payment approved', timestamp: '2026-10-21T13:04:00+00:00', description: 'ok', actor: 'Owner' }],
+  }));
+  assert.match(timelineHtml, /21 Oct 2026, 6:34 pm IST · Actor: Owner/);
+  assert.doesNotMatch(timelineHtml, /13:04:00|\+00:00/);
+
+  const orderWithTimeline = { ...baseOrder, createdAt: '2026-10-21T13:04:00+00:00', timeline: [{ id: 'e1', label: 'Placed', timestamp: '2026-10-21T13:04:00+00:00', description: 'x', actorName: 'Cust', actorRole: 'CUSTOMER' }] };
+  const ordersT = mountOrders({ search: 'q=BFP-1001' }, { orders: [orderWithTimeline] }); await ordersT.flush();
+  assert.match(ordersT.html(), /21 Oct 2026, 6:34 pm IST/, 'Orders table shows the convention');
+  assert.doesNotMatch(ordersT.html(), /13:04:00|T13:04|\+00:00/, 'no raw ISO text in the Orders table');
+  ordersT.button('View Order').props.onClick(); ordersT.page.render();
+  const drawerHtml = ordersT.html();
+  assert.match(drawerHtml, /Placed on 21 Oct 2026, 6:34 pm IST/, 'drawer subtitle');
+  assert.doesNotMatch(drawerHtml, /13:04:00|\+00:00/, 'no raw ISO text in the Orders drawer or its timeline');
+
+  const stockItem = { id: 'v1', productId: 'p1', productName: 'Faki', productNameGu: 'ફાકી', packSize: '500g', sku: 'F', totalStock: 5, availableStock: 5, reservedStock: 0, lowStockThreshold: 2, isLowStock: false };
+  const inventoryT = mountPage('src/features/admin/pages/AdminInventoryPage.tsx', {
+    getAdminInventory: async () => ({
+      summary: { totalStockUnits: 5, availableStockUnits: 5, reservedStockUnits: 0, lowStockAlertsCount: 0, reservationExpiryMinutes: 30 },
+      items: [stockItem],
+      movements: [{ id: 'm1', createdAt: '2026-10-21T13:04:00+00:00', productName: 'Faki', packSize: '500g', movementType: 'MANUAL_ADD', quantityDelta: 5, previousAvailable: 0, newAvailable: 5, reason: 'Fresh batch', actorEmail: 'a@b.c' }],
+    }),
+  });
+  await inventoryT.settle(); await inventoryT.settle();
+  assert.match(inventoryT.html, /21 Oct 2026, 6:34 pm IST/, 'Inventory movement time');
+  assert.doesNotMatch(inventoryT.html, /T13:04|\+00:00/);
+
+  // Guard: the pages that show server times must go through the formatter (no raw fields, no ad-hoc toLocale*).
+  const rawPatterns = [
+    /\{\s*(mov|rev|payment|selectedPayment)\.(createdAt|submissionDate)\s*\}/, /\{\s*item\.cancelledAt\s*\}/, /\{\s*selectedRefund\.refundDate\s*\}/,
+    /\$\{selectedRefund\.cancelledAt\}/, /\$\{selectedReview\.createdAt\}/, /new Date\([^)]*\)\.toLocale/,
+  ];
+  for (const page of ['Orders', 'Dashboard', 'Customers', 'Inventory', 'Payments', 'Refunds', 'Reviews', 'Delivery']) {
+    const source = readFileSync(new URL(`../src/features/admin/pages/Admin${page}Page.tsx`, import.meta.url), 'utf8');
+    for (const pattern of rawPatterns) assert.doesNotMatch(source, pattern, `Admin${page}Page renders a raw or ad-hoc time (${pattern})`);
+  }
+  assert.match(readFileSync(new URL('../src/features/admin/components/AdminTimeline.tsx', import.meta.url), 'utf8'), /formatDateTime\(item\.timestamp\)/);
+}
+
+/* T-A4: shared dialog behaviour (focus trap, topmost-only Escape) and labelled dialogs. Real focus/Escape/Tab runs in the browser smoke. */
+{
+  const { nextTabTarget, isTopmostDialog } = modalMod;
+  const items = ['a', 'b', 'c'];
+  const next = (active, shiftKey, activeInside = true) => nextTabTarget({ items, active, shiftKey, activeInside });
+  assert.equal(next('c', false), 'a', 'Tab on the last control wraps to the first');
+  assert.equal(next('a', true), 'c', 'Shift+Tab on the first control wraps to the last');
+  assert.equal(next('b', false), null, 'Tab in the middle is left to the browser');
+  assert.equal(next('b', true), null);
+  assert.equal(next('x', false, false), 'a', 'focus outside the dialog is pulled back in (forward)');
+  assert.equal(next('x', true, false), 'c', 'focus outside the dialog is pulled back in (backward)');
+  assert.equal(nextTabTarget({ items: [], active: null, shiftKey: false, activeInside: false }), null);
+  assert.equal(nextTabTarget({ items: ['only'], active: 'only', shiftKey: false, activeInside: true }), 'only', 'a single control keeps focus');
+
+  const drawer = Symbol('drawer'), confirm = Symbol('confirm');
+  assert.equal(isTopmostDialog(confirm, [drawer, confirm]), true);
+  assert.equal(isTopmostDialog(drawer, [drawer, confirm]), false, 'a dialog under another one ignores Escape/Tab');
+  assert.equal(isTopmostDialog(drawer, [drawer]), true);
+  assert.equal(isTopmostDialog(drawer, []), false);
+
+  const h = (el) => renderToStaticMarkup(el);
+  const nested = h(React.createElement(React.Fragment, null,
+    React.createElement(DetailDrawerMod.default, { open: true, title: 'Order A', onClose() {}, children: 'x' }),
+    React.createElement(ConfirmDialogMod.default, { open: true, title: 'Confirm B', description: 'd', onConfirm() {}, onCancel() {} })));
+  const labels = [...nested.matchAll(/aria-labelledby="([^"]+)"/g)].map((m) => m[1]);
+  assert.equal(labels.length, 2);
+  assert.notEqual(labels[0], labels[1], 'a drawer and a confirmation open together must not share a title id');
+  for (const id of labels) assert.match(nested, new RegExp(`<h2 id="${id}">`), 'every dialog is labelled by its own title');
+  assert.equal((nested.match(/role="dialog"/g) || []).length, 2);
+  assert.equal((nested.match(/tabindex="-1"/g) || []).length, 2, 'dialogs can receive focus even without a control');
+
+  const preview = h(React.createElement(ImagePreviewMod.default, { src: '/x.png', alt: 'Payment screenshot' }));
+  assert.match(preview, /View full image/, 'closed preview shows only its trigger');
+  assert.doesNotMatch(preview, /role="dialog"/);
+
+  const dialogSources = ['ConfirmDialog', 'DetailDrawer', 'ImagePreview', 'AdminHeader'].map((n) => readFileSync(new URL(`../src/features/admin/components/${n}.tsx`, import.meta.url), 'utf8'));
+  for (const source of dialogSources) assert.match(source, /useModalDialog/, 'every dialog uses the shared hook');
+  for (const source of dialogSources.slice(0, 3)) assert.doesNotMatch(source, /addEventListener\('keydown'/, 'no private Escape listeners left');
+  assert.match(dialogSources[1], /useModalDialog<HTMLDivElement>\(open, onClose\)/);
+  assert.match(dialogSources[0], /useModalDialog<HTMLDivElement>\(open, onCancel, !busy\)/, 'Escape is ignored while a request is running');
+  assert.match(dialogSources[3], /data-autofocus/, 'profile dialog starts on the name field');
+}
+
+/* T-A3: tables that become cards on phones keep a label on every cell and an Action cell. */
+{
+  for (const page of ['Orders', 'Delivery']) {
+    const source = readFileSync(new URL(`../src/features/admin/pages/Admin${page}Page.tsx`, import.meta.url), 'utf8');
+    assert.match(source, /<table className="data-table data-table--cards">/, `${page} table opts into card layout`);
+    const row = source.slice(source.indexOf('<tr key={'), source.indexOf('</tr>', source.indexOf('<tr key={')));
+    const cells = [...row.matchAll(/<td\b[^>]*>/g)].map((m) => m[0]);
+    const headers = [...source.slice(source.indexOf('<thead>'), source.indexOf('</thead>')).matchAll(/<th scope="col">([^<]+)<\/th>/g)].map((m) => m[1].replace('&amp;', '&'));
+    assert.equal(cells.length, headers.length, `${page}: one td per th`);
+    cells.forEach((cell, i) => {
+      assert.ok(cell.includes(`data-label="${headers[i].replace('&', '&amp;')}"`) || cell.includes(`data-label="${headers[i]}"`), `${page}: cell ${i} is labelled "${headers[i]}"`);
+    });
+    assert.match(cells.at(-1), /data-table__actions/, `${page}: the Action cell is the card footer`);
+  }
+  const delivery = readFileSync(new URL('../src/features/admin/pages/AdminDeliveryPage.tsx', import.meta.url), 'utf8');
+  assert.match(delivery, /className="admin-table-wrap" role="region" aria-label="Fulfillment queue"/, 'Delivery no longer inherits the customers-table column widths that clipped its actions');
+}
+
 console.log(
-  'Admin panel & Neon DB: 18 tables, RLS policies, RBAC route guard, 4-page navigation, minimal Dashboard (Products Sold + Net Profit + Pending Payment Confirmations), Price Management, Order Management, Feedback Management, and typed API client passed.',
+  'Admin panel & Neon DB: 18 tables, RLS policies, RBAC route guard, navigation including Settings, minimal Dashboard (Products Sold + Net Profit + Pending Payment Confirmations), Price Management, Order Management, Feedback Management, and typed API client passed.',
 );
 
 

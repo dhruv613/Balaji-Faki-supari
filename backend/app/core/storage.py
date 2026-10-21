@@ -12,7 +12,10 @@ from functools import lru_cache
 
 import boto3
 from botocore.config import Config
-from botocore.exceptions import BotoCoreError, ClientError
+from botocore.exceptions import (
+    BotoCoreError, ClientError, ConnectionError as BotoConnectionError, HTTPClientError,
+    InvalidRegionError, NoCredentialsError, NoRegionError, PartialCredentialsError,
+)
 
 from .config import Settings, settings
 from .security import AuthError
@@ -128,6 +131,26 @@ def _neon_client():
     return _cached_client(os.environ["AWS_ENDPOINT_URL_S3"].strip(), os.getenv("AWS_REGION"))
 
 
+def _catalogue_storage_error_message(exc: Exception) -> str:
+    # Fixed messages only: provider errors can contain credentials, signed URLs and request details.
+    if isinstance(exc, ClientError):
+        code = exc.response.get("Error", {}).get("Code")
+        if code in {"SignatureDoesNotMatch", "AuthorizationHeaderMalformed"}:
+            return "Neon Object Storage rejected the request signature. Check AWS_SECRET_ACCESS_KEY and AWS_REGION for the configured branch."
+        return {
+            "AccessDenied": "Access denied by Neon Object Storage. Check the credential's storage scope and branch access.",
+            "InvalidAccessKeyId": "Neon Object Storage rejected the access key. Check AWS_ACCESS_KEY_ID for the configured branch.",
+            "NoSuchBucket": "Neon Object Storage could not find the assets bucket. Check AWS_ENDPOINT_URL_S3 and the branch's storage setup.",
+        }.get(code, "Image storage is unavailable.")
+    if isinstance(exc, (NoCredentialsError, PartialCredentialsError)):
+        return "Neon Object Storage credentials are missing or incomplete. Configure AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY on the API server."
+    if isinstance(exc, (NoRegionError, InvalidRegionError)):
+        return "Neon Object Storage region is not configured correctly. Check AWS_REGION on the API server."
+    if isinstance(exc, (BotoConnectionError, HTTPClientError)):
+        return "Cannot connect to Neon Object Storage. Check AWS_ENDPOINT_URL_S3 and the API server's network connection."
+    return "Image storage is unavailable."
+
+
 def create_catalogue_image_url(bucket: str, path: str, *, app_settings: Settings = settings) -> str:
     """Presign only public catalogue namespaces; payment proofs and review photos stay behind the API."""
     if bucket not in {app_settings.product_images_bucket, app_settings.store_photos_bucket}:
@@ -140,7 +163,7 @@ def create_catalogue_image_url(bucket: str, path: str, *, app_settings: Settings
                 "get_object", Params={"Bucket": "assets", "Key": f"{bucket}/{path.lstrip('/')}"}, ExpiresIn=3600,
             )
     except (BotoCoreError, ClientError) as exc:
-        raise CatalogImageStorageError("Image storage is unavailable.") from exc
+        raise CatalogImageStorageError(_catalogue_storage_error_message(exc)) from exc
 
 
 def _storage_request(
@@ -165,12 +188,11 @@ def _storage_request(
                     return body.read()
             else:
                 client.delete_object(**object_args)
-    except ClientError as exc:
-        if method == "GET" and exc.response.get("Error", {}).get("Code") in {"NoSuchKey", "404", "NotFound"}:
+    except (BotoCoreError, ClientError, OSError) as exc:
+        if isinstance(exc, ClientError) and method == "GET" and exc.response.get("Error", {}).get("Code") in {"NoSuchKey", "404", "NotFound"}:
             raise FileNotFoundError("Image object not found.") from exc
-        raise error_type("Image storage is unavailable.") from exc
-    except (BotoCoreError, OSError) as exc:
-        raise error_type("Image storage is unavailable.") from exc
+        message = _catalogue_storage_error_message(exc) if error_type is CatalogImageStorageError else "Image storage is unavailable."
+        raise error_type(message) from exc
     return b""
 
 

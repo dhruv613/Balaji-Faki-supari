@@ -5,7 +5,9 @@ from __future__ import annotations
 import os
 import sys
 import unittest
+from dataclasses import replace
 from pathlib import Path
+from unittest.mock import patch
 
 from fastapi import HTTPException
 from pydantic import ValidationError
@@ -18,6 +20,8 @@ os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 os.environ["BFP_ENV"] = "local"
 
 import app.db.session as db_session
+import app.routes.common as common_module
+from app.db.models import StoreSettings, utcnow
 from app.db.seed import seed_development_data
 from app.routes.common import _pack_sort_key
 from app.routes.public import create_checkout_quote, get_public_product, list_public_products
@@ -104,6 +108,47 @@ class CatalogProductsTests(unittest.TestCase):
             with self.assertRaises(HTTPException) as unknown:
                 quote("juice", "1l", db)
             self.assertEqual(unknown.exception.status_code, 404)
+
+    def test_all_india_delivery_preserves_pin_validation_and_owner_confirmation(self) -> None:
+        with db_session.SessionLocal() as db, patch.object(
+            common_module, "settings", replace(common_module.settings, app_env="production")
+        ):
+            seed_development_data(db)
+            store = db.get(StoreSettings, 1)
+            store.serviceable_pin_codes = []
+            store.business_settings_confirmed_at = utcnow()
+            db.commit()
+            baseline = quote("faki", "1kg", db)  # seeded approved pack with stock
+
+            def quote_pin(pin: str):
+                return create_checkout_quote(
+                    CheckoutQuoteRequestSchema(product="faki", packSize="1kg", quantity=1, pinCode=pin), db
+                )
+
+            for pin in ("384002", "110001"):
+                with self.subTest(pin=pin):
+                    self.assertEqual(quote_pin(pin), baseline)
+            for pin in ("000000", "ABCDEF"):
+                with self.subTest(invalid_pin=pin), self.assertRaises(HTTPException) as invalid:
+                    quote_pin(pin)
+                self.assertEqual(invalid.exception.status_code, 422)
+                self.assertIn("valid 6-digit PIN", invalid.exception.detail)
+
+            store.serviceable_pin_codes = ["360005"]
+            db.commit()
+            with self.assertRaises(HTTPException) as outside_area:
+                quote_pin("384002")
+            self.assertEqual(outside_area.exception.status_code, 422)
+            self.assertIn("384002 is outside our current delivery area", outside_area.exception.detail)
+            self.assertEqual(quote_pin("360005"), baseline)
+
+            store.serviceable_pin_codes = []
+            store.business_settings_confirmed_at = None
+            db.commit()
+            with self.assertRaises(HTTPException) as unconfirmed:
+                quote_pin("384002")
+            self.assertEqual(unconfirmed.exception.status_code, 503)
+            self.assertIn("awaiting owner confirmation", unconfirmed.exception.detail)
 
     def test_malformed_slug_or_pack_size_is_rejected_by_the_schema(self) -> None:
         for product, pack in (("Water", "1l"), ("water", "1 L"), ("water", "one litre"), ("../x", "1l")):

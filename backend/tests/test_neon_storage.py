@@ -9,7 +9,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from botocore.exceptions import ClientError, EndpointConnectionError
+from botocore.exceptions import (
+    ClientError, EndpointConnectionError, NoCredentialsError, NoRegionError, PartialCredentialsError, ReadTimeoutError,
+)
 from botocore.response import StreamingBody
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
@@ -105,6 +107,52 @@ class NeonStorageTests(unittest.TestCase):
                 user_id="user", review_id="review", photo_id="photo",
                 content=PNG, mime_type="image/png", app_settings=self.settings,
             )
+
+    def test_catalogue_upload_errors_identify_safe_configuration_steps(self) -> None:
+        sensitive = "secret-value-must-never-appear"
+        cases = [
+            (ClientError({"Error": {"Code": code, "Message": sensitive}}, "PutObject"), expected)
+            for code, expected in (
+                ("AccessDenied", "Access denied by Neon Object Storage. Check the credential's storage scope and branch access."),
+                ("InvalidAccessKeyId", "Neon Object Storage rejected the access key. Check AWS_ACCESS_KEY_ID for the configured branch."),
+                ("SignatureDoesNotMatch", "Neon Object Storage rejected the request signature. Check AWS_SECRET_ACCESS_KEY and AWS_REGION for the configured branch."),
+                ("AuthorizationHeaderMalformed", "Neon Object Storage rejected the request signature. Check AWS_SECRET_ACCESS_KEY and AWS_REGION for the configured branch."),
+                ("NoSuchBucket", "Neon Object Storage could not find the assets bucket. Check AWS_ENDPOINT_URL_S3 and the branch's storage setup."),
+                (sensitive, "Image storage is unavailable."),
+            )
+        ]
+        cases.extend((
+            (NoCredentialsError(), "Neon Object Storage credentials are missing or incomplete. Configure AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY on the API server."),
+            (PartialCredentialsError(provider=sensitive, cred_var=sensitive), "Neon Object Storage credentials are missing or incomplete. Configure AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY on the API server."),
+            (NoRegionError(), "Neon Object Storage region is not configured correctly. Check AWS_REGION on the API server."),
+            (EndpointConnectionError(endpoint_url=f"https://{sensitive}"), "Cannot connect to Neon Object Storage. Check AWS_ENDPOINT_URL_S3 and the API server's network connection."),
+            (ReadTimeoutError(endpoint_url=f"https://{sensitive}"), "Cannot connect to Neon Object Storage. Check AWS_ENDPOINT_URL_S3 and the API server's network connection."),
+        ))
+        for error, expected in cases:
+            with self.subTest(error=type(error).__name__, expected=expected):
+                self.client.put_object.side_effect = error
+                with self.assertRaises(CatalogImageStorageError) as failed:
+                    put_storage_object("payment-qr", "qr/new.png", PNG, "image/png", app_settings=self.settings)
+                self.assertEqual(str(failed.exception), expected)
+                self.assertNotIn(sensitive, str(failed.exception))
+
+    def test_customer_upload_errors_do_not_expose_server_configuration_details(self) -> None:
+        self.client.put_object.side_effect = ClientError(
+            {"Error": {"Code": "AccessDenied", "Message": "secret-value-must-never-appear"}}, "PutObject"
+        )
+        for store, error_type, identifiers in (
+            (store_private_payment_proof, PaymentProofStorageError, {"order_id": "order", "payment_id": "proof"}),
+            (store_private_review_photo, ReviewPhotoStorageError, {"review_id": "review", "photo_id": "photo"}),
+        ):
+            with self.subTest(store=store.__name__), self.assertRaises(error_type) as failed:
+                store(user_id="user", content=PNG, mime_type="image/png", app_settings=self.settings, **identifiers)
+            self.assertEqual(str(failed.exception), "Image storage is unavailable.")
+
+    def test_catalogue_presigning_uses_the_same_safe_diagnostics(self) -> None:
+        self.client.generate_presigned_url.side_effect = NoCredentialsError()
+        with self.assertRaises(CatalogImageStorageError) as failed:
+            create_catalogue_image_url("product-images", "product/image.png", app_settings=self.settings)
+        self.assertIn("AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY", str(failed.exception))
 
     def test_cleanup_continues_after_storage_failure(self) -> None:
         self.client.delete_object.side_effect = [EndpointConnectionError(endpoint_url="https://unavailable"), {}]

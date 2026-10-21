@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useNavigationType, useSearchParams } from 'react-router-dom';
 import Notice from '../../../components/common/Notice';
 import { env } from '../../../lib/env';
 import { formatINR, formatPackSize, getErrorMessage } from '../../../lib/api';
@@ -20,6 +20,7 @@ import {
   notifyAdminDataChanged,
   validateOrderTransition,
 } from '../lib/orderStateMachine';
+import { formatDateTime } from '../lib/formatDateTime';
 import {
   StatusBadge,
   DetailDrawer,
@@ -99,13 +100,15 @@ function getOrderTotalQuantity(order: AdminOrderDetail): number {
 
 export default function AdminOrdersPage() {
   const [searchParams] = useSearchParams();
+  const location = useLocation();
+  const navType = useNavigationType();
   const { showToast } = useAdminToast();
 
   const initialStatusParam = searchParams.get('status') as AdminOrderStatus | null;
-  const initialQueryParam = searchParams.get('q') ?? searchParams.get('orderId') ?? '';
+  const urlQuery = searchParams.get('q') ?? searchParams.get('orderId') ?? '';
 
   const [orders, setOrders] = useState<AdminOrderDetail[]>([]);
-  const [query, setQuery] = useState(initialQueryParam);
+  const [query, setQuery] = useState(urlQuery);
   const [statusFilter, setStatusFilter] = useState<AdminOrderStatus | 'ALL'>(
     initialStatusParam && ORDER_STATUS_OPTIONS.includes(initialStatusParam)
       ? initialStatusParam
@@ -127,6 +130,31 @@ export default function AdminOrdersPage() {
   const [loading, setLoading] = useState(Boolean(env.apiBaseUrl));
   const [error, setError] = useState('');
   const [isLive, setIsLive] = useState(false);
+  const [refreshTick, setRefreshTick] = useState(0);
+  const [appliedKey, setAppliedKey] = useState(location.key);
+
+  // The header search navigates to /admin/orders?q=… while this page is already mounted.
+  // location.key changes on every navigation (typing in the box does not navigate):
+  //  - load / Back / Forward (POP): the URL decides the search text; filters are not in the URL.
+  //  - header submit (flagged in navigation state): apply the query and reset every filter.
+  //  - anything else without a query (e.g. clicking the active sidebar link): keep the working state.
+  useEffect(() => {
+    if (location.key === appliedKey) return; // first render: state was already initialised from the URL
+    setAppliedKey(location.key);
+    if (navType === 'POP') {
+      setQuery(urlQuery);
+      return;
+    }
+    if (!urlQuery) return;
+    setQuery(urlQuery);
+    if ((location.state as { headerSearch?: boolean } | null)?.headerSearch) {
+      setStatusFilter('ALL');
+      setPaymentFilter('ALL');
+      setDateFrom('');
+      setDateTo('');
+      setRefreshTick((tick) => tick + 1); // an identical repeated search still refreshes the list
+    }
+  }, [location.key]);
 
   useEffect(() => {
     let active = true;
@@ -159,7 +187,7 @@ export default function AdminOrdersPage() {
     return () => {
       active = false;
     };
-  }, [query, statusFilter, paymentFilter, dateFrom, dateTo]);
+  }, [query, statusFilter, paymentFilter, dateFrom, dateTo, refreshTick]);
 
   const filteredOrders = filterAdminOrders(orders, {
     query,
@@ -343,7 +371,7 @@ export default function AdminOrdersPage() {
             aria-label="Customer orders table"
             tabIndex={0}
           >
-            <table className="data-table">
+            <table className="data-table data-table--cards">
               <thead>
                 <tr>
                   <th scope="col">Order ID</th>
@@ -367,36 +395,30 @@ export default function AdminOrdersPage() {
 
                   return (
                     <tr key={order.id}>
-                      <td>
+                      <td className="cell-wide" data-label="Order ID">
                         <strong>{order.orderNumber}</strong>
                       </td>
-                      <td>
+                      <td className="cell-wide" data-label="Customer">
                         <strong>{order.customerName}</strong>
                         <p className="text-small text-secondary">{order.phone}</p>
                       </td>
-                      <td>{getOrderProductLabel(order)}</td>
-                      <td>
+                      <td className="cell-wide" data-label="Product">{getOrderProductLabel(order)}</td>
+                      <td data-label="Quantity">
                         <strong>{totalQty}</strong> {totalQty === 1 ? 'pack' : 'packs'}
                       </td>
-                      <td>
+                      <td data-label="Total Amount">
                         <strong>{formatINR(order.totalAmount)}</strong>
                       </td>
-                      <td>
+                      <td data-label="Payment Status">
                         <StatusBadge status={order.paymentStatus} kind="payment" />
                       </td>
-                      <td>
+                      <td data-label="Order Status">
                         <StatusBadge status={order.orderStatus} kind="order" />
                       </td>
-                      <td className="text-small">
-                        {new Date(order.createdAt).toLocaleString('en-IN', {
-                          day: '2-digit',
-                          month: 'short',
-                          year: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
+                      <td className="text-small cell-wide" data-label="Order Date">
+                        {formatDateTime(order.createdAt)}
                       </td>
-                      <td>
+                      <td className="cell-wide data-table__actions" data-label="Action">
                         <div className="admin-action-group">
                           <button
                             type="button"
@@ -454,7 +476,7 @@ export default function AdminOrdersPage() {
         title={selectedOrder ? `Order ${selectedOrder.orderNumber}` : 'Order Details'}
         subtitle={
           selectedOrder
-            ? `Placed on ${new Date(selectedOrder.createdAt).toLocaleString('en-IN')}`
+            ? `Placed on ${formatDateTime(selectedOrder.createdAt)}`
             : undefined
         }
         onClose={() => setSelectedOrder(null)}
@@ -627,7 +649,11 @@ export default function AdminOrdersPage() {
             : ''
         }
         confirmLabel={pendingAction?.label ?? 'Confirm'}
-        tone={pendingAction?.nextStatus === 'CANCELLED' ? 'danger' : 'primary'}
+        tone={
+          pendingAction?.nextStatus === 'CANCELLED' || pendingAction?.nextStatus === 'DELIVERY_FAILED'
+            ? 'danger'
+            : 'primary'
+        }
         busy={actionBusy}
         onConfirm={executeOrderAction}
         onCancel={() => setPendingAction(null)}

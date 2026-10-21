@@ -6,6 +6,7 @@ import { formatPackSize, getErrorMessage } from '../../../lib/api';
 import { getAdminInventory, createStockAdjustment } from '../api';
 import type { AdminInventoryItem, AdminInventoryResponse } from '../types';
 import { notifyAdminDataChanged, validateStockAdjustment } from '../lib/orderStateMachine';
+import { formatDateTime } from '../lib/formatDateTime';
 import { StatCard, DetailDrawer, ErrorState, LoadingSkeleton, useAdminToast } from '../components';
 
 const EMPTY_INVENTORY: AdminInventoryResponse = {
@@ -311,7 +312,7 @@ export default function AdminInventoryPage() {
                 <tbody>
                   {inventory.movements.map((mov) => (
                     <tr key={mov.id}>
-                      <td className="text-small text-secondary">{mov.createdAt}</td>
+                      <td className="text-small text-secondary">{formatDateTime(mov.createdAt)}</td>
                       <td>
                         <strong>
                           {mov.productName} · {formatPackSize(mov.packSize)}

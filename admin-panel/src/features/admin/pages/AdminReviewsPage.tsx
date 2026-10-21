@@ -3,6 +3,7 @@ import Notice from '../../../components/common/Notice';
 import { env } from '../../../lib/env';
 import { formatPackSize, getErrorMessage, resolveApiUrl } from '../../../lib/api';
 import { getAdminReviews, updateAdminReview } from '../api';
+import { formatDateTime } from '../lib/formatDateTime';
 import type { AdminReviewRecord, ReviewModerationStatus } from '../types';
 import {
   StatCard,
@@ -266,7 +267,7 @@ export default function AdminReviewsPage() {
                         </p>
                       )}
                     </td>
-                    <td className="text-small">{rev.createdAt}</td>
+                    <td className="text-small">{formatDateTime(rev.createdAt)}</td>
                     <td><StatusBadge status={rev.moderationStatus} /></td>
                     <td>
                       <button
@@ -302,7 +303,7 @@ export default function AdminReviewsPage() {
         }
         subtitle={
           selectedReview
-            ? `${selectedReview.customerName} · ${selectedReview.area} · ${selectedReview.createdAt}`
+            ? `${selectedReview.customerName} · ${selectedReview.area} · ${formatDateTime(selectedReview.createdAt)}`
             : undefined
         }
         onClose={() => setSelectedReview(null)}
