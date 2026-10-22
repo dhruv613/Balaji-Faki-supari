@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import os
 import shutil
 import sys
@@ -30,7 +31,7 @@ os.environ["BFP_ENV"] = "local"
 from auth_support import mint_token, start_auth  # noqa: E402
 
 import app.db.session as db_session  # noqa: E402
-from app.db.models import UserProfile  # noqa: E402
+from app.db.models import PaymentAttempt, UserProfile  # noqa: E402
 from app.db.seed import seed_development_data  # noqa: E402
 from app.main import app  # noqa: E402
 
@@ -512,6 +513,28 @@ class FastApiWorkflowIntegrationTests(unittest.TestCase):
         self.assertNotEqual(retry_res.json()["paymentId"], payment2_id)
         self.assertEqual(retry_res.json()["paymentStatus"], "SUBMITTED")
         self.assertEqual(retry_res.json()["orderStatus"], "PAYMENT_REVIEW")
+
+        # Duplicate-screenshot warning: the same file already went in for another order and for this order's
+        # rejected attempt. It is shown to the admin only; nothing is blocked and the hash is never exposed.
+        retry_id = retry_res.json()["paymentId"]
+        file_hash = hashlib.sha256(VALID_PNG_BYTES).hexdigest()
+        with db_session.SessionLocal() as db:
+            self.assertEqual(db.get(PaymentAttempt, retry_id).screenshot_sha256, file_hash)
+        dup_detail = self.client.get(f"/api/admin/payments/{retry_id}", headers=admin_headers)
+        self.assertEqual(dup_detail.status_code, 200)
+        dup = dup_detail.json()["duplicateScreenshot"]
+        self.assertEqual(dup["count"], 2)
+        self.assertEqual({m["paymentId"]: m["sameOrder"] for m in dup["matches"]}, {payment_id: False, payment2_id: True})
+        self.assertNotIn(file_hash, dup_detail.text)
+        dup_list = self.client.get("/api/admin/payments", headers=admin_headers).json()["items"]
+        self.assertEqual(next(i for i in dup_list if i["id"] == retry_id)["duplicateScreenshot"]["count"], 2)
+        self.assertEqual(self.client.get(f"/api/admin/payments/{retry_id}", headers=c2_headers).status_code, 403)
+        for customer_view in (
+            self.client.get(f"/api/payments/{order2_id}/status", headers=c2_headers),
+            retry_res,
+        ):
+            self.assertNotIn("duplicate", customer_view.text.lower())
+            self.assertNotIn(file_hash, customer_view.text)
 
         # Replaying the same attempt (same Idempotency-Key) never creates a second attempt.
         replay = self.client.post(

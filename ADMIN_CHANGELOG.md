@@ -148,3 +148,41 @@ Not added (unchanged by design): pending-count badges (Phase C), links to the un
 ### Notes
 - The five primary links appear in the working tree only because of the other contributor's uncommitted `Settings` hunk (HEAD has four). Commit decisions on `AdminSidebar.tsx` therefore include that hunk.
 - Pre-change patch: scratch `snapshot/before-TA10.patch`. Rollback: revert the 3 files; no data.
+
+## 2026-10-22 — Batch 5: T-B1 duplicate-screenshot warning (owner policy D-01; GO "Go" with the three defaults N-3)
+
+**Status: implemented in the working tree, NOT committed, NOT pushed, NOT deployed. Migration 006 is written but NOT applied to any database (Neon untouched).** Defaults used: same-order re-uploads are warned with different wording; no backfill of old screenshots; at most 10 matches listed (all counted).
+
+### Behaviour
+Each customer upload now stores the SHA-256 of the file's bytes. The Owner Admin sees a neutral warning ("Possible duplicate screenshot", list badge + drawer notice) when the identical file was uploaded for another attempt. It is information only: approve/reject, the payment and order state machines, uploads and customer screens are unchanged; no auto-approve, auto-reject, blocking or fraud wording; no UTR/bank requirement. Old attempts have no hash (`NULL` = unknown, never a match). Exact bytes only: cropped, edited or re-saved images are not detected (stated in the notice).
+
+### Code changes
+| File | Change |
+|---|---|
+| `backend/migrations/neon/006_payment_screenshot_hash.sql` (**new, not applied**) | `alter table public.payment_attempts add column if not exists screenshot_sha256 text check (null or 64 lowercase hex)`; non-unique `create index if not exists payment_attempts_screenshot_sha256_idx`. Additive, idempotent. |
+| `backend/app/db/models.py` | nullable `PaymentAttempt.screenshot_sha256` + the non-unique index. |
+| `backend/app/routes/payments.py` | hashes the validated upload bytes and stores it with the new attempt. Validation, storage, idempotency, state transitions untouched. |
+| `backend/app/routes/admin_payments.py` | `_duplicate_screenshot_info` (one grouped query per list, hashes looked up in chunks of 500) and `duplicateScreenshot: {count, matches[≤10]}` in the admin payment payload (list, detail, approve/reject/review responses). A match carries only `paymentId, orderNumber, orderStatus, paymentStatus, submittedAt, sameOrder`; the hash is never returned; only `get_owner_admin_principal` endpoints produce it. |
+| `admin-panel/src/features/admin/types/index.ts`, `components/DuplicateScreenshotNotice.tsx` (**new**), `pages/AdminPaymentsPage.tsx` | type, notice (other-order vs same-order wording, IST times, "Open payment" in the same drawer, "View order" link, "+N more not shown"), list badge. Approve/Reject code does not read the field. |
+| Tests | `backend/tests/test_duplicate_screenshot.py` (new, 8 tests), `test_api_workflow.py` (hash stored, matches both ways incl. same-order, hash not in any response, customer 403, customer views carry no warning), `admin.test.mjs` (notice wording/neutrality/caps, list badge, drawer, approval unchanged). |
+
+### Verification (isolated stack: SQLite, throw-away admin, stand-in storage; no Neon/Vercel/bank)
+| Check | Result |
+|---|---|
+| Backend `unittest` (dummy storage env) | 118/118 PASS (was 110; +8) |
+| `npm test`, `typecheck`, `build` (admin); store typecheck + tests; `git diff --check` | PASS |
+| Mutation checks: no hash stored; payment matching itself; sameOrder wrong; NULL hashes matching; fraud wording; same-order wording removed | each fails a named test; restored passes |
+| Browser, desktop + mobile (list badge, neutral drawer, no raw hash, Open payment, approval still ends at AWAITING_CONFIRMATION) | 10/10 PASS (the "one-off file shows no notice" check is vacuous there: every seeded payment shares a file; the backend unit tests cover it) |
+| Earlier browser suites re-run on fresh DBs (T-A4 14, T-A2 30, F-1/2/3 20) | PASS |
+| `security-reviewer` | no blocking finding; hardening applied (hash lookup chunked); process note below |
+| `scripts/verify-all.mjs` | NOT RUN (its step 0 checks Neon credentials/runtime); its other steps were run individually |
+
+### Deployment checklist (must be followed; applying/deploying each needs your separate yes)
+1. Apply `006_payment_screenshot_hash.sql` **before** the backend is deployed (`python scripts/setup-neon-db.py --project-id <project> --branch <branch>`; try a Neon branch first; the live site is on `spring-mode-09495880`). If the backend ships first, the ORM selects/inserts the missing column, so payment upload, customer payment status/order tracking and the admin payments list would all fail with 500 until the migration runs. The migration alone is safe for the old code.
+2. Existing local SQLite dev files are not altered by `create_all`: recreate them (SQLite is for local/tests only).
+3. Rollback: revert the code; the nullable column and index can stay (unused). Dropping them is optional and loses only the hashes.
+
+### Known limits
+- The admin payments list still loads every payment (existing behaviour); the match lookup is one query per 500 distinct files.
+- A customer who sends the same bytes as another customer produces a warning on that payment (information only, changes no outcome).
+- Wrong-amount and duplicate-real-transfer handling remain undecided (D-01).

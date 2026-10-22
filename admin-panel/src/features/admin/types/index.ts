@@ -255,6 +255,23 @@ export interface PaymentVerificationHistoryItem {
   notes: string;
 }
 
+/** Another upload of the byte-identical screenshot (SHA-256). Admin information only; carries no customer details. */
+export interface DuplicateScreenshotMatch {
+  paymentId: string;
+  orderNumber: string;
+  orderStatus: AdminOrderStatus;
+  paymentStatus: AdminPaymentStatus;
+  submittedAt: string;
+  /** True when it is an earlier attempt for the same order (for example a re-upload after a rejection). */
+  sameOrder: boolean;
+}
+
+export interface DuplicateScreenshotInfo {
+  /** All other attempts with the same file; `matches` lists at most the 10 newest. */
+  count: number;
+  matches: DuplicateScreenshotMatch[];
+}
+
 export interface AdminPaymentSubmission {
   id: string;
   orderId: string;
@@ -270,6 +287,7 @@ export interface AdminPaymentSubmission {
   paymentStatus: AdminPaymentStatus;
   orderStatus: AdminOrderStatus;
   rejectionReason?: string;
+  duplicateScreenshot?: DuplicateScreenshotInfo;
   verificationHistory: PaymentVerificationHistoryItem[];
 }
 

@@ -459,6 +459,11 @@ const formatMod = load('src/features/admin/lib/formatDateTime.ts');
 const AdminTimelineMod = load('src/features/admin/components/AdminTimeline.tsx', {
   '../lib/formatDateTime': formatMod,
 });
+const DuplicateNoticeMod = load('src/features/admin/components/DuplicateScreenshotNotice.tsx', {
+  '../../../components/common/Notice': NoticeMod,
+  '../lib/formatDateTime': formatMod,
+  '../lib/orderStateMachine': stateMachine,
+});
 const AdminStatesMod = load('src/features/admin/components/AdminStates.tsx', {
   '../../../components/common/Notice': NoticeMod,
 });
@@ -542,6 +547,7 @@ const commonPageStubs = {
   '../lib/referenceData': refData,
   '../lib/orderStateMachine': stateMachine,
   '../lib/formatDateTime': formatMod,
+  '../components/DuplicateScreenshotNotice': DuplicateNoticeMod,
   '../components': adminComponentsBarrel,
 };
 
@@ -1225,6 +1231,69 @@ assert.deepEqual(JSON.parse(JSON.stringify(getAllowedOrderActions('DELIVERY_FAIL
   }
   const delivery = readFileSync(new URL('../src/features/admin/pages/AdminDeliveryPage.tsx', import.meta.url), 'utf8');
   assert.match(delivery, /className="admin-table-wrap" role="region" aria-label="Fulfillment queue"/, 'Delivery no longer inherits the customers-table column widths that clipped its actions');
+}
+
+/* T-B1: duplicate-screenshot warning is information only: neutral wording, same-order vs other-order, capped list. */
+{
+  const Notice = DuplicateNoticeMod.default;
+  const h = (props) => renderToStaticMarkup(React.createElement(MemoryRouter, null, React.createElement(Notice, props)));
+  assert.equal(h({ info: undefined }), '');
+  assert.equal(h({ info: { count: 0, matches: [] } }), '');
+
+  const other = { paymentId: 'p1', orderNumber: '#BFP-1004', orderStatus: 'CANCELLED', paymentStatus: 'REJECTED', submittedAt: '2026-10-12T09:15:00+00:00', sameOrder: false };
+  const same = { paymentId: 'p2', orderNumber: '#BFP-1020', orderStatus: 'PENDING_PAYMENT', paymentStatus: 'REJECTED', submittedAt: '2026-10-21T13:04:00+00:00', sameOrder: true };
+  const plain = (s) => s.replace(/<!-- -->/g, '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+  const raw = h({ info: { count: 2, matches: [other, same] }, onOpenPayment() {} });
+  const html = plain(raw);
+  assert.match(html, /Possible duplicate screenshot/);
+  assert.match(html, /Also uploaded for another order: #BFP-1004/);
+  assert.match(html, /Sent earlier for this same order: #BFP-1020/);
+  assert.match(html, /12 Oct 2026, 2:45 pm IST/, 'times use the admin convention');
+  assert.match(html, /payment rejected/);
+  assert.equal((html.match(/Open payment/g) || []).length, 2, 'each match can be opened');
+  assert.equal((html.match(/View order/g) || []).length, 1, 'order link only for the other order');
+  assert.ok(html.indexOf('View order') < html.indexOf('Sent earlier'), 'the link belongs to the other-order row');
+  assert.match(raw, /href="\/admin\/orders\?q=%23BFP-1004"/);
+  assert.match(html, /does not mean this payment is wrong or that anyone did something wrong/);
+  assert.match(html, /cropped, edited or re-saved/, 'the limit of an exact-file match is stated');
+  assert.doesNotMatch(html, /fraud|fake|forg|cheat|scam|suspicious|reject this|do not approve/i, 'wording stays neutral');
+  assert.doesNotMatch(html, /more match/);
+  assert.doesNotMatch(h({ info: { count: 1, matches: [other] } }), /Open payment/, 'no button without a handler');
+
+  const capped = plain(h({ info: { count: 13, matches: Array.from({ length: 10 }, (_, i) => ({ ...other, paymentId: `c${i}` })) } }));
+  assert.match(capped, /3 more matches not shown/);
+  assert.match(plain(h({ info: { count: 11, matches: Array.from({ length: 10 }, (_, i) => ({ ...other, paymentId: `d${i}` })) } })), /1 more match not shown/);
+
+  const payment = (id, number, duplicate) => ({
+    id, orderId: `o-${id}`, orderNumber: number, customerName: 'Test Customer', customerPhone: '9800000001', expectedAmount: 100,
+    privateScreenshotPath: 'p/x.png', signedScreenshotUrl: '/api/admin/payments/x/proof', submissionDate: '2026-10-21T13:04:00+00:00',
+    paymentStatus: 'UNDER_REVIEW', orderStatus: 'PAYMENT_REVIEW', verificationHistory: [],
+    ...(duplicate ? { duplicateScreenshot: duplicate } : {}),
+  });
+  const payments = [payment('pay-a', '#BFP-3001', { count: 1, matches: [other] }), payment('pay-b', '#BFP-3002', { count: 0, matches: [] }), payment('pay-c', '#BFP-3003')];
+  const paymentsPage = mountPage('src/features/admin/pages/AdminPaymentsPage.tsx', {
+    getAdminPayments: async () => ({ items: payments }),
+    getAdminPaymentProof: async () => ({ signedUrl: '/x' }),
+  }, { search: 'payment=pay-a' });
+  await paymentsPage.settle(); await paymentsPage.settle();
+  const rawPage = paymentsPage.html;
+  const pageHtml = plain(rawPage);
+  assert.equal((rawPage.match(/Open the payment to see where/g) || []).length, 1, 'only the payment with a match gets the list badge');
+  assert.match(pageHtml, /Possible duplicate screenshot/);
+  assert.match(pageHtml, /#BFP-1004/, 'the drawer for the focused payment lists the match');
+  assert.match(pageHtml, /Approve Payment/, 'approval section is unchanged by a match');
+  assert.match(pageHtml, /Reject/, 'rejection is unchanged by a match');
+  const noDuplicate = mountPage('src/features/admin/pages/AdminPaymentsPage.tsx', {
+    getAdminPayments: async () => ({ items: payments }),
+    getAdminPaymentProof: async () => ({ signedUrl: '/x' }),
+  }, { search: 'payment=pay-b' });
+  await noDuplicate.settle(); await noDuplicate.settle();
+  assert.doesNotMatch(plain(noDuplicate.html), /This exact image file was uploaded before/, 'no notice without a match');
+  assert.match(plain(noDuplicate.html), /Approve Payment/);
+
+  const source = readFileSync(new URL('../src/features/admin/pages/AdminPaymentsPage.tsx', import.meta.url), 'utf8');
+  const approveBlock = source.slice(source.indexOf('async function handleApprovePayment'), source.indexOf('async function handleRejectOrRequestProof'));
+  assert.doesNotMatch(approveBlock, /duplicateScreenshot/, 'approval logic never reads the duplicate information');
 }
 
 console.log(

@@ -343,6 +343,7 @@ class PaymentAttempt(Base):
     __tablename__ = "payment_attempts"
     __table_args__ = (
         Index("payment_attempts_verified_utr_idx", "verified_utr"),
+        Index("payment_attempts_screenshot_sha256_idx", "screenshot_sha256"),
     )
 
     id: Mapped[str] = mapped_column(GUID(), primary_key=True, default=new_uuid_str)
@@ -356,6 +357,8 @@ class PaymentAttempt(Base):
     submitted_utr: Mapped[Optional[str]] = mapped_column(String(12), nullable=True)
     verified_utr: Mapped[Optional[str]] = mapped_column(String(12), nullable=True)
     screenshot_storage_path: Mapped[str] = mapped_column(String(512), nullable=False)
+    # SHA-256 of the uploaded file's bytes. NULL = not recorded (older attempts), which is never a match.
+    screenshot_sha256: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="SUBMITTED", index=True)
     proof_correction_requested: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     idempotency_key: Mapped[Optional[str]] = mapped_column(String(128), unique=True, nullable=True)

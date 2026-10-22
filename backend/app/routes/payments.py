@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from typing import Any
 
@@ -91,6 +92,7 @@ async def submit_payment_proof(
         user_id=principal.id,
         expected_amount_paise=order.total_paise,
         screenshot_storage_path="pending",
+        screenshot_sha256=hashlib.sha256(raw_bytes).hexdigest(),
         status="SUBMITTED",
         idempotency_key=cleaned_idem,
     )

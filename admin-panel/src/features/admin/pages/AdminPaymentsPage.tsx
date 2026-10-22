@@ -6,6 +6,7 @@ import { formatINR, getErrorMessage, resolveApiUrl } from '../../../lib/api';
 import { formatDateTime } from '../lib/formatDateTime';
 import {
   getAdminPayments,
+  getAdminPaymentById,
   getAdminPaymentProof,
   startAdminPaymentReview,
   approveAdminPayment,
@@ -13,6 +14,7 @@ import {
 } from '../api';
 import type { AdminPaymentSubmission, AdminPaymentStatus } from '../types';
 import { PAYMENT_STATUS_LABELS } from '../lib/orderStateMachine';
+import DuplicateScreenshotNotice from '../components/DuplicateScreenshotNotice';
 import {
   StatCard,
   StatusBadge,
@@ -103,6 +105,12 @@ export default function AdminPaymentsPage() {
         })
         .catch(() => undefined);
     }
+  }
+
+  function openMatchedPayment(paymentId: string) {
+    getAdminPaymentById(paymentId)
+      .then(openPaymentInspector)
+      .catch((err) => showToast(getErrorMessage(err), 'error'));
   }
 
   const filteredPayments = payments.filter((p) => {
@@ -301,7 +309,16 @@ export default function AdminPaymentsPage() {
                       <span className="badge badge--outline">Private Bucket</span>
                     </td>
                     <td className="text-small">{formatDateTime(payment.submissionDate)}</td>
-                    <td><StatusBadge status={payment.paymentStatus} kind="payment" /></td>
+                    <td>
+                      <StatusBadge status={payment.paymentStatus} kind="payment" />
+                      {payment.duplicateScreenshot && payment.duplicateScreenshot.count > 0 && (
+                        <p style={{ marginTop: 4 }}>
+                          <span className="badge badge--warning" title="This exact image file was uploaded before. Open the payment to see where.">
+                            Possible duplicate screenshot
+                          </span>
+                        </p>
+                      )}
+                    </td>
                     <td>
                       <button
                         type="button"
@@ -371,6 +388,8 @@ export default function AdminPaymentsPage() {
                 <dd>{formatDateTime(selectedPayment.submissionDate)}</dd>
               </div>
             </dl>
+
+            <DuplicateScreenshotNotice info={selectedPayment.duplicateScreenshot} onOpenPayment={openMatchedPayment} />
 
             {/* Private Screenshot Section */}
             <h3 style={{ fontSize: 18, marginBottom: 8 }}>

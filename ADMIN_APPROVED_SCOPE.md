@@ -31,7 +31,7 @@ Precedence: D-01…D-05 > this document > `ADMIN_IMPROVEMENT_PLAN.md` > review s
 | T-A3 | Mobile Orders + Delivery layout, 44 px targets | PROPOSED (safe fix) | **IMPLEMENTED, uncommitted (GO 2026-10-21)** | review/commit decision |
 | T-A4 | Modal keyboard accessibility | PROPOSED (safe fix) | **IMPLEMENTED, uncommitted (GO 2026-10-21)** | review/commit decision |
 | T-A10 | Operations navigation group | **OWNER APPROVED** (D-03) | **IMPLEMENTED, uncommitted (GO 2026-10-21; N-2 default: always-expanded group)** | review/commit decision |
-| T-B1 | SHA-256 duplicate-screenshot warning | **OWNER APPROVED** (D-01) | WAITING FOR IMPLEMENTATION GO | Confirm 3 rule defaults (N-3) |
+| T-B1 | SHA-256 duplicate-screenshot warning | **OWNER APPROVED** (D-01) | **IMPLEMENTED in the working tree 2026-10-22 (N-3 defaults used); migration 006 written, NOT applied to any database** | review; separate yes to apply 006 to Neon (branch first) and to deploy, in that order |
 | T-B2 | Reservation expiry | **OWNER APPROVED: keep disabled** (D-02) | **CLOSED — nothing to build** | — |
 | T-A5 | Fix misleading expiry wording | PROPOSED text only | WAITING FOR IMPLEMENTATION GO (separate nod) | Wording nod |
 | T-B3 | Failed-delivery cancel: stock disposition + refund amount | **OWNER APPROVED in principle** (D-04) | **BLOCKED** | Decisions B3-1…B3-5 (§8) |
