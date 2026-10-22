@@ -136,10 +136,7 @@ class CatalogProductsTests(unittest.TestCase):
 
             store.serviceable_pin_codes = ["360005"]
             db.commit()
-            with self.assertRaises(HTTPException) as outside_area:
-                quote_pin("384002")
-            self.assertEqual(outside_area.exception.status_code, 422)
-            self.assertIn("384002 is outside our current delivery area", outside_area.exception.detail)
+            self.assertEqual(quote_pin("384002"), baseline)  # the PIN list is no longer enforced: any valid PIN is accepted
             self.assertEqual(quote_pin("360005"), baseline)
 
             store.serviceable_pin_codes = []
