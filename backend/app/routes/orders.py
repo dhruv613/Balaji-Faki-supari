@@ -35,7 +35,6 @@ from .common import (
     _primary_product_image_url,
     _qr_response,
     _resolve_order_by_id_or_number,
-    _serviceable_pins,
     get_current_principal,
 )
 
@@ -108,13 +107,6 @@ def create_customer_order(
 
     if not PIN_CODE_REGEX.match(payload.pin_code):
         raise HTTPException(status_code=422, detail="Enter a valid 6-digit PIN code.")
-
-    serviceable_pins = _serviceable_pins(store)
-    if serviceable_pins and payload.pin_code not in serviceable_pins:
-        raise HTTPException(
-            status_code=422,
-            detail=f"PIN code {payload.pin_code} is outside our current delivery area.",
-        )
 
     product = db.scalar(
         select(Product).where(Product.slug == payload.product, Product.is_active.is_(True))

@@ -25,7 +25,6 @@ from .common import (
     _serialize_product_images,
     _serialize_product_information,
     _serialize_store_profile,
-    _serviceable_pins,
     _typed_amounts_offered,
 )
 
@@ -116,13 +115,6 @@ def create_checkout_quote(
         raise HTTPException(status_code=422, detail="Enter a valid 6-digit PIN code.")
 
     store = _get_store_settings(db)
-    serviceable_pins = _serviceable_pins(store)
-    if serviceable_pins and payload.pin_code not in serviceable_pins:
-        raise HTTPException(
-            status_code=422,
-            detail=f"PIN code {payload.pin_code} is outside our current delivery area.",
-        )
-
     product = db.scalar(
         select(Product).where(Product.slug == payload.product, Product.is_active.is_(True))
     )

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Any
 
@@ -56,8 +57,62 @@ def _build_signed_proof_url(payment: PaymentAttempt) -> str:
     return f"/api/admin/payments/{payment.id}/proof?sig={sig}&exp={exp}&raw=1"
 
 
-def _serialize_admin_payment(db: Session, payment: PaymentAttempt) -> dict[str, Any]:
+MAX_DUPLICATE_MATCHES = 10
+HASH_QUERY_CHUNK = 500
+
+
+def _duplicate_screenshot_info(db: Session, payments: list[PaymentAttempt]) -> dict[str, dict[str, Any]]:
+    """Other attempts whose uploaded file is byte-for-byte identical (SHA-256), for the admin's information only.
+
+    One query for all given payments. An attempt without a stored hash is unknown, never a match. The result
+    carries no customer details, only the other order's number, statuses and upload time.
+    """
+    hashes = {p.screenshot_sha256 for p in payments if p.screenshot_sha256}
+    if not hashes:
+        return {}
+    ordered = sorted(hashes)
+    rows = []
+    for start in range(0, len(ordered), HASH_QUERY_CHUNK):  # keeps each IN list well below the database's parameter limit
+        rows.extend(
+            db.execute(
+                select(PaymentAttempt, Order.order_number, Order.status)
+                .join(Order, Order.id == PaymentAttempt.order_id)
+                .where(PaymentAttempt.screenshot_sha256.in_(ordered[start : start + HASH_QUERY_CHUNK]))
+                .order_by(PaymentAttempt.submitted_at.desc())
+            ).all()
+        )
+    by_hash: dict[str, list[tuple[PaymentAttempt, str, str]]] = defaultdict(list)
+    for attempt, order_number, order_status in rows:
+        by_hash[attempt.screenshot_sha256].append((attempt, order_number, order_status))
+    found: dict[str, dict[str, Any]] = {}
+    for payment in payments:
+        if not payment.screenshot_sha256:
+            continue
+        others = [row for row in by_hash[payment.screenshot_sha256] if row[0].id != payment.id]
+        if others:
+            found[payment.id] = {
+                "count": len(others),
+                "matches": [
+                    {
+                        "paymentId": attempt.id,
+                        "orderNumber": order_number,
+                        "orderStatus": order_status,
+                        "paymentStatus": attempt.status,
+                        "submittedAt": _iso(attempt.submitted_at),
+                        "sameOrder": attempt.order_id == payment.order_id,
+                    }
+                    for attempt, order_number, order_status in others[:MAX_DUPLICATE_MATCHES]
+                ],
+            }
+    return found
+
+
+def _serialize_admin_payment(
+    db: Session, payment: PaymentAttempt, duplicates: dict[str, dict[str, Any]] | None = None
+) -> dict[str, Any]:
     order = payment.order or db.get(Order, payment.order_id)
+    if duplicates is None:
+        duplicates = _duplicate_screenshot_info(db, [payment])
     items_summary = "Faki / Supari Order"
     if order and order.items:
         items_summary = ", ".join(
@@ -119,6 +174,7 @@ def _serialize_admin_payment(db: Session, payment: PaymentAttempt) -> dict[str, 
         "paymentStatus": payment.status,
         "orderStatus": order.status if order else "PAYMENT_REVIEW",
         "rejectionReason": payment.rejection_reason,
+        "duplicateScreenshot": duplicates.get(payment.id, {"count": 0, "matches": []}),
         "verificationHistory": history,
     }
 
@@ -136,7 +192,8 @@ def list_admin_payments(
     if status and status != "ALL":
         stmt = stmt.where(PaymentAttempt.status == status)
     payments = db.scalars(stmt).all()
-    items = [_serialize_admin_payment(db, p) for p in payments]
+    duplicates = _duplicate_screenshot_info(db, list(payments))
+    items = [_serialize_admin_payment(db, p, duplicates) for p in payments]
     if search and search.strip():
         q = search.strip().lower()
         items = [
