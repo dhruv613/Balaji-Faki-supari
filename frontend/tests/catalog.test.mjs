@@ -137,12 +137,12 @@ let consumed = false;
 let selection;
 let formEffects = [];
 const Form = load('../src/features/orders/pages/OrderFormPage.tsx', {
-  react: { ...React, useState: () => [false, () => {}], useEffect: callback => formEffects.push(callback) },
-  'react-router-dom': { useNavigate: () => () => {}, useSearchParams: () => [params, () => { consumed = true; }] },
+  react: { ...React, useState: initial => [initial, () => {}], useRef: initial => ({ current: initial }), useEffect: callback => formEffects.push(callback) },
+  'react-router-dom': { useLocation: () => ({ hash: '' }), useNavigate: () => () => {}, useSearchParams: () => [params, () => { consumed = true; }] },
   '../../../context/OrderContext': { ...context, useOrder: () => state, useOrderDispatch: () => action => { selection = action; } },
   '../../../components/common/OrderStepper': {}, '../../../components/common/Notice': {}, '../../../components/common/MobileNumberInput': {},
-  '../../../components/common/ProductName': {}, '../../../lib/api': api, '../../../lib/amount': load('../src/lib/amount.ts'),
-  '../../catalog/components/ProductParts': { primaryImage: () => null },
+  '../../../components/common/ProductName': {}, '../../../lib/api': api, '../../../lib/auth': { useSession: () => ({ session: null }) }, '../../../lib/amount': load('../src/lib/amount.ts'),
+  '../../catalog/components/ProductParts': { primaryImage: () => null }, '../api/ordersApi': ordersApi,
 }, { URLSearchParams }).default;
 state = { ...context.initialState };
 Form(); formEffects.forEach(effect => effect());
@@ -201,6 +201,7 @@ const Review = load('../src/features/orders/pages/ReviewOrderPage.tsx', orderStu
 const { MemoryRouter } = require('react-router-dom');
 const reviewMarkup = () => renderToStaticMarkup(React.createElement(MemoryRouter, null, React.createElement(Review)));
 let markup = reviewMarkup();
+assert.match(markup, /Change address/, 'review links back to delivery address selection');
 assert.match(markup, /Cannot calculate checkout total/);
 assert.match(markup, /PIN code 384002 is outside our current delivery area/);
 assert.match(markup, /Unavailable/);
@@ -211,6 +212,7 @@ const FormView = load('../src/features/orders/pages/OrderFormPage.tsx', {
   ...orderStubs, '../../../components/common/MobileNumberInput': { default: () => null }, '../../../lib/amount': load('../src/lib/amount.ts'),
 }).default;
 const formMarkup = renderToStaticMarkup(React.createElement(MemoryRouter, null, React.createElement(FormView)));
+assert.match(formMarkup, /Save address/, 'signed-in customers can keep a new address for later');
 assert.match(formMarkup, /PIN code 384002 is outside our current delivery area/);
 assert.match(formMarkup, /Unavailable/);
 assert.doesNotMatch(formMarkup, /Awaiting price/);

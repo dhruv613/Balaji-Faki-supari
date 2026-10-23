@@ -206,6 +206,7 @@ export interface AdminOrderSummary {
 }
 
 export interface AdminOrderDetail extends AdminOrderSummary {
+  paymentProofCleanupComplete?: boolean;
   address: string;
   items: AdminOrderItem[];
   subtotal: number | null;
@@ -466,6 +467,7 @@ export interface DeliveryEventRecord {
 }
 
 export interface AdminDeliveryRecord {
+  paymentProofCleanupComplete?: boolean;
   id: string;
   orderId: string;
   orderNumber: string;

@@ -34,6 +34,13 @@ class NeonSchemaTests(unittest.TestCase):
         self.assertNotIn("user_profiles", sql)
         self.assertNotIn("upi_id", sql)
 
+    def test_saved_addresses_are_private_and_additive(self):
+        sql = (ROOT / "backend/migrations/neon/007_customer_addresses.sql").read_text(encoding="utf-8").lower()
+        self.assertIn("create table if not exists public.customer_addresses", sql)
+        self.assertIn("enable row level security", sql)
+        self.assertIn("revoke all on table public.customer_addresses from public", sql)
+        self.assertNotIn("delete from", sql)
+
 
 if __name__ == "__main__":
     unittest.main()

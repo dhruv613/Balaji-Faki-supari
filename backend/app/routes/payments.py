@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile
@@ -13,6 +14,7 @@ from sqlalchemy.orm import Session
 from ..core.domain import ORDER_STATUS_LABELS, validate_payment_transition
 from ..core.security import AuthenticatedPrincipal
 from ..core.storage import (
+    CatalogImageStorageError,
     PaymentProofStorageError,
     store_private_payment_proof,
     validate_payment_screenshot,
@@ -20,8 +22,10 @@ from ..core.storage import (
 from ..db.models import AdminAuditLog, Notification, Order, OrderStatusHistory, PaymentAttempt, utcnow
 from ..db.session import get_db
 from .common import _iso, _resolve_order_by_id_or_number, get_current_principal
+from .receipts import _receipt_bytes
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.post("/payments/{order_id}/submit")
@@ -164,6 +168,12 @@ async def submit_payment_proof(
 
     db.commit()
     db.refresh(payment_attempt)
+
+    # The PDF captures the receiver QR at submission time; a receipt failure never loses an accepted proof.
+    try:
+        _receipt_bytes(db, payment_attempt)
+    except (FileNotFoundError, CatalogImageStorageError, PaymentProofStorageError) as exc:
+        logger.warning("Payment receipt archive deferred for %s: %s", payment_attempt.id, exc)
 
     return {
         "paymentId": payment_attempt.id,

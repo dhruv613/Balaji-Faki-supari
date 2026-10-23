@@ -52,6 +52,7 @@ from .common import (
     _resolve_order_by_id_or_number,
     get_owner_admin_principal,
 )
+from .receipts import archive_delivered_proofs
 
 router = APIRouter()
 
@@ -518,7 +519,10 @@ def update_admin_order_status(
 
     db.commit()
     db.refresh(order)
-    return _serialize_admin_order_detail(db, order)
+    result = _serialize_admin_order_detail(db, order)
+    if next_status == "DELIVERED":
+        result["paymentProofCleanupComplete"] = archive_delivered_proofs(db, order)
+    return result
 
 
 @router.get("/admin/deliveries")
@@ -703,7 +707,10 @@ def update_admin_delivery(
 
     db.commit()
     db.refresh(shipment)
-    return _serialize_admin_delivery(db, shipment)
+    result = _serialize_admin_delivery(db, shipment)
+    if requested_status == "DELIVERED":
+        result["paymentProofCleanupComplete"] = archive_delivered_proofs(db, order)
+    return result
 
 
 @router.get("/admin/refunds")

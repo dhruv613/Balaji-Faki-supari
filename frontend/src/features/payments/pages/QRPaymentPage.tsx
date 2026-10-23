@@ -49,7 +49,12 @@ export default function QRPaymentPage() {
   useEffect(() => {
     let active = true;
     if (!order?.id || !session) return;
-    getPaymentStatus(order.id).then(info => { if (active) setHistory(info); }).catch(() => { if (active) setHistory(null); });
+    getPaymentStatus(order.id).then(info => {
+      if (active) {
+        setHistory(info);
+        dispatch({ type: 'SET_PAYMENT_STATUS', payload: info.status });
+      }
+    }).catch(() => { if (active) setHistory(null); });
     return () => { active = false; };
   }, [order?.id, session?.user.id]);
 
@@ -64,17 +69,17 @@ export default function QRPaymentPage() {
   const expired = remaining !== null && remaining <= 0;
 
   /* ----- Guards ----- */
+  if (authLoading) return <div className="wrapper"><OrderStepper currentStep={3} /><p role="status">Checking your sign-in and order…</p></div>;
   if (state.orderId && !order) return <div className="wrapper"><OrderStepper currentStep={3} />{!session ? <EmailSignIn /> : <Notice title="Recover your existing order" actions={<button className="btn" onClick={() => dispatch({ type: 'RETRY_ORDER' })}>Retry loading order</button>}>{state.orderLoadStatus || 'Checking your existing order…'} Please do not pay again or create a replacement order until its status is confirmed.</Notice>}</div>;
   if (!order) {
     return (
       <div className="wrapper">
         <OrderStepper currentStep={3} />
-        <NoActiveOrder message="There's no order to pay for yet. Payment opens only after our server creates your order and confirms the exact amount." />
+        <NoActiveOrder message="We couldn't find an order in this browser. Open My Orders to continue an existing order." />
       </div>
     );
   }
 
-  if (authLoading) return <div className="wrapper"><OrderStepper currentStep={3} /><p role="status">Checking your sign-in…</p></div>;
   if (!session) return <div className="wrapper"><OrderStepper currentStep={3} /><EmailSignIn /></div>;
 
   // Already submitted — never allow a second submission from this screen.
@@ -129,11 +134,19 @@ export default function QRPaymentPage() {
 
     setSubmitting(true);
     try {
+      const current = await getPaymentStatus(order!.id);
+      if (activeScope.current !== scope) return;
+      setHistory(current);
+      if (!current.canSubmitProof) {
+        dispatch({ type: 'SET_PAYMENT_STATUS', payload: current.status });
+        navigate(`/my-orders/${encodeURIComponent(order!.id)}`);
+        return;
+      }
       // FastAPI stores the screenshot in private Neon storage and sets
       // Payment = SUBMITTED and Order = PAYMENT_REVIEW. This is NOT verified payment.
       const result = await submitPayment(order!.id, {
         screenshot: state.screenshotFile,
-        attemptNumber: history?.attempts?.length ?? 0,
+        attemptNumber: current.attempts?.length ?? 0,
       });
       if (activeScope.current !== scope) return;
       dispatch({ type: 'SET_PAYMENT_STATUS', payload: result.paymentStatus });
@@ -166,9 +179,11 @@ export default function QRPaymentPage() {
     <div className="wrapper">
       <OrderStepper currentStep={3} />
 
-      <h1 className="page__header">Scan &amp; pay</h1>
+      <h1 className="page__header">{history?.latestAttemptStatus === 'REJECTED' ? 'Resubmit payment proof' : 'Scan & pay'}</h1>
       <p className="page__subtitle">
-        Pay the exact amount using any UPI app, then confirm below.
+        {history?.latestAttemptStatus === 'REJECTED'
+          ? 'Your order is still open. If you already paid, upload a clearer screenshot below.'
+          : 'Pay the exact amount using any UPI app, then confirm below.'}
       </p>
 
       {history?.rejectionReason && (

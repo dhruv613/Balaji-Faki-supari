@@ -6,7 +6,8 @@
  * mutations when FastAPI is unavailable.
  */
 
-import { apiFetch } from '../../../lib/api';
+import { ApiError, apiFetch, resolveApiUrl } from '../../../lib/api';
+import { getAccessToken } from '../../../lib/auth';
 import { env } from '../../../lib/env';
 import type {
   AuthenticatedUserProfile,
@@ -173,6 +174,62 @@ export async function getAdminPaymentProof(paymentId: string): Promise<AdminPaym
   return apiFetch<AdminPaymentProofResponse>(
     resolveApiPath(`/api/admin/payments/${encodeURIComponent(paymentId)}/proof`),
   );
+}
+
+async function paymentReceiptFile(path: string, mime: string, options?: RequestInit): Promise<{ blob: Blob; filename?: string }> {
+  if (!env.apiBaseUrl) throw new ApiError(0, 'Payment receipts are unavailable while the server is disconnected.');
+  const token = await getAccessToken();
+  const headers = new Headers(options?.headers);
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+  if (options?.body) headers.set('Content-Type', 'application/json');
+  let response: Response;
+  try {
+    response = await fetch(resolveApiUrl(path), { ...options, headers, signal: AbortSignal.timeout(60_000) });
+  } catch {
+    throw new ApiError(0, 'Cannot reach the server to download payment receipts.');
+  }
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new ApiError(response.status, typeof body.detail === 'string' ? body.detail : 'Payment receipt download failed.');
+  }
+  const disposition = response.headers.get('Content-Disposition') ?? '';
+  const rawFilename = /filename\*=UTF-8''([^;]+)/i.exec(disposition)?.[1]
+    ?? /filename="?([^";]+)"?/i.exec(disposition)?.[1];
+  let filename: string | undefined;
+  if (rawFilename) {
+    try {
+      filename = decodeURIComponent(rawFilename).split(/[\\/]/).pop()?.replace(/[^\w.()-]/g, '_');
+    } catch {
+      filename = undefined;
+    }
+  }
+  if (!response.headers.get('Content-Type')?.toLowerCase().startsWith(mime)) {
+    throw new ApiError(0, 'The server returned an unexpected receipt file.');
+  }
+  const blob = await response.blob();
+  if (!blob.size) throw new ApiError(0, 'The server returned an empty receipt file.');
+  return { blob, filename };
+}
+
+/** GET /api/admin/payments/{id}/receipt */
+export function getAdminPaymentReceipt(paymentId: string): Promise<{ blob: Blob; filename?: string }> {
+  return paymentReceiptFile(resolveApiPath(`/api/admin/payments/${encodeURIComponent(paymentId)}/receipt`), 'application/pdf');
+}
+
+/** POST /api/admin/payments/{id}/archive — retry cleanup for a delivered order */
+export function archiveDeliveredPaymentProof(paymentId: string): Promise<{ complete: boolean }> {
+  return apiFetch<{ complete: boolean }>(
+    resolveApiPath(`/api/admin/payments/${encodeURIComponent(paymentId)}/archive`),
+    { method: 'POST' },
+  );
+}
+
+/** POST /api/admin/payments/receipts — ZIP of selected PDF receipts and a CSV report */
+export function getAdminPaymentReceipts(paymentIds: string[]): Promise<{ blob: Blob; filename?: string }> {
+  return paymentReceiptFile(resolveApiPath('/api/admin/payments/receipts'), 'application/zip', {
+    method: 'POST',
+    body: JSON.stringify({ paymentIds }),
+  });
 }
 
 /**

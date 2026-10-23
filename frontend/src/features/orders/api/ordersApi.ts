@@ -15,6 +15,33 @@ import type {
   TrackingEvent,
 } from '../../../types/orders';
 
+export interface SavedAddress { address: string; pinCode: string }
+
+function readSavedAddress(value: unknown): SavedAddress {
+  if (!value || typeof value !== 'object' ||
+      !('address' in value) || typeof value.address !== 'string' ||
+      !('pinCode' in value) || typeof value.pinCode !== 'string') {
+    throw new Error('The server returned an unreadable saved address.');
+  }
+  return { address: value.address, pinCode: value.pinCode };
+}
+
+/** The signed-in customer's saved addresses and previous order addresses. */
+export async function getSavedAddresses(): Promise<SavedAddress[]> {
+  const response: unknown = await apiFetch<unknown>('/me/addresses');
+  if (!response || typeof response !== 'object' || !('items' in response) || !Array.isArray(response.items)) {
+    throw new Error('The server returned an unreadable address list.');
+  }
+  return response.items.map(readSavedAddress);
+}
+
+export async function saveAddress(address: SavedAddress): Promise<SavedAddress> {
+  return readSavedAddress(await apiFetch<unknown>('/me/addresses', {
+    method: 'POST',
+    body: JSON.stringify(address),
+  }));
+}
+
 /** POST /checkout/quote — server-calculated subtotal, delivery fee and total */
 export async function getCheckoutQuote(req: CheckoutQuoteRequest): Promise<CheckoutQuote> {
   return readQuote(await apiFetch<unknown>('/checkout/quote', {

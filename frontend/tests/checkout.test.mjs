@@ -23,17 +23,23 @@ const api = load('src/lib/api.ts', { './env': { env }, './auth': auth }, { fetch
 const store = load('src/constants/store.ts');
 const contracts = load('src/lib/contracts.ts', { '../constants/store': store });
 const ordersApi = load('src/features/orders/api/ordersApi.ts', { '../../../lib/api': api, '../../../lib/contracts': contracts });
-const paymentsApi = load('src/features/payments/api/paymentsApi.ts', { '../../../lib/api': api, '../../../lib/contracts': contracts });
+const downloads = [];
+const receiptLink = { href: '', download: '', click() { downloads.push({ href: this.href, name: this.download }); }, remove() {} };
+const paymentsApi = load('src/features/payments/api/paymentsApi.ts', {
+  '../../../lib/api': api, '../../../lib/contracts': contracts, '../../../lib/auth': auth,
+}, { fetch: (...args) => fakeFetch(...args), document: { createElement: () => receiptLink, body: { appendChild() {} } }, window: { setTimeout: callback => callback() } });
 const catalogApi = load('src/features/catalog/api/catalogApi.ts', { '../../../lib/api': api, '../../../lib/contracts': contracts });
 const customer = load('src/lib/customer.ts');
 const amount = load('src/lib/amount.ts');
 const mobileInput = load('src/components/common/MobileNumberInput.tsx', { '../../lib/customer': customer }).default;
 const storage = new Map();
 const sessionStorage = { getItem: key => storage.get(key) ?? null, setItem: (key,value) => storage.set(key,value), removeItem: key => storage.delete(key) };
+const durable = new Map();
+const localStorage = { getItem: key => durable.get(key) ?? null, setItem: (key,value) => durable.set(key,value), removeItem: key => durable.delete(key) };
 const context = load('src/context/OrderContext.tsx', {
   '../lib/api': api, '../constants/store': store, '../features/catalog/api/catalogApi': catalogApi,
   '../features/orders/api/ordersApi': ordersApi, '../lib/customer': customer, '../lib/amount': amount,
-}, { sessionStorage });
+}, { sessionStorage, localStorage });
 const { initialState, reducer, restoreDraft, validateForm, buildSummary, toOrderFormData } = context;
 const valid = { ...initialState, product: 'faki', packSize: '500g', quantity: 2, fullName: '  હેતલ પટેલ  ', phone: '+91 98765 43210', address: 'Riddhi Siddhi Complex, Rajkot', pinCode: '360005' };
 assert.equal(Object.keys(validateForm(valid)).length, 0);
@@ -59,6 +65,11 @@ assert.equal(context.loadState(userOne).phone,'9876543210');
 assert.equal(context.loadState(userTwo).address,'','No cross-account draft disclosure');
 assert.equal(context.loadState(userTwo).orderId,'');
 assert.equal(context.loadState(userTwo).fullName,'Second Customer');
+const changedAddress = reducer({ ...initialState, address: 'Old House, Rajkot', pinCode: '360001', quote: { subtotal: 100, deliveryFee: 10, total: 110 } },
+  { type: 'SET_ADDRESS', payload: { address: 'New House, Rajkot', pinCode: '360002' } });
+assert.equal(changedAddress.address, 'New House, Rajkot');
+assert.equal(changedAddress.pinCode, '360002');
+assert.equal(changedAddress.quote, null, 'changing delivery address refreshes the checkout quote');
 assert.equal(context.loadState(userTwo).phone,'6987654321');
 // Visitors prepare a draft as guests; signing in keeps it and returns them to checkout.
 storage.clear();
@@ -78,6 +89,14 @@ assert.equal(context.hasDraftContent(initialState), false);
 assert.equal(context.hasDraftContent({ ...initialState, quantity: 3 }), true);
 context.persistDraft(adopted, 'customer-one');
 assert.equal(context.loadState(userOne).address, valid.address);
+// A rejected order survives a closed tab and a leftover guest draft never hides it.
+context.persistDraft({ ...valid, orderId: 'existing-order' }, 'customer-one');
+storage.delete('bfp-order-session:customer-one');
+context.persistDraft(guestDraft, 'guest');
+assert.equal(context.loadState(userOne).orderId, 'existing-order');
+assert.equal(context.loadState(userTwo).orderId, '', 'active order references are account-scoped');
+context.persistDraft({ ...valid, orderId: '' }, 'customer-one');
+assert.equal(durable.has('bfp-order-session:active:customer-one'), false, 'reset clears the durable reference');
 // No fabricated catalog: loading/errors never render metadata as unpriced products.
 assert.equal(initialState.products.length, 0);
 assert.equal(api.PRODUCT_SHELL.map(p => p.type).join(), "faki,supari,mitho-mavo,water,chuno,tamaku");
@@ -106,6 +125,20 @@ const rejected = { orderId: 'o1', orderNumber: '#BFP-1', status: 'PENDING', orde
 assert.equal(contracts.readPaymentStatus(rejected, 'o1').rejectionReason, 'Screenshot is blurry');
 assert.throws(() => contracts.readPaymentStatus({ ...rejected, attempts: [{ status: 'REJECTED' }] }, 'o1'));
 assert.throws(() => contracts.readPaymentStatus({ ...rejected, canSubmitProof: 'yes' }, 'o1'));
+// The verification screen must offer a retry even though the order itself is PENDING again.
+let stateSlot = 0;
+const rejectedReact = { ...React, useState: initial => [stateSlot++ === 2 ? rejected : initial, () => {}] };
+const rejectedVerification = load('src/features/payments/pages/PaymentVerificationPage.tsx', {
+  react: rejectedReact,
+  '../../../context/OrderContext': { ...context, useOrder: () => ({ ...initialState, orderId: 'o1', orderNumber: '#BFP-1', serverOrder: baseOrder, paymentStatus: 'PENDING' }), useOrderDispatch: () => () => {} },
+  '../../../components/common/OrderStepper': { default: () => null },
+  '../../../components/common/Notice': { default: ({ children }) => React.createElement('div', null, children) },
+  '../../../components/common/NoActiveOrder': { default: () => null },
+  '../../../lib/api': api, '../../../lib/env': { env }, '../../../lib/auth': auth, '../api/paymentsApi': paymentsApi,
+}).default;
+const rejectedMarkup = renderToStaticMarkup(React.createElement(MemoryRouter, null, React.createElement(rejectedVerification)));
+assert.match(rejectedMarkup, /Reupload payment screenshot/);
+assert.match(rejectedMarkup, /Your order is saved/);
 let enteredMobile=''; let inputValidity='';
 const mobileElement=mobileInput({value:'',onChange:value=>{enteredMobile=value;}}).props.children[1];
 assert.equal(mobileElement.props.maxLength,10);
@@ -196,11 +229,31 @@ assert.equal(request.options.headers.get('Authorization'),'Bearer test-only-toke
 assert.equal(request.options.headers.get('Idempotency-Key'),'persisted-key');
 assert.equal(request.url,'https://example.test/api/orders');
 assert.ok(!('total' in JSON.parse(request.options.body)), 'Client must not submit trusted payable totals');
+fakeFetch=async (url,options) => {request={url,options};return new Response(JSON.stringify({items:[{address:'Old House, Rajkot',pinCode:'360001'}]}),{status:200});};
+assert.deepEqual(JSON.parse(JSON.stringify(await ordersApi.getSavedAddresses())),[{address:'Old House, Rajkot',pinCode:'360001'}]);
+assert.equal(request.url,'https://example.test/api/me/addresses');
+fakeFetch=async (url,options) => {request={url,options};return new Response(JSON.stringify({address:'New House, Rajkot',pinCode:'360002'}),{status:200});};
+await ordersApi.saveAddress({address:'New House, Rajkot',pinCode:'360002'});
+assert.equal(request.options.method,'POST');
+assert.deepEqual(JSON.parse(request.options.body),{address:'New House, Rajkot',pinCode:'360002'});
+assert.equal(request.options.headers.get('Authorization'),'Bearer test-only-token');
 fakeFetch=async (url,options) => {request={url,options};return new Response(JSON.stringify({paymentStatus:'verifying',message:'Received'}),{status:200});};
 await paymentsApi.submitPayment(order.id,{screenshot:new File(['image'],'proof.png',{type:'image/png'})});
 assert.equal(request.options.headers.get('Content-Type'),null,'Browser sets multipart boundary');
 assert.equal(request.options.body.get('utr'),null,'no UTR is sent: the screenshot is the only evidence');
 assert.ok(request.options.body.get('screenshot'));
+fakeFetch=async (url,options) => {request={url,options};return new Response(new Blob(['%PDF-test'],{type:'application/pdf'}),{status:200,headers:{'Content-Type':'application/pdf'}});};
+await paymentsApi.downloadPaymentReceipt('a/b', '#BFP-1');
+assert.equal(request.url,'https://example.test/api/payments/a%2Fb/receipt');
+assert.equal(request.options.headers.Authorization,'Bearer test-only-token');
+assert.equal(downloads[0].name,'payment-proof-BFP-1.pdf');
+session=null;
+await assert.rejects(paymentsApi.downloadPaymentReceipt('o1','#BFP-1'),/sign in/);
+session={access_token:'test-only-token'};
+fakeFetch=async () => new Response(JSON.stringify({detail:'Receipt is not ready'}),{status:404,headers:{'Content-Type':'application/json'}});
+await assert.rejects(paymentsApi.downloadPaymentReceipt('o1','#BFP-1'),/Receipt is not ready/);
+fakeFetch=async () => new Response('<html>oops</html>',{status:200,headers:{'Content-Type':'text/html'}});
+await assert.rejects(paymentsApi.downloadPaymentReceipt('o1','#BFP-1'),/did not return a PDF/);
 fakeFetch=async () => new Response(JSON.stringify({detail:[{msg:'PIN not served'}]}),{status:422});
 await assert.rejects(api.apiFetch('/test'),/PIN not served/);
 fakeFetch=async () => {throw new TypeError('network')};

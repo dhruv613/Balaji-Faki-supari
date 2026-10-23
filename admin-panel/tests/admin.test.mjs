@@ -85,8 +85,9 @@ const apiModule = load(
 );
 const adminApi = load('src/features/admin/api/index.ts', {
   '../../../lib/api': apiModule,
+  '../../../lib/auth': authStub,
   '../../../lib/env': { env },
-});
+}, { fetch: (...args) => fakeFetch(...args) });
 const routeGuard = load('src/features/admin/components/AdminRouteGuard.tsx', {
   '../../../lib/auth': authStub,
   '../../../lib/env': { env },
@@ -313,6 +314,33 @@ assert.equal(
   capturedRequest.options.headers.get('Idempotency-Key'),
   'admin-approve-payment-pay-101',
 );
+
+fakeFetch = async (url, options) => {
+  capturedRequest = { url, options };
+  return url.endsWith('/receipts')
+    ? new Response('archive bytes', { status: 200, headers: { 'Content-Type': 'application/zip' } })
+    : new Response('receipt bytes', { status: 200, headers: { 'Content-Type': 'application/pdf', 'Content-Disposition': 'attachment; filename="owner-report.pdf"' } });
+};
+const receipt = await adminApi.getAdminPaymentReceipt('pay/101');
+assert.equal(await receipt.blob.text(), 'receipt bytes');
+assert.equal(receipt.filename, 'owner-report.pdf');
+assert.equal(capturedRequest.url, 'https://api.balajifaki.test/api/admin/payments/pay%2F101/receipt');
+assert.equal(capturedRequest.options.headers.get('Authorization'), 'Bearer owner-admin-jwt-token');
+assert.ok(capturedRequest.options.signal, 'receipt downloads have a timeout');
+await adminApi.getAdminPaymentReceipts(['pay-101', 'pay-102']);
+assert.equal(capturedRequest.url, 'https://api.balajifaki.test/api/admin/payments/receipts');
+assert.equal(capturedRequest.options.method, 'POST');
+assert.deepEqual(JSON.parse(capturedRequest.options.body), { paymentIds: ['pay-101', 'pay-102'] });
+assert.equal(capturedRequest.options.headers.get('Content-Type'), 'application/json');
+fakeFetch = async (url, options) => { capturedRequest = { url, options }; return new Response(JSON.stringify({ complete: true }), { status: 200 }); };
+assert.deepEqual(await adminApi.archiveDeliveredPaymentProof('pay-101'), { complete: true });
+assert.equal(capturedRequest.options.method, 'POST');
+fakeFetch = async () => new Response(JSON.stringify({ detail: 'Receipt unavailable' }), { status: 404 });
+await assert.rejects(adminApi.getAdminPaymentReceipt('missing'), /Receipt unavailable/);
+fakeFetch = async (url, options) => {
+  capturedRequest = { url, options };
+  return new Response(JSON.stringify({ ok: true }), { status: 200 });
+};
 
 await adminApi.getAdminProducts();
 assert.equal(capturedRequest.url, 'https://api.balajifaki.test/api/admin/products');
@@ -1283,6 +1311,56 @@ assert.deepEqual(JSON.parse(JSON.stringify(getAllowedOrderActions('DELIVERY_FAIL
   assert.match(pageHtml, /#BFP-1004/, 'the drawer for the focused payment lists the match');
   assert.match(pageHtml, /Approve Payment/, 'approval section is unchanged by a match');
   assert.match(pageHtml, /Reject/, 'rejection is unchanged by a match');
+  const selectAll = () => paymentsPage.nodes.find((node) => node.type === 'input' && node.props['aria-label'] === 'Select all shown payments');
+  selectAll().props.onChange({ target: { checked: true } });
+  paymentsPage.render();
+  assert.match(paymentsPage.html, /Download selected receipts \(3\)/, 'select all includes all shown payments');
+  selectAll().props.onChange({ target: { checked: false } });
+  paymentsPage.render();
+  assert.match(paymentsPage.html, /Download selected receipts \(0\)/, 'selection can be cleared');
+
+  const failedBulk = mountPage('src/features/admin/pages/AdminPaymentsPage.tsx', {
+    getAdminPayments: async () => ({ items: payments }),
+    getAdminPaymentReceipts: async () => { throw new apiModule.ApiError(413, 'Choose fewer receipts for this download.'); },
+  });
+  await failedBulk.settle(); await failedBulk.settle();
+  failedBulk.nodes.find((node) => node.type === 'input' && node.props['aria-label'] === 'Select all shown payments').props.onChange({ target: { checked: true } });
+  failedBulk.render();
+  await failedBulk.nodes.find((node) => node.type === 'button' && typeof node.props.children === 'string' && node.props.children.includes('Download selected receipts')).props.onClick();
+  failedBulk.render();
+  assert.match(failedBulk.html, /Choose fewer receipts for this download/, 'oversized ZIP failure stays visible');
+
+  let deliveredProofCalls = 0;
+  const delivered = mountPage('src/features/admin/pages/AdminPaymentsPage.tsx', {
+    getAdminPayments: async () => ({ items: [{ ...payment('pay-delivered', '#BFP-3004'), orderStatus: 'DELIVERED', signedScreenshotUrl: undefined }] }),
+    getAdminPaymentProof: async () => { deliveredProofCalls++; return { signedUrl: '/x' }; },
+  }, { search: 'payment=pay-delivered' });
+  await delivered.settle(); await delivered.settle();
+  assert.equal(deliveredProofCalls, 0, 'delivered screenshot is not requested after cleanup');
+  assert.match(delivered.html, /Both payment images are kept in the downloadable receipt/);
+  assert.match(delivered.html, /Download receipt/);
+  assert.match(delivered.html, /Retry screenshot cleanup/);
+
+  const requestedPages = [];
+  const paged = mountPage('src/features/admin/pages/AdminPaymentsPage.tsx', {
+    getAdminPayments: async ({ page }) => { requestedPages.push(page); return { items: payments, totalPages: 2 }; },
+  });
+  await paged.settle(); await paged.settle();
+  paged.nodes.find((node) => node.type === 'input' && node.props['aria-label'] === 'Select all shown payments').props.onChange({ target: { checked: true } });
+  paged.render();
+  paged.nodes.find((node) => node.type === 'button' && node.props.children === 'Next page').props.onClick();
+  paged.render(); await paged.settle(); await paged.settle();
+  assert.deepEqual(requestedPages, [1, 2], 'older payment pages remain reachable for receipt selection');
+  assert.match(paged.html, /Download selected receipts \(3\)/, 'selection persists across pages');
+
+  const overLimit = mountPage('src/features/admin/pages/AdminPaymentsPage.tsx', {
+    getAdminPayments: async () => ({ items: Array.from({ length: 101 }, (_, index) => payment(`pay-${index}`, `#BFP-${index}`)) }),
+  });
+  await overLimit.settle(); await overLimit.settle();
+  overLimit.nodes.find((node) => node.type === 'input' && node.props['aria-label'] === 'Select all shown payments').props.onChange({ target: { checked: true } });
+  overLimit.render();
+  assert.match(overLimit.html, /Select at most 100 payments per download/);
+  assert.match(overLimit.html, /Download selected receipts \(0\)/);
   const noDuplicate = mountPage('src/features/admin/pages/AdminPaymentsPage.tsx', {
     getAdminPayments: async () => ({ items: payments }),
     getAdminPaymentProof: async () => ({ signedUrl: '/x' }),

@@ -6,16 +6,18 @@ import EmailSignIn from '../../../components/common/EmailSignIn';
 import Notice from '../../../components/common/Notice';
 import { ORDER_STATUS_DISPLAY_LABELS } from '../../../types/orders';
 import { cancelOrder, getOrder, getOrderTracking } from '../api/ordersApi';
-import type { Order, TrackingEvent } from '../../../types/orders';
-import { useOrder } from '../../../context/OrderContext';
+import type { Order, PaymentStatusResponse, TrackingEvent } from '../../../types/orders';
+import { useOrder, useOrderDispatch } from '../../../context/OrderContext';
 import { contactDetails, useStoreProfile } from '../../store/storeApi';
 import { buildCustomerProgress } from '../lib/customerTimeline';
 import ProductName, { findNameGu } from '../../../components/common/ProductName';
+import { downloadPaymentReceipt, getPaymentStatus } from '../../payments/api/paymentsApi';
 
 export default function OrderDetailsPage() {
   const { orderId = '' } = useParams();
   const { session, loading: authLoading } = useSession();
   const draft = useOrder();
+  const dispatch = useOrderDispatch();
   const { profile } = useStoreProfile();
   const contact = contactDetails(profile);
   const [order, setOrder] = useState<Order | null>(null);
@@ -24,15 +26,30 @@ export default function OrderDetailsPage() {
   const [error, setError] = useState('');
   const [cancelReason, setCancelReason] = useState('');
   const [cancelling, setCancelling] = useState(false);
+  const [hasPaymentProof, setHasPaymentProof] = useState(false);
+  const [paymentInfo, setPaymentInfo] = useState<PaymentStatusResponse | null>(null);
+  const [downloadingReceipt, setDownloadingReceipt] = useState(false);
+  const [receiptError, setReceiptError] = useState('');
 
   useEffect(() => {
     let active = true;
-    setOrder(null); setEvents([]); setError('');
+    setOrder(null); setEvents([]); setError(''); setHasPaymentProof(false); setPaymentInfo(null); setReceiptError('');
     if (!session || !orderId) return;
     setLoading(true);
+    getPaymentStatus(orderId)
+      .then(status => {
+        if (active) {
+          setPaymentInfo(status);
+          setHasPaymentProof(previous => previous || Boolean(status.attempts?.length || status.latestAttemptStatus));
+        }
+      })
+      .catch(() => { /* Order details remain available if payment status cannot be checked. */ });
     Promise.all([getOrder(orderId), getOrderTracking(orderId)])
       .then(([data, history]) => {
-        if (active) { setOrder(data); setEvents(history.events); }
+        if (active) {
+          setOrder(data); setEvents(history.events);
+          if (data.paymentStatus !== 'PENDING' && data.paymentStatus !== 'pending') setHasPaymentProof(true);
+        }
       })
       .catch(cause => { if (active) setError(getErrorMessage(cause)); })
       .finally(() => { if (active) setLoading(false); });
@@ -59,6 +76,18 @@ export default function OrderDetailsPage() {
     }
   }
 
+  async function handleReceiptDownload() {
+    if (!order) return;
+    setDownloadingReceipt(true); setReceiptError('');
+    try {
+      await downloadPaymentReceipt(order.id, order.orderNumber);
+    } catch (cause) {
+      setReceiptError(getErrorMessage(cause));
+    } finally {
+      setDownloadingReceipt(false);
+    }
+  }
+
   return (
     <div className="wrapper">
       <div className="detail-header"><h1 className="page__header">Order Details</h1><Link className="btn btn--sm" to="/my-orders">Back to My Orders</Link></div>
@@ -71,14 +100,14 @@ export default function OrderDetailsPage() {
           <section className="two-col__main card">
             <div className="detail-header"><div><h3>{order.orderNumber}</h3><p className="text-secondary text-small">Placed {new Date(order.createdAt).toLocaleString('en-IN')}</p></div><span className="badge badge--dark">{ORDER_STATUS_DISPLAY_LABELS[order.status]}</span></div>
             {(() => {
-              const progress = buildCustomerProgress(order, events);
+              const progress = buildCustomerProgress(order, events, paymentInfo?.latestAttemptStatus);
               return (
                 <>
                   {progress.banner && (
                     <Notice tone={progress.banner.tone === 'success' ? 'info' : progress.banner.tone} title={progress.banner.title}
-                      actions={order.status === 'PENDING_PAYMENT' && draft.orderId === order.id
-                        ? <Link className="btn btn--sm btn--primary" to="/order/payment">Go to payment</Link> : undefined}>
-                      {progress.banner.text}
+                      actions={order.status === 'PENDING_PAYMENT'
+                        ? <Link className="btn btn--sm btn--primary" to="/order/payment" onClick={() => dispatch({ type: 'SET_SERVER_ORDER', payload: order })}>{paymentInfo?.latestAttemptStatus === 'REJECTED' ? 'Reupload payment screenshot' : 'Go to payment'}</Link> : undefined}>
+                      {paymentInfo?.rejectionReason && order.status === 'PENDING_PAYMENT' ? `${paymentInfo.rejectionReason} ` : ''}{progress.banner.text}
                     </Notice>
                   )}
                   <h3 style={{ marginTop: 24 }}>Order progress</h3>
@@ -111,6 +140,13 @@ export default function OrderDetailsPage() {
             </div>
             <div className="summary-row"><span>Items</span><strong><ProductName name={order.productName} nameGu={findNameGu(draft.products, order.product)} /> · {formatPackSize(order.packSize)} × {order.quantity}</strong></div>
             <div className="summary-row"><span>Payment</span><strong>{order.paymentStatus}</strong></div>
+            {hasPaymentProof && <>
+              <button type="button" className="btn btn--full" onClick={() => void handleReceiptDownload()} disabled={downloadingReceipt}>
+                {downloadingReceipt ? 'Downloading…' : 'Download payment proof receipt'}
+              </button>
+              <p className="text-secondary text-small">A submitted proof is not payment confirmation.</p>
+              {receiptError && <Notice tone="error" title="Receipt unavailable">{receiptError}</Notice>}
+            </>}
             <div className="summary-row"><span>Order total</span><strong>{formatINR(order.total)}</strong></div>
             <div className="summary-row"><span>Deliver to</span><strong>{order.address} – {order.pinCode}</strong></div>
             {contact.telHref && <a className="btn btn--full" href={contact.telHref}>Call store</a>}<Link className="btn btn--full" to="/help">Help with this order</Link>

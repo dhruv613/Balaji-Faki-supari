@@ -6,7 +6,8 @@ import NoActiveOrder from '../../../components/common/NoActiveOrder';
 import { useOrder, useOrderDispatch, buildSummary } from '../../../context/OrderContext';
 import { formatINR, getErrorMessage, isNetworkError } from '../../../lib/api';
 import { env } from '../../../lib/env';
-import { getPaymentStatus, isPaymentConfirmed } from '../api/paymentsApi';
+import { useSession } from '../../../lib/auth';
+import { downloadPaymentReceipt, getPaymentStatus, isPaymentConfirmed } from '../api/paymentsApi';
 import type { PaymentStatusResponse } from '../../../types/orders';
 
 /** How often to re-check while the payment is being verified. */
@@ -18,12 +19,15 @@ export default function PaymentVerificationPage() {
   const state = useOrder();
   const dispatch = useOrderDispatch();
   const navigate = useNavigate();
+  const { loading: authLoading } = useSession();
   const summary = buildSummary(state);
 
   const [checking, setChecking] = useState(false);
   const [lastChecked, setLastChecked] = useState<Date | null>(null);
   const [serverInfo, setServerInfo] = useState<PaymentStatusResponse | null>(null);
   const [error, setError] = useState<CheckError>(null);
+  const [receiptError, setReceiptError] = useState('');
+  const [downloadingReceipt, setDownloadingReceipt] = useState(false);
   const inFlight = useRef(false);
   const activeOrderId = useRef(state.orderId);
   activeOrderId.current = state.orderId;
@@ -75,28 +79,44 @@ export default function PaymentVerificationPage() {
   }, [orderId, status, Boolean(state.serverOrder), checkStatus]);
 
   /* ----- Guards ----- */
+  if (authLoading) return <div className="wrapper"><OrderStepper currentStep={4} /><p role="status">Checking your sign-in and order…</p></div>;
   if (!orderId) {
     return (
       <div className="wrapper">
         <OrderStepper currentStep={4} />
-        <NoActiveOrder message="There's no payment to verify yet. Place an order and upload your payment screenshot to see its verification status here." />
+        <NoActiveOrder message="We couldn't find an order in this browser. Open My Orders to continue an existing order and check its payment status." />
       </div>
     );
   }
 
   if (!state.serverOrder) return <div className="wrapper"><OrderStepper currentStep={4} /><Notice title="Recover your existing order" actions={<button className="btn" onClick={() => dispatch({ type: 'RETRY_ORDER' })}>Retry loading order</button>}>{state.orderLoadStatus || 'Please sign in through My Orders to reload your existing order.'} Please do not pay again.</Notice></div>;
 
-  // Payment details were never submitted — send the customer back to the QR step.
-  if (serverInfo?.status === 'pending' || serverInfo?.status === 'PENDING') {
+  const rejectedProof = serverInfo?.latestAttemptStatus?.toUpperCase() === 'REJECTED';
+  // Only a never-submitted order goes straight to the QR step.
+  if ((serverInfo?.status === 'pending' || serverInfo?.status === 'PENDING') && !rejectedProof) {
     return <Navigate to="/order/payment" replace />;
   }
 
   const failed =
     status === 'failed' ||
     status === 'REJECTED' ||
+    rejectedProof ||
     serverInfo?.status === 'failed' ||
     serverInfo?.status === 'REJECTED';
   const orderNumber = serverInfo?.orderNumber ?? state.orderNumber;
+  const hasProof = Boolean(serverInfo?.attempts?.length || serverInfo?.latestAttemptStatus ||
+    (status && status !== 'PENDING' && status !== 'pending'));
+  async function handleReceiptDownload() {
+    setDownloadingReceipt(true);
+    setReceiptError('');
+    try {
+      await downloadPaymentReceipt(orderId, orderNumber);
+    } catch (cause) {
+      setReceiptError(getErrorMessage(cause));
+    } finally {
+      setDownloadingReceipt(false);
+    }
+  }
   const supportHref = `https://wa.me/${env.supportWhatsApp}?text=${encodeURIComponent(
     `Hello, I need help with payment verification for order ${orderNumber}.`,
   )}`;
@@ -138,8 +158,8 @@ export default function PaymentVerificationPage() {
             <>
               <h1 style={{ marginBottom: 8 }}>We couldn't verify your payment</h1>
               <p className="text-secondary" style={{ maxWidth: 460, margin: '0 auto 24px' }}>
-                {serverInfo?.message ??
-                  "We couldn't accept this payment screenshot. Please contact support — don't pay again until we've checked."}
+                {serverInfo?.rejectionReason ?? serverInfo?.message ??
+                  "We couldn't accept this payment screenshot."} Your order is saved. If you already paid, reupload a clear screenshot. If you have not paid, contact the store before paying again.
               </p>
             </>
           ) : (
@@ -189,10 +209,16 @@ export default function PaymentVerificationPage() {
           )}
 
           {/* Actions */}
+          {receiptError && <Notice tone="error" title="Receipt unavailable">{receiptError}</Notice>}
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, justifyContent: 'center', marginTop: 32 }}>
+            {failed && serverInfo?.canSubmitProof && (
+              <button type="button" className="btn btn--primary" onClick={() => navigate('/order/payment')}>
+                Reupload payment screenshot
+              </button>
+            )}
             <button
               type="button"
-              className="btn btn--primary"
+              className="btn"
               id="refresh-status-btn"
               onClick={() => void checkStatus()}
               disabled={checking}
@@ -206,6 +232,11 @@ export default function PaymentVerificationPage() {
                 'Refresh status'
               )}
             </button>
+            {hasProof && (
+              <button type="button" className="btn" onClick={() => void handleReceiptDownload()} disabled={downloadingReceipt}>
+                {downloadingReceipt ? 'Downloading…' : 'Download payment proof receipt'}
+              </button>
+            )}
             <a
               className="btn"
               id="contact-support-btn"

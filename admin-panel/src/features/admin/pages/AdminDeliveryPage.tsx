@@ -163,6 +163,9 @@ export default function AdminDeliveryPage() {
         `Order ${updated.orderNumber} marked ${ORDER_STATUS_LABELS[updated.status]}.`,
         'success',
       );
+      if (updated.paymentProofCleanupComplete === false) {
+        showToast('Delivery was saved, but the screenshot could not be archived. Retry cleanup from Payments.', 'warning');
+      }
     } catch (err) {
       showToast(getErrorMessage(err), 'error');
     } finally {

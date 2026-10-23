@@ -8,6 +8,9 @@ import {
   getAdminPayments,
   getAdminPaymentById,
   getAdminPaymentProof,
+  getAdminPaymentReceipt,
+  getAdminPaymentReceipts,
+  archiveDeliveredPaymentProof,
   startAdminPaymentReview,
   approveAdminPayment,
   rejectAdminPayment,
@@ -42,6 +45,8 @@ export default function AdminPaymentsPage() {
   const initialQuery = searchParams.get('order') ?? '';
 
   const [payments, setPayments] = useState<AdminPaymentSubmission[]>([]);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
   const [query, setQuery] = useState(initialQuery);
   const [statusFilter, setStatusFilter] = useState<AdminPaymentStatus | 'ALL'>(
     initialStatus && PAYMENT_FILTER_OPTIONS.includes(initialStatus) ? initialStatus : 'ALL',
@@ -52,6 +57,9 @@ export default function AdminPaymentsPage() {
   const [rejectionReason, setRejectionReason] = useState('');
   const [validationError, setValidationError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [selectedReceiptIds, setSelectedReceiptIds] = useState<string[]>([]);
+  const [receiptBusy, setReceiptBusy] = useState(false);
+  const [selectionError, setSelectionError] = useState('');
 
   const [loading, setLoading] = useState(Boolean(env.apiBaseUrl));
   const [error, setError] = useState('');
@@ -68,10 +76,13 @@ export default function AdminPaymentsPage() {
     getAdminPayments({
       search: query || undefined,
       status: statusFilter,
+      page,
     })
       .then((res) => {
         if (active) {
           setPayments(res.items);
+          setTotalPages(res.totalPages ?? 1);
+          setSelectionError('');
           const focus = searchParams.get('payment');
           const focused = focus ? res.items.find((item) => item.id === focus) : undefined;
           if (focused) openPaymentInspector(focused);
@@ -87,14 +98,14 @@ export default function AdminPaymentsPage() {
     return () => {
       active = false;
     };
-  }, [query, statusFilter]);
+  }, [query, statusFilter, page]);
 
   function openPaymentInspector(payment: AdminPaymentSubmission) {
     setSelectedPayment(payment);
     setVerificationNotes('');
     setRejectionReason(payment.rejectionReason ?? '');
     setValidationError('');
-    if (env.apiBaseUrl && !payment.signedScreenshotUrl) {
+    if (env.apiBaseUrl && payment.orderStatus !== 'DELIVERED' && !payment.signedScreenshotUrl) {
       void getAdminPaymentProof(payment.id)
         .then((proof) => {
           setSelectedPayment((prev) =>
@@ -124,6 +135,59 @@ export default function AdminPaymentsPage() {
   const verifiedReceiptsTotal = payments
     .filter((payment) => payment.paymentStatus === 'VERIFIED')
     .reduce((sum, payment) => sum + (payment.expectedAmount ?? 0), 0);
+
+  function saveReceipt(blob: Blob, filename: string) {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  async function downloadReceipt(payment: AdminPaymentSubmission) {
+    setReceiptBusy(true);
+    try {
+      const { blob, filename } = await getAdminPaymentReceipt(payment.id);
+      saveReceipt(blob, filename || `payment-receipt-${payment.id}.pdf`);
+    } catch (err) {
+      showToast(getErrorMessage(err), 'error');
+    } finally {
+      setReceiptBusy(false);
+    }
+  }
+
+  async function retryScreenshotCleanup(payment: AdminPaymentSubmission) {
+    setReceiptBusy(true);
+    try {
+      const result = await archiveDeliveredPaymentProof(payment.id);
+      showToast(result.complete ? 'Payment screenshot cleanup completed.' : 'Receipt archive is unavailable; the original screenshot was kept. Please retry later.', result.complete ? 'success' : 'warning');
+    } catch (err) {
+      showToast(getErrorMessage(err), 'error');
+    } finally {
+      setReceiptBusy(false);
+    }
+  }
+
+  async function downloadSelectedReceipts() {
+    if (selectedReceiptIds.length === 0) return;
+    if (selectedReceiptIds.length > 100) {
+      setSelectionError('Select at most 100 payments per download.');
+      return;
+    }
+    setSelectionError('');
+    setReceiptBusy(true);
+    try {
+      const { blob, filename } = await getAdminPaymentReceipts(selectedReceiptIds);
+      saveReceipt(blob, filename || 'payment-receipts.zip');
+    } catch (err) {
+      setSelectionError(getErrorMessage(err));
+    } finally {
+      setReceiptBusy(false);
+    }
+  }
 
   async function handleApprovePayment() {
     if (!selectedPayment) return;
@@ -258,7 +322,7 @@ export default function AdminPaymentsPage() {
             className="input"
             placeholder="Order number or customer name"
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => { setPage(1); setSelectedReceiptIds([]); setSelectionError(''); setQuery(e.target.value); }}
           />
         </div>
         <div className="customer-filter-chips" aria-label="Filter payments by status">
@@ -268,7 +332,7 @@ export default function AdminPaymentsPage() {
               type="button"
               className={`chip${statusFilter === status ? ' chip--active' : ''}`}
               aria-pressed={statusFilter === status}
-              onClick={() => setStatusFilter(status)}
+              onClick={() => { setPage(1); setSelectedReceiptIds([]); setSelectionError(''); setStatusFilter(status); }}
             >
               {status === 'ALL' ? 'All' : PAYMENT_STATUS_LABELS[status]}
             </button>
@@ -280,10 +344,32 @@ export default function AdminPaymentsPage() {
         <LoadingSkeleton rows={5} />
       ) : (
         <div className="card">
+          {selectionError && <Notice tone="error" title="Receipt selection">{selectionError}</Notice>}
+          <div className="admin-action-group" style={{ marginBottom: 12 }}>
+            <button type="button" className="btn btn--outline btn--sm" disabled={selectedReceiptIds.length === 0 || receiptBusy} onClick={downloadSelectedReceipts}>
+              {receiptBusy ? 'Preparing receipts…' : `Download selected receipts (${selectedReceiptIds.length})`}
+            </button>
+            <span className="text-small text-secondary">Select up to 100 payments across pages. Large downloads may need smaller batches.</span>
+          </div>
+          <div className="admin-action-group" style={{ marginTop: 12 }}>
+            <button type="button" className="btn btn--outline btn--sm" disabled={page <= 1 || loading} onClick={() => setPage((current) => current - 1)}>Previous page</button>
+            <span className="text-small text-secondary">Page {page} of {totalPages}</span>
+            <button type="button" className="btn btn--outline btn--sm" disabled={page >= totalPages || loading} onClick={() => setPage((current) => current + 1)}>Next page</button>
+          </div>
           <div className="customer-table-scroll" role="region" aria-label="Payment verification queue" tabIndex={0}>
             <table className="data-table">
               <thead>
                 <tr>
+                  <th scope="col"><input type="checkbox" aria-label="Select all shown payments" checked={filteredPayments.length > 0 && filteredPayments.every((payment) => selectedReceiptIds.includes(payment.id))} onChange={(event) => {
+                    if (event.target.checked && new Set([...selectedReceiptIds, ...filteredPayments.map((payment) => payment.id)]).size > 100) {
+                      setSelectionError('Select at most 100 payments per download. Narrow the filter or select individual payments.');
+                      return;
+                    }
+                    setSelectionError('');
+                    setSelectedReceiptIds((current) => event.target.checked
+                      ? [...new Set([...current, ...filteredPayments.map((payment) => payment.id)])]
+                      : current.filter((id) => !filteredPayments.some((payment) => payment.id === id)));
+                  }} /></th>
                   <th scope="col">Order Number</th>
                   <th scope="col">Customer</th>
                   <th scope="col">Expected Amount</th>
@@ -296,6 +382,14 @@ export default function AdminPaymentsPage() {
               <tbody>
                 {filteredPayments.map((payment) => (
                   <tr key={payment.id}>
+                    <td><input type="checkbox" aria-label={`Select receipt for ${payment.orderNumber}`} checked={selectedReceiptIds.includes(payment.id)} onChange={(event) => {
+                      if (event.target.checked && selectedReceiptIds.length >= 100) {
+                        setSelectionError('Select at most 100 payments per download.');
+                        return;
+                      }
+                      setSelectionError('');
+                      setSelectedReceiptIds((current) => event.target.checked ? [...current, payment.id] : current.filter((id) => id !== payment.id));
+                    }} /></td>
                     <td>
                       <strong>{payment.orderNumber}</strong>
                       <p className="text-small text-secondary">Order: {payment.orderStatus}</p>
@@ -332,7 +426,7 @@ export default function AdminPaymentsPage() {
                 ))}
                 {filteredPayments.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="text-secondary">
+                    <td colSpan={8} className="text-secondary">
                       No payment submissions match these filters.
                     </td>
                   </tr>
@@ -396,13 +490,23 @@ export default function AdminPaymentsPage() {
               Customer Payment Screenshot
             </h3>
             <div style={{ marginBottom: 20 }}>
-              <ImagePreview
-                src={selectedPayment.signedScreenshotUrl ? resolveApiUrl(selectedPayment.signedScreenshotUrl) : undefined}
-                alt={`Payment screenshot for ${selectedPayment.orderNumber}`}
-                privateStoragePath={selectedPayment.privateScreenshotPath}
-                caption="Check the amount, the receiver and that the payment succeeded."
-              />
+              {selectedPayment.orderStatus === 'DELIVERED' ? (
+                <Notice title="Screenshot archive">Both payment images are kept in the downloadable receipt. You can retry cleanup for older delivered orders.</Notice>
+              ) : (
+                <ImagePreview
+                  src={selectedPayment.signedScreenshotUrl ? resolveApiUrl(selectedPayment.signedScreenshotUrl) : undefined}
+                  alt={`Payment screenshot for ${selectedPayment.orderNumber}`}
+                  privateStoragePath={selectedPayment.privateScreenshotPath}
+                  caption="Check the amount, the receiver and that the payment succeeded."
+                />
+              )}
             </div>
+            <button type="button" className="btn btn--outline btn--sm" disabled={receiptBusy} onClick={() => downloadReceipt(selectedPayment)}>
+              Download receipt
+            </button>
+            {selectedPayment.orderStatus === 'DELIVERED' && <button type="button" className="btn btn--outline btn--sm" disabled={receiptBusy} onClick={() => retryScreenshotCleanup(selectedPayment)}>
+              Retry screenshot cleanup
+            </button>}
 
             {/* Approve the screenshot */}
             <section className="card card--tinted" style={{ marginBottom: 20 }} aria-labelledby="approve-heading">

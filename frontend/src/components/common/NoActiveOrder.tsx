@@ -6,12 +6,11 @@ interface NoActiveOrderProps {
 }
 
 /**
- * Shown when a payment step is opened without a server-created order
- * (direct URL visit, new tab, or the backend never created one).
+ * Shown when a payment step has no order reference in this browser.
  */
 export default function NoActiveOrder({
-  title = 'No active order',
-  message = 'Payment opens only after our server has created your order. Start from the order form to continue.',
+  title = 'Find your order',
+  message = 'Open My Orders to continue an existing order, or start a new order if you have not placed one yet.',
 }: NoActiveOrderProps) {
   return (
     <div className="card" style={{ maxWidth: 640, margin: '0 auto', textAlign: 'center', padding: '48px 32px' }}>
@@ -27,11 +26,11 @@ export default function NoActiveOrder({
         {message}
       </p>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, justifyContent: 'center' }}>
-        <Link to="/order" className="btn btn--primary" id="start-order-btn">
-          Go to order form
-        </Link>
-        <Link to="/my-orders" className="btn" id="view-orders-btn">
+        <Link to="/my-orders" className="btn btn--primary" id="view-orders-btn">
           My Orders
+        </Link>
+        <Link to="/order" className="btn" id="start-order-btn">
+          Start a new order
         </Link>
       </div>
     </div>
