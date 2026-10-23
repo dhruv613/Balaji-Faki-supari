@@ -70,6 +70,7 @@ function firstTimestamp(events: readonly TrackingEvent[], states: readonly strin
 export function buildCustomerProgress(
   order: { status: string; paymentStatus: string },
   events: readonly TrackingEvent[],
+  latestAttemptStatus?: string | null,
 ): CustomerProgress {
   const status = String(order.status).toUpperCase();
   const payment = String(order.paymentStatus).toUpperCase();
@@ -105,8 +106,8 @@ export function buildCustomerProgress(
     banner = { tone: 'warning', title: 'Delivery could not be completed', text: 'The shop will contact you to arrange a new delivery.' };
     showSteps = furthest >= 0;
   } else if (status === 'PENDING_PAYMENT') {
-    banner = payment === 'REJECTED'
-      ? { tone: 'warning', title: 'Payment proof was not accepted', text: 'Upload a new payment screenshot to continue.' }
+    banner = payment === 'REJECTED' || latestAttemptStatus?.toUpperCase() === 'REJECTED'
+      ? { tone: 'warning', title: 'Payment proof was not accepted', text: 'Your order is saved. If you already paid, upload a clearer screenshot. If you have not paid, contact the store before paying again.' }
       : { tone: 'info', title: 'Awaiting payment', text: 'Pay by UPI QR, then upload your payment screenshot. Your order is not confirmed yet.' };
   } else if (status === 'PAYMENT_REVIEW') {
     banner = { tone: 'info', title: 'Payment verification pending', text: 'The shop is checking your payment screenshot. Your order is not confirmed until the shop approves it.' };

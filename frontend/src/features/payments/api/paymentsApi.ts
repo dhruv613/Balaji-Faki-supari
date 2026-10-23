@@ -7,7 +7,8 @@
  */
 
 import { readPaymentStatus } from '../../../lib/contracts';
-import { apiFetch } from '../../../lib/api';
+import { apiFetch, resolveApiUrl } from '../../../lib/api';
+import { getAccessToken } from '../../../lib/auth';
 import type { PaymentStatusResponse, PaymentSubmissionResult, OrderStatus, PaymentStatus } from '../../../types/orders';
 
 /** Allowed screenshot formats and size (must match FastAPI validation). */
@@ -90,6 +91,40 @@ export async function getPaymentStatus(orderId: string): Promise<PaymentStatusRe
     await apiFetch<unknown>(`/payments/${encodeURIComponent(orderId)}/status`),
     orderId,
   );
+}
+
+/** Download the server-generated proof receipt. Upload alone does not verify payment. */
+export async function downloadPaymentReceipt(orderId: string, orderNumber: string): Promise<void> {
+  const token = await getAccessToken();
+  if (!token) throw new Error('Please sign in to download your payment proof receipt.');
+  let response: Response;
+  try {
+    response = await fetch(resolveApiUrl(`/api/payments/${encodeURIComponent(orderId)}/receipt`), {
+      headers: { Authorization: `Bearer ${token}`, Accept: 'application/pdf' },
+      signal: AbortSignal.timeout(30_000),
+    });
+  } catch {
+    throw new Error('Could not reach the server. Please check your connection and try again.');
+  }
+  if (!response.ok) {
+    const body: unknown = await response.json().catch(() => null);
+    const detail = body && typeof body === 'object' && 'detail' in body && typeof body.detail === 'string'
+      ? body.detail : 'Could not download the receipt. Please try again.';
+    throw new Error(detail);
+  }
+  if (!response.headers.get('Content-Type')?.toLowerCase().startsWith('application/pdf')) {
+    throw new Error('The server did not return a PDF receipt. Please try again.');
+  }
+  const blob = await response.blob();
+  if (!blob.size) throw new Error('The server returned an empty receipt. Please try again.');
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `payment-proof-${(orderNumber || orderId).replace(/[^a-zA-Z0-9_-]/g, '') || 'order'}.pdf`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
 /** Returns an error message for an invalid screenshot, or null if valid. */

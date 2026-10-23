@@ -24,6 +24,8 @@ assert.equal(progress.showSteps, false); assert.equal(states(progress), ALL_UPCO
 assert.equal(progress.banner.title, 'Awaiting payment');
 progress = buildCustomerProgress({ status: 'PENDING_PAYMENT', paymentStatus: 'REJECTED' }, []);
 assert.match(progress.banner.title, /not accepted/);
+progress = buildCustomerProgress({ status: 'PENDING_PAYMENT', paymentStatus: 'PENDING' }, [], 'REJECTED');
+assert.match(progress.banner.title, /not accepted/, 'a rejected attempt is visible even when the order is open for another submission');
 progress = buildCustomerProgress({ status: 'PAYMENT_REVIEW', paymentStatus: 'SUBMITTED' }, [at('PENDING_PAYMENT', 0), at('PAYMENT_REVIEW', 1)]);
 assert.equal(progress.banner.title, 'Payment verification pending');
 assert.match(progress.banner.text, /not confirmed until the shop approves/);

@@ -67,6 +67,7 @@ export default function ReviewOrderPage() {
       // and official payment instructions. Nothing here is client-trusted.
       const order = await createOrder(toOrderFormData(state), key);
       if (!mounted.current || currentScope.current !== scope) return;
+      persistDraft({ ...state, orderId: order.id, checkoutKey: key }, session.user.id);
       dispatch({ type: 'SET_SERVER_ORDER', payload: order });
       if (state.quote && (order.total !== state.quote.total || order.subtotal !== state.quote.subtotal || order.deliveryFee !== state.quote.deliveryFee)) {
         setConfirmed(false);
@@ -160,8 +161,8 @@ export default function ReviewOrderPage() {
           <section className="card" aria-labelledby="delivery-heading">
             <div className="detail-header">
               <h3 id="delivery-heading">Delivery details</h3>
-              <Link to="/order" className="text-small" style={{ color: 'var(--color-primary-dark)' }}>
-                Edit
+              <Link to="/order#delivery-address" className="text-small" style={{ color: 'var(--color-primary-dark)' }}>
+                Change address
               </Link>
             </div>
             <div className="summary-row">

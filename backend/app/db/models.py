@@ -162,6 +162,17 @@ class Customer(Base):
     )
 
 
+class CustomerAddress(Base):
+    __tablename__ = "customer_addresses"
+    __table_args__ = (UniqueConstraint("user_id", "address", "pin_code"),)
+
+    id: Mapped[str] = mapped_column(GUID(), primary_key=True, default=new_uuid_str)
+    user_id: Mapped[str] = mapped_column(GUID(), ForeignKey("user_profiles.id", ondelete="CASCADE"), nullable=False, index=True)
+    address: Mapped[str] = mapped_column(Text, nullable=False)
+    pin_code: Mapped[str] = mapped_column(String(6), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
+
+
 class Product(Base):
     __tablename__ = "products"
 

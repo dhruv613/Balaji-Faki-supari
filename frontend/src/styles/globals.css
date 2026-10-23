@@ -1694,6 +1694,15 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 }
 .order-form fieldset:first-of-type .form-row { margin-bottom: 0; }
 .order-form fieldset:last-of-type .form-row { margin-bottom: 16px; }
+.address-picker { border-top: 1px solid var(--color-border); padding-top: 20px; }
+.address-picker .detail-header { margin-bottom: 12px; }
+.address-picker__selected, .address-picker__choice { border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 16px; background: var(--color-white); }
+.address-picker__selected { border-color: var(--color-primary-dark); background: var(--color-bg-cream); }
+.address-picker__selected p { margin: 8px 0 0; overflow-wrap: anywhere; }
+.address-picker__choices { display: grid; gap: 10px; }
+.address-picker__choice { display: grid; gap: 6px; width: 100%; text-align: left; color: var(--color-text); font: inherit; cursor: pointer; }
+.address-picker__choice:hover, .address-picker__choice:focus-visible { border-color: var(--color-primary-dark); background: var(--color-bg-cream); }
+.address-picker__choice-title { font-weight: 700; }
 
 .payment-flow-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 24px; list-style: none; padding: 0; margin: 28px 0; }
 .payment-flow-grid li { display: flex; flex-direction: column; gap: 16px; }

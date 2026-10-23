@@ -24,6 +24,11 @@ class UpdateProfileRequestSchema(CamelModel):
     phone: str | None = Field(default=None, min_length=10, max_length=20)
 
 
+class SaveAddressRequestSchema(CamelModel):
+    address: str = Field(min_length=10, max_length=500)
+    pin_code: str = Field(alias="pinCode", min_length=6, max_length=6)
+
+
 class CheckoutQuoteRequestSchema(CamelModel):
     product: ProductSlug
     pack_size: PackSize = Field(alias="packSize")

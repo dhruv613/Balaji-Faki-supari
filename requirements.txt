@@ -8,6 +8,7 @@ anyio==4.13.0
 boto3==1.43.115
 botocore==1.43.115
 certifi==2026.10.18
+charset-normalizer==3.4.7
 cffi==2.1.1
 click==8.5.0
 cryptography==48.0.0
@@ -25,11 +26,13 @@ psycopg-binary==3.3.6
 pycparser==3.11
 pydantic==2.13.4
 pydantic-settings==2.14.2
+pillow==12.2.0
 pydantic_core==2.46.4
 PyJWT==2.10.1
 python-dateutil==2.9.0.post0
 python-dotenv==1.2.4
 python-multipart==0.0.28
+reportlab==4.5.1
 s3transfer==0.19.3
 six==1.17.0
 SQLAlchemy==2.0.49

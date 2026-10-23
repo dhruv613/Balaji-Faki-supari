@@ -244,6 +244,28 @@ def read_private_payment_proof(
     )
 
 
+def delete_private_payment_proof(storage_path: str, *, app_settings: Settings = settings) -> None:
+    _storage_request(
+        "DELETE", app_settings.payment_proofs_bucket, storage_path,
+        app_settings=app_settings, error_type=PaymentProofStorageError,
+    )
+
+
+def store_private_payment_receipt(path: str, content: bytes, *, app_settings: Settings = settings) -> None:
+    _storage_request(
+        "POST", app_settings.payment_receipts_bucket, path,
+        content=content, mime_type="application/pdf", app_settings=app_settings,
+        error_type=PaymentProofStorageError,
+    )
+
+
+def read_private_payment_receipt(path: str, *, app_settings: Settings = settings) -> bytes:
+    return _storage_request(
+        "GET", app_settings.payment_receipts_bucket, path,
+        app_settings=app_settings, error_type=PaymentProofStorageError,
+    )
+
+
 def store_private_review_photo(
     *,
     user_id: str,

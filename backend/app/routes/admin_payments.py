@@ -169,7 +169,7 @@ def _serialize_admin_payment(
         "productSummary": items_summary,
         "expectedAmount": paise_to_inr(payment.expected_amount_paise),
         "privateScreenshotPath": payment.screenshot_storage_path,
-        "signedScreenshotUrl": _build_signed_proof_url(payment),
+        "signedScreenshotUrl": _build_signed_proof_url(payment) if order and order.status != "DELIVERED" else None,
         "submissionDate": _iso(payment.submitted_at),
         "paymentStatus": payment.status,
         "orderStatus": order.status if order else "PAYMENT_REVIEW",

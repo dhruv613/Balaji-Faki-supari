@@ -266,6 +266,9 @@ export default function AdminOrdersPage() {
         `Order ${updated.orderNumber} updated to ${ORDER_STATUS_LABELS[updated.orderStatus]}.`,
         'success',
       );
+      if (updated.paymentProofCleanupComplete === false) {
+        showToast('The order was delivered, but the screenshot could not be archived. Retry cleanup from Payments.', 'warning');
+      }
       setPendingAction(null);
     } catch (err) {
       showToast(getErrorMessage(err), 'error');

@@ -75,6 +75,7 @@ class Settings:
         default_factory=lambda: os.getenv("BFP_ENV", "production").strip().lower() or "production"
     )
     payment_proofs_bucket: str = "payment-proofs"
+    payment_receipts_bucket: str = "payment-receipts"
     review_photos_bucket: str = "review-photos"
     product_images_bucket: str = "product-images"
     store_photos_bucket: str = "store-photos"

@@ -50,6 +50,7 @@ export type Action =
   | { type: 'SET_CUSTOM_AMOUNT'; payload: PackSize }
   | { type: 'SET_QUANTITY'; payload: number }
   | { type: 'SET_FIELD'; payload: { field: 'fullName' | 'phone' | 'address' | 'pinCode'; value: string } }
+  | { type: 'SET_ADDRESS'; payload: { address: string; pinCode: string } }
   | { type: 'SET_SERVER_ORDER'; payload: Order }
   | { type: 'SET_PAYMENT_STATUS'; payload: PaymentStatus }
   | { type: 'SET_SCREENSHOT'; payload: { file: File | null; preview: string } }
@@ -85,6 +86,8 @@ export function reducer(state: OrderState, action: Action): OrderState {
       return { ...state, ...orderReset, quantity: Math.min(MAX_QUANTITY, Math.max(1, Math.trunc(action.payload))), quote: null };
     case 'SET_FIELD':
       return { ...state, ...orderReset, [action.payload.field]: action.payload.value, quote: action.payload.field === 'pinCode' ? null : state.quote };
+    case 'SET_ADDRESS':
+      return { ...state, ...orderReset, address: action.payload.address, pinCode: action.payload.pinCode, quote: null };
     case 'SET_SERVER_ORDER':
       return { ...state, orderLoadStatus: '', orderId: action.payload.id, orderNumber: action.payload.orderNumber, serverOrder: action.payload, paymentStatus: action.payload.paymentStatus };
     case 'SET_PAYMENT_STATUS':
@@ -186,6 +189,13 @@ export function persistDraft(state: OrderState, userId: string) {
     sessionStorage.setItem(`${STORAGE_KEY}:${userId}`, JSON.stringify({ ...toOrderFormData(state), orderId: state.orderId, checkoutKey: state.checkoutKey }));
   }
   catch { /* Unavailable storage still permits in-memory checkout. */ }
+  if (userId !== GUEST_DRAFT_ID) {
+    try {
+      const key = `${STORAGE_KEY}:active:${userId}`;
+      if (state.orderId) localStorage.setItem(key, state.orderId);
+      else localStorage.removeItem(key);
+    } catch { /* My Orders remains the server-backed recovery path. */ }
+  }
 }
 
 export const GUEST_DRAFT_ID = 'guest';
@@ -208,10 +218,16 @@ export function loadState(user: User | null) {
   try {
     const guest = restoreDraft(sessionStorage.getItem(`${STORAGE_KEY}:${GUEST_DRAFT_ID}`));
     if (!user) draft = guest;
-    else if (hasDraftContent(guest)) {
-      draft = { ...guest, orderId: '', checkoutKey: '' };
-      sessionStorage.removeItem(`${STORAGE_KEY}:${GUEST_DRAFT_ID}`);
-    } else draft = restoreDraft(sessionStorage.getItem(`${STORAGE_KEY}:${user.id}`));
+    else {
+      const saved = restoreDraft(sessionStorage.getItem(`${STORAGE_KEY}:${user.id}`));
+      let activeId = saved.orderId;
+      try { activeId = localStorage.getItem(`${STORAGE_KEY}:active:${user.id}`) || activeId; } catch { /* Session draft still works. */ }
+      if (activeId) draft = { ...saved, orderId: activeId };
+      else if (hasDraftContent(guest)) {
+        draft = { ...guest, orderId: '', checkoutKey: '' };
+        sessionStorage.removeItem(`${STORAGE_KEY}:${GUEST_DRAFT_ID}`);
+      } else draft = saved;
+    }
   }
   catch { /* Unavailable storage still permits in-memory checkout. */ }
   return { ...draft, fullName: draft.fullName || profile.fullName, phone: draft.phone || profile.phone };

@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import OrderStepper from '../../../components/common/OrderStepper';
 import Notice from '../../../components/common/Notice';
 import MobileNumberInput from '../../../components/common/MobileNumberInput';
@@ -10,11 +10,13 @@ import {
   validateForm,
   MAX_QUANTITY,
 } from '../../../context/OrderContext';
-import { formatINR, formatPackSize } from '../../../lib/api';
+import { formatINR, formatPackSize, getErrorMessage } from '../../../lib/api';
+import { useSession } from '../../../lib/auth';
 import { amountToGrams, canonicalAmount, perKgPrice, typedAmountError } from '../../../lib/amount';
 import { primaryImage } from '../../catalog/components/ProductParts';
 import type { ProductType, PackSize, OrderFormData } from '../../../types/orders';
 import ProductName from '../../../components/common/ProductName';
+import { getSavedAddresses, saveAddress, type SavedAddress } from '../api/ordersApi';
 
 const FIELD_IDS: Partial<Record<keyof OrderFormData, string>> = {
   product: 'product-faki',
@@ -76,8 +78,72 @@ export default function OrderFormPage() {
   const state = useOrder();
   const dispatch = useOrderDispatch();
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const [submitted, setSubmitted] = useState(false);
+  const { session } = useSession();
+  const [savedAddresses, setSavedAddresses] = useState<SavedAddress[]>([]);
+  const [addressMode, setAddressMode] = useState<'selected' | 'choose' | 'new'>('new');
+  const [addressLoading, setAddressLoading] = useState(false);
+  const [addressSaving, setAddressSaving] = useState(false);
+  const [addressError, setAddressError] = useState('');
+  const addressDraft = useRef({ address: state.address, pinCode: state.pinCode });
+  const addressTouched = useRef(false);
+  addressDraft.current = { address: state.address, pinCode: state.pinCode };
+
+  useEffect(() => {
+    let active = true;
+    if (!session) { setSavedAddresses([]); setAddressMode('new'); return; }
+    setAddressLoading(true);
+    getSavedAddresses().then((items) => {
+      if (!active) return;
+      setSavedAddresses(items);
+      const current = addressDraft.current;
+      if (addressTouched.current) return;
+      if (!state.orderId && !current.address.trim() && !current.pinCode && items.length) {
+        dispatch({ type: 'SET_ADDRESS', payload: items[0] });
+        setAddressMode('selected');
+      } else if (items.some((item) => item.address === current.address && item.pinCode === current.pinCode)) {
+        setAddressMode('selected');
+      }
+      if (location.hash === '#delivery-address' && items.length) setAddressMode('choose');
+    }).catch((error) => {
+      if (active) setAddressError(getErrorMessage(error));
+    }).finally(() => { if (active) setAddressLoading(false); });
+    return () => { active = false; };
+  }, [session?.user.id]);
+
+  useEffect(() => {
+    if (location.hash === '#delivery-address') {
+      document.getElementById('delivery-address')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [location.hash]);
+
+  function chooseAddress(address: SavedAddress) {
+    addressTouched.current = true;
+    dispatch({ type: 'SET_ADDRESS', payload: address });
+    setAddressMode('selected');
+    setAddressError('');
+  }
+
+  async function handleSaveAddress() {
+    const address = state.address.trim();
+    if (address.length < 10 || address.length > 500 || !/^[1-9][0-9]{5}$/.test(state.pinCode)) {
+      setAddressError('Enter a complete address and valid 6-digit PIN code.');
+      return;
+    }
+    setAddressSaving(true);
+    setAddressError('');
+    try {
+      const saved = await saveAddress({ address, pinCode: state.pinCode });
+      setSavedAddresses((current) => [saved, ...current.filter((item) => item.address !== saved.address || item.pinCode !== saved.pinCode)]);
+      chooseAddress(saved);
+    } catch (error) {
+      setAddressError(getErrorMessage(error));
+    } finally {
+      setAddressSaving(false);
+    }
+  }
 
   // Preselect product from URL query param (?product=faki or ?product=supari)
   useEffect(() => {
@@ -144,6 +210,12 @@ export default function OrderFormPage() {
 
       <h1 className="page__header">Place your order</h1>
       <p className="page__subtitle">Fill in your details — it takes about a minute.</p>
+
+      {state.orderId && ['PENDING_PAYMENT', 'PAYMENT_REVIEW'].includes(state.serverOrder?.status ?? 'PENDING_PAYMENT') && (
+        <Notice tone="info" title="Your existing order is saved" actions={<Link className="btn btn--primary btn--sm" to={`/my-orders/${encodeURIComponent(state.orderId)}`}>Continue existing order</Link>}>
+          Open order {state.orderNumber || 'details'} to check payment or upload a new screenshot. You do not need to place this order again.
+        </Notice>
+      )}
 
       {errorCount > 0 && (
         <Notice tone="error" title="Please fix the highlighted fields" id="form-errors">
@@ -283,38 +355,53 @@ export default function OrderFormPage() {
                 </div>
               </div>
 
-              <div style={{ marginBottom: 16 }}>
-                <label htmlFor="address">Delivery address</label>
-                <textarea
-                  id="address"
-                  {...fieldProps('address')}
-                  autoComplete="street-address"
-                  placeholder="House no., society, area, city"
-                  value={state.address}
-                  onChange={(e) =>
-                    dispatch({ type: 'SET_FIELD', payload: { field: 'address', value: e.target.value } })
-                  }
-                />
-                {fieldError('address')}
-              </div>
-
-              <div style={{ maxWidth: 240 }}>
-                <label htmlFor="pin-code">PIN code</label>
-                <input
-                  id="pin-code"
-                  {...fieldProps('pinCode')}
-                  type="text"
-                  inputMode="numeric"
-                  autoComplete="postal-code"
-                  maxLength={6}
-                  placeholder="6-digit PIN"
-                  value={state.pinCode}
-                  onChange={(e) => {
-                    const val = e.target.value.replace(/\D/g, '').slice(0, 6);
-                    dispatch({ type: 'SET_FIELD', payload: { field: 'pinCode', value: val } });
-                  }}
-                />
-                {fieldError('pinCode')}
+              <div id="delivery-address" className="address-picker">
+                <div className="detail-header">
+                  <h3>Delivery address</h3>
+                  {addressMode === 'selected' && <button type="button" className="text-button" onClick={() => setAddressMode('choose')}>Change address</button>}
+                </div>
+                {addressLoading && <p className="text-small text-secondary" role="status">Loading saved addresses…</p>}
+                {addressError && <Notice tone="error" title="Address unavailable">{addressError}</Notice>}
+                {addressMode === 'selected' && (
+                  <div className="address-picker__selected">
+                    <strong>Deliver here</strong>
+                    <p>{state.address} – {state.pinCode}</p>
+                  </div>
+                )}
+                {addressMode === 'choose' && (
+                  <div className="address-picker__choices">
+                    {savedAddresses.map((item, index) => (
+                      <button key={`${item.address}:${item.pinCode}`} type="button" className="address-picker__choice" onClick={() => chooseAddress(item)}>
+                        <span className="address-picker__choice-title">{index === 0 ? 'Recent address' : `Saved address ${index + 1}`}</span>
+                        <span>{item.address} – {item.pinCode}</span>
+                        <span className="text-small">Deliver here</span>
+                      </button>
+                    ))}
+                    <button type="button" className="btn btn--outline btn--sm" onClick={() => { addressTouched.current = true; setAddressMode('new'); setAddressError(''); dispatch({ type: 'SET_ADDRESS', payload: { address: '', pinCode: '' } }); }}>+ Add a new address</button>
+                  </div>
+                )}
+                {addressMode === 'new' && (
+                  <div>
+                    {savedAddresses.length > 0 && <button type="button" className="text-button" disabled={addressSaving} onClick={() => { setAddressMode('choose'); setAddressError(''); }}>Choose a saved address</button>}
+                    <div style={{ marginBottom: 16 }}>
+                      <label htmlFor="address">Street address</label>
+                      <textarea id="address" {...fieldProps('address')} autoComplete="street-address" maxLength={500} disabled={addressSaving}
+                        placeholder="House no., society, area, city" value={state.address}
+                        onChange={(e) => { addressTouched.current = true; dispatch({ type: 'SET_FIELD', payload: { field: 'address', value: e.target.value } }); }} />
+                      {fieldError('address')}
+                    </div>
+                    <div style={{ maxWidth: 240 }}>
+                      <label htmlFor="pin-code">PIN code</label>
+                      <input id="pin-code" {...fieldProps('pinCode')} type="text" inputMode="numeric" disabled={addressSaving}
+                        autoComplete="postal-code" maxLength={6} placeholder="6-digit PIN" value={state.pinCode}
+                        onChange={(e) => { addressTouched.current = true; dispatch({ type: 'SET_FIELD', payload: { field: 'pinCode', value: e.target.value.replace(/\D/g, '').slice(0, 6) } }); }} />
+                      {fieldError('pinCode')}
+                    </div>
+                    {session && <button type="button" className="btn btn--outline btn--sm" disabled={addressSaving} onClick={() => void handleSaveAddress()}>
+                      {addressSaving ? 'Saving address…' : 'Save address'}
+                    </button>}
+                  </div>
+                )}
               </div>
             </fieldset>
             {/* Hidden submit so Enter in a field triggers review */}
